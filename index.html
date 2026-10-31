@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>던만추: 오라리오 환생 시뮬레이터</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="game-container">
+        <!-- 시작 화면 -->
+        <div id="screen-start" class="screen active">
+            <h1>던만추 환생 시뮬레이터</h1>
+            <p>당신의 오라리오에서의 운명은?</p>
+            <button id="btn-start">환생하기</button>
+        </div>
+
+        <!-- 로딩 화면 -->
+        <div id="screen-loading" class="screen hidden">
+            <h2>운명의 실을 자아내는 중...</h2>
+            <div class="loader"></div>
+        </div>
+
+        <!-- 진행 화면 (나이가 흐르며 이벤트 발생) -->
+        <div id="screen-play" class="screen hidden">
+            <div id="stats"></div>
+            <div id="abil"></div>
+            <div id="familia"></div>
+            <div id="log"></div>
+            <div id="choices"></div>
+            <label class="auto"><input type="checkbox" id="auto"> 자동 결정</label>
+        </div>
+
+        <!-- 결과 화면 -->
+        <div id="screen-result" class="screen hidden">
+            <h2>일생의 끝</h2>
+            <div id="result-content"></div>
+            <button id="btn-retry">다시 환생하기</button>
+        </div>
+    </div>
+    <p class="copyright-notice">비공식 팬 게임이며 원작의 저작권은 원작자에게 있습니다.</p>
+    <script src="data.js"></script>
+    <script src="events.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>

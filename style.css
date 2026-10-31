@@ -1,0 +1,80 @@
+body {
+    background-color: #1a1a1a;
+    color: #fff;
+    font-family: 'Malgun Gothic', sans-serif;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    margin: 0;
+}
+
+.game-container {
+    background: #2a2a2a;
+    padding: 30px;
+    border-radius: 10px;
+    text-align: center;
+    width: 90%;
+    max-width: 500px;
+}
+
+/* 화면 상태 관리용 클래스 */
+.screen { display: none; }
+.screen.active { display: block; }
+.hidden { display: none; }
+
+button {
+    background-color: #e5a822;
+    border: none;
+    padding: 10px 20px;
+    font-size: 1.1rem;
+    cursor: pointer;
+    border-radius: 5px;
+    margin-top: 20px;
+}
+
+#result-content {
+    background: #111;
+    padding: 15px;
+    margin-top: 20px;
+    border-radius: 5px;
+    white-space: pre-line;
+    line-height: 1.5;
+}
+
+.copyright-notice {
+    position: fixed;
+    bottom: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: calc(100% - 24px);
+    margin: 0;
+    color: #888;
+    font-size: 0.75rem;
+    text-align: center;
+}
+/* ---- 인생 시뮬레이션 화면 ---- */
+.game-container { margin: 24px 0 60px; }
+.loader { width: 36px; height: 36px; margin: 24px auto; border: 4px solid #444; border-top-color: #e5a822; border-radius: 50%; animation: spin 0.9s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+#screen-play { text-align: left; }
+#stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 1px; background: #444; border: 1px solid #444; text-align: center; font-size: 0.85rem; }
+#stats div { background: #222; padding: 6px 2px; }
+#stats b { display: block; font-size: 1.05rem; color: #e5a822; }
+#familia { color: #999; font-size: 0.85rem; margin: 8px 0 12px; }
+.entry { border-left: 3px solid #444; padding: 2px 0 2px 12px; margin: 10px 0; line-height: 1.6; }
+.entry.event { border-color: #e5a822; }
+.entry.result { color: #bbb; }
+.entry.bad { border-color: #c0504d; }
+.age { color: #e5a822; font-weight: bold; margin-right: 6px; }
+#choices { display: flex; flex-direction: column; gap: 8px; margin: 14px 0; }
+#choices button { margin-top: 0; text-align: left; }
+#choices button.choice { background: transparent; color: #fff; border: 1px solid #666; }
+#choices button.choice:hover { border-color: #e5a822; }
+.auto { color: #999; font-size: 0.9rem; }
+#result-content { text-align: left; }
+
+#abil { display: grid; grid-template-columns: repeat(5, 1fr); gap: 1px; background: #444; border: 1px solid #444; border-top: 0; text-align: center; font-size: 0.8rem; }
+#abil:empty { display: none; }
+#abil div { background: #222; padding: 4px 2px; }
+#abil b { display: block; color: #e5a822; }
