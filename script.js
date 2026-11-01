@@ -91,7 +91,7 @@ function apply(fx = {}) {
     if (fx.power) S.exp += fx.power;
     if (fx.feat) S.feat += fx.feat;
     S.hp = Math.min(100, S.hp);
-    for (const k of ['bond', 'valis', 'exp']) S[k] = Math.max(0, S[k]);
+    for (const k of ['bond', 'valis', 'exp', 'feat']) S[k] = Math.max(0, S[k]);   // 위업은 음수가 되지 않음
     (fx.flags || []).forEach(f => { if (!S.flags.includes(f)) S.flags.push(f); });
     if (fx.clearFlags) S.flags = S.flags.filter(f => !fx.clearFlags.includes(f));
     if (fx.dropFamilia) { S.familia = null; S.falnaAt = null; }

@@ -75,9 +75,9 @@ const EVENTS = [
         { label: '오라리오로 도망친다', chance: { p: .5, ok: { text: '국경을 넘어 새 삶을 시작했다.', fx: { valis: -400, bond: -3 } }, fail: { text: '추격대에 붙잡혀 크게 다쳤다.', fx: { hp: -25 } } } }] },
     { id: 'minotaur', w: 14, once: true, cond: { age: [16, 40], flags: ['adventurer'], max: { power: 35 } }, text: '상층에서 있을 리 없는 미노타우로스와 마주쳤다.', choices: [
         { label: '전력으로 도망친다', chance: { p: .5, stat: 'power', per: .004, ok: { text: '살아 돌아왔지만 공포가 오래 남았다.', fx: { hp: -15, bond: -1 } }, fail: { text: '따라잡혀 중상을 입었다.', fx: { hp: -55 } } } },
-        { label: '맞서 싸운다', chance: { p: .15, stat: 'power', per: .006, ok: { text: '기적처럼 살아남아 이름이 알려졌다.', fx: { power: 25, bond: 4, feat: 2 } }, fail: { text: '압도적인 힘 앞에 쓰러졌다.', fx: { die: 'minotaur' } } } }] },
+        { label: '맞서 싸운다', chance: { p: .15, stat: 'power', per: .006, ok: { text: '기적처럼 살아남아 이름이 알려졌다.', fx: { power: 25, bond: 4, feat: 2 } }, fail: { text: '압도적인 힘 앞에 쓰러졌다.', fx: { hp: -65 } } } }] },
     { id: 'expedition', w: 25, once: true, cond: { age: [25, 55], flags: ['adventurer'], min: { power: 55 } }, text: '심층 원정대를 꾸린다는 소식이 돌았다.', choices: [
-        { label: '참가한다', chance: { p: .5, stat: 'power', per: .003, ok: { text: '원정은 성공했고 전설로 회자되었다.', fx: { power: 25, valis: 5000, flags: ['veteran'], feat: 2 } }, fail: { text: '원정 도중 돌아오지 못했다.', fx: { die: 'deep_floor' } } } },
+        { label: '참가한다', chance: { p: .5, stat: 'power', per: .003, ok: { text: '원정은 성공했고 전설로 회자되었다.', fx: { power: 25, valis: 5000, flags: ['veteran'], feat: 2 } }, fail: { text: '원정 도중 돌아오지 못했다.', fx: { die: true } } } },
         { label: '지상에 남는다', text: '대신 후방 일을 도우며 안정적으로 지냈다.', fx: { valis: 800 } }] },
     { id: 'ritual', w: 90, once: true, cond: { age: [14, 22], origin: ['telskyura'] }, text: '텔스큐라의 의식에 휘말려 싸움에 나서야 한다.', choices: [
         { label: '정면으로 싸운다', chance: { p: .5, stat: 'power', per: .005, ok: { text: '살아남아 전사로 인정받았다.', fx: { power: 15, flags: ['warrior'], feat: 1 } }, fail: { text: '싸움에서 목숨을 잃었다.', fx: { die: true } } } },
@@ -160,7 +160,7 @@ const EVENTS = [
     // 우선순위 1, 2: 탐색 및 아이템 획득 이벤트
     { id: 'guild_advisor', w: 20, cond: { age: [14, 20], flags: ['adventurer'], max: { level: 1 } }, text: '길드 본부에 방문하여 어드바이저에게 던전 탐색 가이드라인을 제공받았다.', choices: [
         { label: '안전한 상층(1~12계층) 공략법을 따른다', text: '어드바이저의 조언에 따라 무리하지 않고 저급 몬스터를 사냥하여 마석을 모았다.', fx: { valis: 500, hp: 10 } },
-        { label: '조언을 무시하고 중층(13~24계층)으로 직행한다', chance: { p: 0.2, stat: 'dex', per: 0.01, ok: { text: '퍼스트 라인이라 불리는 중층에서 간신히 살아남아 큰 경험을 얻었다.', fx: { level: 1, power: 15 } }, fail: { text: '13계층에서 헬 하운드의 화염에 큰 화상을 입고 도망쳤다.', fx: { hp: -30, valis: -200 } } } } ] },
+        { label: '조언을 무시하고 중층(13~24계층)으로 직행한다', chance: { p: 0.2, stat: 'dex', per: 0.01, ok: { text: '퍼스트 라인이라 불리는 중층에서 간신히 살아남아 큰 경험을 얻었다.', fx: { feat: 1, power: 15 } }, fail: { text: '13계층에서 헬 하운드의 화염에 큰 화상을 입고 도망쳤다.', fx: { hp: -30, valis: -200 } } } } ] },
     { id: 'buy_pyonkichi', w: 15, once: true, cond: { flags: ['adventurer'], min: { valis: 10000 } }, text: '상점을 둘러보던 중 메탈 래빗의 모피로 만들어진 깡총이 Mk-2 경갑을 발견했다.', choices: [
         { label: '9,900발리스를 지불하고 장비한다', text: '자신을 위해 만들어진 것처럼 몸에 딱 맞아 던전에서의 생존력이 크게 상승했다.', fx: { valis: -9900, hp: 30, flags: ['pyonkichi_armor'] } },
         { label: '이름이 우스꽝스러워 구매를 포기한다', text: '성능보다는 겉멋을 중시하여 기존의 낡은 장비를 유지하기로 했다.', fx: { valis: 0 } } ] },
@@ -168,13 +168,13 @@ const EVENTS = [
         { label: '거금을 들여 마검을 하나 장만한다', text: '비싼 가격을 지불했지만, 심층 원정이나 위기 상황을 타개할 강력한 결전 병기를 얻었다.', fx: { valis: -50000, power: 30, flags: ['magic_sword'] } },
         { label: '비싼 소모품이라 포기한다', text: '마검에 의존하지 않고 자신의 순수한 전투력만으로 미궁에 도전하기로 했다.', fx: { valis: 0 } } ] },
     { id: 'encounter_goliath', w: 12, once: true, cond: { flags: ['adventurer'], min: { level: 2 } }, text: '17계층 통곡의 대벽에서 신장 7m의 계층 터주(몬스터 렉스) 골라이아스와 조우했다.', choices: [
-        { label: '파티원들과 연계하여 전면전에 나선다', chance: { p: 0.4, stat: 'power', per: 0.005, ok: { text: '사투 끝에 골라이아스를 토벌하고 18계층 리빌라 마을로 무사히 진입했다.', fx: { level: 1, valis: 20000, feat: 3 } }, fail: { text: '계층 터주의 압도적인 파괴력에 짓눌려 뼈가 부러지는 중상을 입었다.', fx: { hp: -50 } } } },
+        { label: '파티원들과 연계하여 전면전에 나선다', chance: { p: 0.4, stat: 'power', per: 0.005, ok: { text: '사투 끝에 골라이아스를 토벌하고 18계층 리빌라 마을로 무사히 진입했다.', fx: { valis: 20000, feat: 3 } }, fail: { text: '계층 터주의 압도적인 파괴력에 짓눌려 뼈가 부러지는 중상을 입었다.', fx: { hp: -50 } } } },
         { label: '패스 퍼레이드를 일으켜 다른 파티에 몬스터를 떠넘긴다', text: '비겁한 수단으로 목숨은 건졌으나 오라리오 내에서 모험자로서의 평판이 하락했다.', fx: { hp: -10, feat: -2 } } ] },
     // 속성 방호포 구매 이벤트 (살라만다 울 / 운디네 클로스)
     { id: 'buy_elemental_cloth', w: 15, cond: { age: [15, 50], flags: ['adventurer'], min: { level: 2, valis: 30000 } }, text: '중층과 하층의 가혹한 환경을 버티기 위해 정령의 가호가 깃든 방호포를 구매할 기회가 생겼다.', choices: [
         { label: '살라만다 울 구매 (화염 내성)', text: '헬 하운드의 화염과 중층의 열기를 견딜 수 있는 살라만다 울을 장비했다.', fx: { valis: -30000, hp: 20 } },
         { label: '운디네 클로스 구매 (수속성 내성)', text: '물의 미로도시(25~27계층) 공략에 필수적인 운디네 클로스를 장비했다.', fx: { valis: -30000, hp: 20 } },
-        { label: '장비를 믿고 구매하지 않는다', chance: { p: 0.7, stat: 'dex', per: 0.005, ok: { text: '뛰어난 회피 능력으로 속성 공격을 피해 냈다.', fx: { dex: 5 } }, fail: { text: '화염과 극도의 추위에 노출되어 심각한 피해를 입었다.', fx: { hp: -35 } } } } ] },
+        { label: '장비를 믿고 구매하지 않는다', chance: { p: 0.7, stat: 'dex', per: 0.005, ok: { text: '뛰어난 회피 능력으로 속성 공격을 피해 냈다.', fx: { power: 3 } }, fail: { text: '화염과 극도의 추위에 노출되어 심각한 피해를 입었다.', fx: { hp: -35 } } } } ] },
     // 드롭 아이템 특수 무기 제작 (우시와카마루 등)
     { id: 'craft_drop_weapon', w: 12, cond: { flags: ['adventurer'], min: { level: 2, feat: 2 } }, text: '강력한 몬스터를 쓰러뜨리고 얻은 희귀 드롭 아이템을 헤파이스토스 파밀리아의 대장장이에게 가져갔다.', choices: [
         { label: '전용 특수 무장 제작을 의뢰한다', chance: { p: 0.8, stat: 'dex', per: 0.002, ok: { text: '뛰어난 위력을 지닌 자신만의 전용 무기가 완성되었다.', fx: { valis: -15000, power: 35 } }, fail: { text: '대장장이의 실수로 재료가 파손되어 평범한 무기만 받았다.', fx: { valis: -5000, power: 5 } } } },
