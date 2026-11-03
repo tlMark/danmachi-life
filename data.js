@@ -55,6 +55,15 @@ const gachaData = {
         { id: "braver", label: "검희 / 용자", weight: 30, desc: "오라리오의 모든 이가 존경과 경외를 담아 부르는 제 1급 모험자의 이명입니다." },
         { id: "king", label: "맹자 / 패왕", weight: 5, desc: "단혈전에서 최강을 증명한 자에게만 허락되는, 정점에 선 자의 이명입니다." }
     ],
+    items: [
+        { id: "pyonkichi", label: "깡총이 Mk-2", type: "armor", desc: "메탈 래빗 모피로 만든 경갑. 던전에서의 생존력을 크게 높여준다.", fx: { hpMax: 15 } },
+        { id: "magic_sword", label: "크로조의 마검", type: "consumable", desc: "무영창 마법 발동이 가능한 강력한 결전 병기.", fx: { power: 30 }, maxUses: 3 },
+        { id: "salamander_wool", label: "살라만다 울", type: "armor", desc: "헬 하운드의 화염과 중층의 열기를 막아주는 정령의 방호포.", fx: { hpMax: 10, power: 5 } },
+        { id: "undine_cloth", label: "운디네 클로스", type: "armor", desc: "수속성 내성과 극도의 추위를 막아주는 정령의 방호포.", fx: { hpMax: 10, power: 5 } },
+        { id: "dual_potion", label: "듀얼 포션", type: "consumable", desc: "체력과 마인드를 동시에 회복시키는 미아흐 파밀리아의 신약.", fx: { hp: 40 }, maxUses: 1 },
+        { id: "custom_weapon", label: "전용 특수 무장", type: "weapon", desc: "희귀 드롭 아이템으로 벼려낸 뛰어난 위력을 지닌 자신만의 무기.", fx: { power: 40 } },
+        { id: "grimoire", label: "그리므와르", type: "consumable", desc: "읽는 것만으로 마법을 각성시켜 주는 초희귀 마도서.", fx: { feat: 5, flags: ['magic_user'] }, maxUses: 1 }
+    ],
     endings: [
         { id: "minotaur", label: "상층에서 미노타우로스 무리와 조우해 공포에 질린 채 뼈아픈 패배를 겪고 모험자를 은퇴합니다.", weight: 250 },
         { id: "rakia_army", label: "오라리오가 아닌 라키아의 징집군으로 끌려가, 끝없는 영토 확장 전쟁의 최전선에 섭니다.", weight: 200 },
