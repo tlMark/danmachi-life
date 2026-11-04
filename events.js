@@ -58,8 +58,8 @@ const EVENTS = [
     { id: 'tavern', w: 12, cond: { age: [16, 70] }, text: '저녁에 술집 ‘풍요의 여주인’ 앞을 지나게 되었다.', choices: [
         { label: '들어가 한잔한다', text: '사람들과 어울리며 즐거운 밤을 보냈다.', fx: { valis: -300, bond: 4 } },
         { label: '일손을 거들고 품삯을 받는다', text: '바쁘게 일하고 약간의 돈을 벌었다.', fx: { valis: 400 } }] },
-    { id: 'love', w: 14, cond: { age: [16, 45], noFlags: ['partner'] }, text: '마음이 가는 사람이 생겼다.', choices: [
-        { label: '용기 내어 마음을 전한다', chance: { p: .4, stat: 'bond', per: .01, ok: { text: '마음이 닿아 함께하게 되었다.', fx: { flags: ['partner'], bond: 10 } }, fail: { text: '거절당했지만 시간이 약이었다.', fx: { bond: -2 } } } },
+    { id: 'love', w: 14, cond: { age: [18, 45], hasPartner: false }, text: '마음이 가는 사람이 생겼다.', choices: [
+        { label: '용기 내어 마음을 전한다', chance: { p: .4, stat: 'bond', per: .01, ok: { text: '마음이 닿아 함께하게 되었다.', fx: { relationship: 'romance', bond: 10 } }, fail: { text: '거절당했지만 시간이 약이었다.', fx: { bond: -2 } } } },
         { label: '지켜보기만 한다', text: '아무 일도 일어나지 않았다.', fx: {} }] },
     { id: 'conscript', w: 80, once: true, cond: { age: [17, 28], origin: ['rakia'] }, text: '라키아에서 징집 명령이 내려왔다.', choices: [
         { label: '징집에 응한다', text: '전쟁터에서 거칠게 단련되었다.', fx: { power: 8, hp: -5, flags: ['soldier'] } },
@@ -103,8 +103,8 @@ const EVENTS = [
     { id: 'pallum_scorn', w: 10, cond: { age: [10, 45], race: ['pallum'] }, text: '작은 체구 때문에 사람들에게 무시를 당했다.', choices: [
         { label: '머리를 써서 되받는다', chance: { p: .5, stat: 'bond', per: .005, ok: { text: '기지로 상대를 놀라게 했다.', fx: { bond: 3, valis: 400 } }, fail: { text: '오히려 비웃음만 샀다.', fx: { bond: -2 } } } },
         { label: '묵묵히 실력을 쌓는다', text: '조용히 자신만의 기술을 갈고닦았다.', fx: { power: 3 } }] },
-    { id: 'amazon_duel', w: 10, cond: { age: [15, 45], race: ['amazon'], noFlags: ['partner'] }, text: '마음에 든 상대에게 승부를 청할 기회가 왔다.', choices: [
-        { label: '정면 승부를 건다', chance: { p: .5, stat: 'power', per: .003, ok: { text: '승부 끝에 서로를 인정하게 되었다.', fx: { flags: ['partner'], bond: 10 } }, fail: { text: '완패했지만 다음을 기약했다.', fx: { hp: -10, power: 3 } } } },
+    { id: 'amazon_duel', w: 10, cond: { age: [18, 45], race: ['amazon'], hasPartner: false }, text: '마음에 든 상대에게 승부를 청할 기회가 왔다.', choices: [
+        { label: '정면 승부를 건다', chance: { p: .5, stat: 'power', per: .003, ok: { text: '승부 끝에 서로를 인정하게 되었다.', fx: { relationship: 'romance', bond: 10 } }, fail: { text: '완패했지만 다음을 기약했다.', fx: { hp: -10, power: 3 } } } },
         { label: '그냥 지나친다', text: '아무 일도 일어나지 않았다.', fx: {} }] },
     { id: 'neglect', w: 25, once: true, cond: { age: [16, 50], familia: ['soma'] }, text: '주신이 단원들을 방임하는 탓에 파밀리아가 점점 어수선해졌다.', choices: [
         { label: '기강을 바로잡으려 나선다', chance: { p: .5, stat: 'bond', per: .01, ok: { text: '뜻을 같이하는 단원들이 모여들었다.', fx: { bond: 6, power: 3 } }, fail: { text: '반발을 사 몸싸움이 벌어졌다.', fx: { hp: -15, bond: -4 } } } },
@@ -130,10 +130,10 @@ const EVENTS = [
     { id: 'curse_awaken', w: 8, once: true, cond: { age: [15, 60], flags: ['falna'], max: { bond: 5 } }, text: '극한의 스트레스와 세상에 대한 원망이 마법 슬롯에 끔찍한 주술적 힘인 커스(저주)로 발현되려 한다.', choices: [
         { label: '저주의 힘을 받아들인다', text: '강력한 힘을 얻었지만, 영혼의 일부가 깎여나갔다.', fx: { power: 15, hp: -10, bond: -5, flags: ['cursed'] } },
         { label: '정신력으로 억누른다', text: '끔찍한 힘을 억제하는 데 성공했지만 깊은 피로가 남았다.', fx: { hp: -5 } }] },
-    { id: 'blacksmith_forge', w: 18, cond: { age: [15, 60], job: ['blacksmith'], flags: ['falna'] }, text: '단야 어빌리티를 살려 직접 무기를 벼려냈다.', choices: [
+    { id: 'blacksmith_forge', w: 18, cond: { age: [15, 60], job: ['blacksmith'] }, text: '단야 어빌리티를 살려 직접 무기를 벼려냈다.', choices: [
         { label: '명검을 만들기 위해 심혈을 기울인다', chance: { p: 0.35, stat: 'dex', per: 0.005, ok: { text: '최고급 무기를 완성하여 큰돈을 벌었다.', fx: { valis: 3000, power: 5 } }, fail: { text: '강도 조절에 실패해 재료와 시간만 날렸다.', fx: { valis: -500, hp: -5 } } } },
         { label: '일반 무기를 대량 생산한다', text: '안전하고 꾸준하게 수입을 올렸다.', fx: { valis: 800, power: 1 } }] },
-    { id: 'have_child', w: 25, once: true, cond: { age: [20, 45], flags: ['partner'] }, text: '사랑하는 연인과 가족을 이루고, 작고 소중한 생명이 태어났다.', choices: [
+    { id: 'have_child', w: 25, once: true, cond: { age: [20, 45], hasPartner: true }, text: '사랑하는 연인과 가족을 이루고, 작고 소중한 생명이 태어났다.', choices: [
         { label: '은퇴하고 아이에게 전념한다', text: '위험한 일을 내려놓고 부모로서의 삶을 시작했다.', fx: { dropFamilia: true, clearFlags: ['adventurer'], bond: 15, hp: 5 } },
         { label: '모험을 계속하며 아이를 키운다', text: '육아와 일을 병행하느라 고단하지만 큰 행복을 느낀다.', fx: { hp: -10, bond: 8, power: 2 } }] },
     { id: 'hero_sacrifice', w: 3, once: true, cond: { age: [20, 60], min: { level: 6 } }, text: '오라리오에 흑룡이 습격해왔다. 도시의 존망이 걸린 절망적인 전투가 시작된다.', choices: [
