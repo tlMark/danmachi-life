@@ -112,3 +112,11 @@ button {
     margin: 2px;
 }
 #relations { color: #8ba25a; font-size: 0.85rem; margin-bottom: 12px; font-weight: bold; }
+
+#relations, #inventory { color: #999; font-size: 0.85rem; margin: 4px 0; }
+#stats b small { font-size: 0.7em; font-weight: normal; color: #999; }
+
+/* v1.7.7: 레벨업 강조, 0~2세 성장 기록 */
+.entry.levelup { border-left: 3px solid #d9a62e; background: rgba(217, 166, 46, .12); }
+.entry .lv { color: #b9831a; font-size: 1.05em; }
+.entry.growth { opacity: .9; font-style: italic; }

@@ -1,45 +1,33 @@
 // 의존: data.js (gachaData), events.js (MODS, FAMILIA_BIAS, DEFAULT_FALNA, MAX_LEVEL, EVENTS)
 const $ = id => document.getElementById(id);
 const ABIL = [['str', '힘'], ['vit', '내구'], ['dex', '기교'], ['agi', '민첩'], ['mag', '마력']];
-const RANKS = ['I', 'H', 'G', 'F', 'E', 'D', 'C', 'B', 'A', 'S'];
-const rankOf = v => v >= 1200 ? 'SSS' : v >= 1000 ? 'SS' : RANKS[Math.min(9, Math.floor(v / 100))];
-const rnd = (arr) => arr[0] + Math.floor(Math.random() * (arr[1] - arr[0] + 1));
-const EXP_TO_ABIL = 50;
-const ABIL_CAP_BREAK = 1499;
-const LEVELUP_ABIL = 500;
-
+const RANKS = ['I', 'H', 'G', 'F', 'E', 'D', 'C', 'B', 'A', 'S'];   // 100 단위
+const rankOf = v => v >= 1200 ? 'SSS' : v >= 1000 ? 'SS' : RANKS[Math.min(9, Math.floor(v / 100))];   // 1000~1199 SS, 1200~ SSS
+const rnd = ([a, b]) => a + Math.floor(Math.random() * (b - a + 1));
+const LEVELUP_ABIL = 500;    // 레벨업 조건: 능력치 하나가 D(500) 이상
 let S;
+GameCore.Items.setCatalog(gachaData.items);
+const relationCtx = () => ({ races: gachaData.races, mods: MODS });
 const JOB_LABELS = { child:'유년기', adventurer:'모험자', supporter:'서포터', guild_staff:'길드 직원', blacksmith:'대장장이', merchant:'상인', farmer:'농부', healer:'치유사', soldier:'병사', waitstaff:'종업원', retired:'은퇴자' };
-const REL_LABELS = { parent:'부모', sibling:'형제자매', friend:'친구', rival:'라이벌', mentor:'스승', student:'제자', party:'파티원', lover:'연인', spouse:'배우자', child:'자녀' };
-const NAMES = ['루크', '아리아', '가레스', '리리', '벨', '레피야', '아이즈', '티오나', '베이트', '핀', '리베리아', '미아', '클로에', '시르', '류', '아냐', '레나', '오탈', '헤딘', '회그니', '아렌'];
-
-const JOB_ECON = {
-    child: { income: [0, 0], cost: 20 },
-    adventurer: { income: [500, 3000], cost: 2000 },
-    supporter: { income: [300, 1000], cost: 600 },
-    guild_staff: { income: [1000, 1200], cost: 800 },
-    blacksmith: { income: [1200, 2500], cost: 1000 },
-    merchant: { income: [800, 4000], cost: 1200 },
-    farmer: { income: [300, 800], cost: 300 },
-    healer: { income: [800, 1800], cost: 600 },
-    soldier: { income: [900, 1100], cost: 500 },
-    waitstaff: { income: [500, 1000], cost: 500 },
-    retired: { income: [100, 400], cost: 300 }
-};
-
-function getRandomName() { return NAMES[Math.floor(Math.random() * NAMES.length)]; }
+// 조직·고용처(파밀리아가 아님, 팔나 없음)의 기본 직업. child 일 때만 적용된다.
+const JOB_ORG = { guild: 'guild_staff', hostess: 'waitstaff' };
+const JOB_FAMILIA = { hephaestus:'blacksmith', demeter:'farmer', miach:'healer', ares:'soldier', kali:'soldier' };
+function setAspiration(kind, source) {
+    S.aspirationHistory ||= [];
+    if (S.aspiration && S.aspiration.kind === kind) return;
+    S.aspiration = { kind, since: S.age, source, fulfilledAt: null };
+    S.aspirationHistory.push({ ...S.aspiration });
+}
 
 function setJob(job) {
     const previous = S.job;
     S.job = job;
     S.flags = S.flags.filter(f => !['adventurer','supporter','crafter','soldier'].includes(f));
-    if (job === 'adventurer') S.flags.push('adventurer');
+    if (job === 'adventurer') { S.flags.push('adventurer'); setAspiration('adventurer', 'job_assigned'); }
     if (job === 'supporter') S.flags.push('supporter');
     if (job === 'blacksmith') S.flags.push('crafter');
     if (job === 'soldier') S.flags.push('soldier');
-    if (previous !== job && S.logHistory) {
-        say(`직업이 ${JOB_LABELS[job] || job}(으)로 바뀌었다.`, 'event', S.age);
-    }
+    if (previous !== job && S.logHistory) S.logHistory.push({ age:S.age, type:'job', text:`직업이 ${JOB_LABELS[job] || job}(으)로 바뀌었다.` });
 }
 
 function getRandomItemByWeight(items, key = 'weight') {
@@ -50,20 +38,37 @@ function getRandomItemByWeight(items, key = 'weight') {
 }
 
 function switchScreen(id) {
-    if(!document.getElementById(id)) return;
     document.querySelectorAll('.screen').forEach(s => { s.classList.remove('active'); s.classList.add('hidden'); });
     $(id).classList.remove('hidden'); $(id).classList.add('active');
 }
 
+function getChoiceProbability(chance = {}, extraPower = 0) {
+    let rawStat = chance.stat
+        ? (ABIL.find(([key]) => key === chance.stat) ? S.abil[chance.stat] : S[chance.stat])
+        : 0;
+    if (chance.stat === 'power' && Number.isFinite(Number(extraPower))) rawStat = Number(rawStat) + Number(extraPower);
+    const statValue = Number.isFinite(Number(rawStat)) ? Number(rawStat) : 0;
+    const baseChance = Number.isFinite(Number(chance.p)) ? Number(chance.p) : 0.5;
+    const perStat = Number.isFinite(Number(chance.per)) ? Number(chance.per) : 0.005;
+    const computed = baseChance + statValue * perStat;
+    return Math.min(0.95, Math.max(0.05, Number.isFinite(computed) ? computed : baseChance));
+}
+
 function match(c = {}) {
     if (c.job && !(Array.isArray(c.job) ? c.job : [c.job]).includes(S.job)) return false;
-    if (c.age && (S.phase < c.age[0] || S.phase > c.age[1])) return false;
+    if (c.age && (S.phase < c.age[0] || S.phase > c.age[1])) return false;      // 육체 나이
+    if (c.cage && (S.age < c.cage[0] || S.age > c.cage[1])) return false;       // 달력 나이
     if (c.notRace && c.notRace.includes(S.race.id)) return false;
     if (c.familia && (!S.familia || !c.familia.includes(S.familia.id))) return false;
     if (c.origin && !c.origin.includes(S.origin.id)) return false;
     if (c.race && !c.race.includes(S.race.id)) return false;
     if (c.hasFamilia === true && !S.familia) return false;
     if (c.hasFamilia === false && S.familia) return false;
+    if (c.hasPartner === true && !GameCore.Relations.hasPartner(S)) return false;
+    if (c.hasPartner === false && GameCore.Relations.hasPartner(S)) return false;
+    if (c.noItem && c.noItem.some(id => (S.items || []).includes(id))) return false;     // 이미 가진 물건을 또 사지 않는다
+    if (c.relative && !GameCore.Relations.hasLivingRelative(S, c.relative)) return false;
+    if (c.noRelative && GameCore.Relations.hasLivingRelative(S, c.noRelative)) return false;
     if (c.flags && !c.flags.every(f => S.flags.includes(f))) return false;
     if (c.noFlags && c.noFlags.some(f => S.flags.includes(f))) return false;
     if (c.min) for (const k in c.min) if (S[k] < c.min[k]) return false;
@@ -72,142 +77,146 @@ function match(c = {}) {
 }
 
 function say(text, cls = '', age) {
-    if(!$('log')) return;
     const d = document.createElement('div');
     d.className = 'entry ' + cls;
     d.innerHTML = (age != null ? `<span class="age">${age}세</span>` : '') + text;
     $('log').appendChild(d);
-    if (S && S.logHistory) S.logHistory.push({ age: age == null ? S.age : age, type: cls.includes('event') ? 'event' : 'note', text: String(text).replace(/<[^>]*>/g, '') });
+    if (S && S.logHistory) S.logHistory.push({ age: age == null ? S.age : age, type: cls.includes('event') ? 'event' : (cls.includes('growth') ? 'growth' : 'note'), text: String(text).replace(/<[^>]*>/g, '') });
     d.scrollIntoView({ block: 'nearest' });
 }
 
 const hasFalna = () => S.flags.includes('falna');
 
+// S.power는 이벤트 판정용 종합 전투력입니다. 성장 계산은 core/growth.js가 담당합니다.
 function recompute() {
-    let itemPower = 0;
-    let itemHpMax = 0;
-    
-    S.inventory.forEach(inv => {
-        if (inv.equipped) {
-            const it = gachaData.items.find(i => i.id === inv.id);
-            if (it && it.fx) {
-                if (it.fx.power) itemPower += it.fx.power;
-                if (it.fx.hpMax) itemHpMax += it.fx.hpMax;
-            }
-        }
-    });
-
-    S.maxHp = 100 + itemHpMax;
-    S.hp = Math.min(S.maxHp, Math.max(0, S.hp));
+    // 장착 중인 무기·방어구만 전투력에 반영한다. 소모품은 사용될 때만 효과가 난다(core/items.js).
+    const itemPower = GameCore.Items.equipmentPower(S);
 
     if (hasFalna()) {
-        const sum = ABIL.reduce((s, [k]) => s + S.abil[k], 0);
-        S.power = Math.round((sum / 5 + S.hidden) / 8 + (S.level - 1) * 20) + itemPower;
+        const abilityTotal = GameCore.Growth.getAbilityTotal(S);
+        const hidden = Number.isFinite(S.hidden) ? Math.max(0, S.hidden) : 0;
+        const level = Number.isFinite(S.level) ? Math.max(1, S.level) : 1;
+        S.power = Math.round((abilityTotal / 5 + hidden) / 8 + (level - 1) * 20) + itemPower;
     } else {
-        S.power = Math.round(S.exp * 0.6) + itemPower;
+        const potential = Number.isFinite(S.potential) ? Math.max(0, S.potential) : 0;
+        S.power = Math.round(potential * 0.6) + itemPower;
     }
+    if (!Number.isFinite(S.power)) S.power = 0;
 }
 
-window.toggleEquip = function(idx) {
-    if (!S || !S.inventory[idx]) return;
-    const inv = S.inventory[idx];
-    inv.equipped = !inv.equipped;
-    say(`[장비] ${inv.equipped ? '장착' : '해제'}했습니다.`, 'note');
-    recompute();
-    renderStats();
-};
+// 레벨 표시: 팔나 전 '팔나 없음', 팔나 보유 'Lv.N', 팔나가 봉인된 뒤에는 봉인 전 레벨을 함께 표시한다.
+function levelLabel() {
+    if (hasFalna()) return `Lv.${S.level}`;
+    if ((S.levelHistory || []).length) return `봉인(Lv.${S.level})`;
+    return '팔나 없음';
+}
 
-window.useItem = function(idx) {
-    if (!S || !S.inventory[idx]) return;
-    const inv = S.inventory[idx];
-    const it = gachaData.items.find(i => i.id === inv.id);
-    if (it && it.fx) {
-        apply(it.fx);
-        say(`[아이템] ${it.label}을(를) 사용했습니다!`, 'note');
-    }
-    inv.uses = (inv.uses || 0) + 1;
-    if (inv.uses >= (it.maxUses || 1)) {
-        inv.count--;
-        inv.uses = 0;
-        if (inv.count <= 0) S.inventory.splice(idx, 1);
-    }
-    recompute();
-    renderStats();
-};
+function recordLevel(kind, from, to) {
+    S.levelHistory ||= [];
+    S.levelHistory.push({ age: S.age, kind, from, to });
+    S.maxLevel = Math.max(S.maxLevel || 0, to);
+}
+
+function recordChildhood(age) {
+    const rec = GameCore.Lineage.childhoodRecord(S, age);
+    if (!rec) return;
+    say(`<b>${rec.stage}</b> · ${rec.text}`, 'growth', age);
+}
 
 function renderStats() {
-    if(!$('stats')) return;
-    $('stats').innerHTML = [['나이', S.age], ['체력', Math.round(S.hp) + '/' + S.maxHp], ['레벨', hasFalna() ? S.level : '-'], ['발리스', S.valis]]
+    const ageLabel = S.phase + 2 <= S.age ? `${S.age}<small> (체감 ${S.phase})</small>` : S.age;
+    $('stats').innerHTML = [['나이', ageLabel], ['체력', Math.round(S.hp)], ['레벨', levelLabel()], ['인연', S.bond], ['발리스', S.valis]]
         .map(([n, v]) => `<div>${n}<b>${v}</b></div>`).join('');
     $('abil').innerHTML = hasFalna() ? ABIL.map(([k, n]) => `<div>${n}<b>${S.abil[k]} ${rankOf(S.abil[k])}</b></div>`).join('') : '';
-    $('familia').textContent = `직업: ${JOB_LABELS[S.job] || S.job} · 소속: ${S.familia ? S.familia.label : '없음'}`;
-    
-    let invHtml = '';
-    S.inventory.forEach((inv, idx) => {
-        const it = gachaData.items.find(i => i.id === inv.id);
-        if (!it) return;
-        const isEq = it.type === 'weapon' || it.type === 'armor';
-        const isCon = it.type === 'consumable';
-        const btn = isEq ? `<button class="inv-btn" onclick="window.toggleEquip(${idx})">${inv.equipped ? '해제' : '장착'}</button>` 
-                         : (isCon ? `<button class="inv-btn" onclick="window.useItem(${idx})">사용</button>` : '');
-        invHtml += `<span class="inv-item" style="${inv.equipped ? 'color:#e5a822;font-weight:bold;' : ''}">${it.label} ${inv.count > 1 ? 'x'+inv.count : ''} ${btn}</span> `;
-    });
-    $('inventory').innerHTML = invHtml ? `가방: ${invHtml}` : '가방: 비어있음';
-    
-    let relHtml = S.relations.filter(r => r.alive).map(r => `${REL_LABELS[r.type]||r.type} ${r.name}(${Math.floor(r.intimacy)})`).join(', ');
-    $('relations').innerHTML = relHtml ? `관계: ${relHtml}` : '관계: 없음';
+    $('familia').textContent = `종족: ${GameCore.Lineage.raceLabel(S)} · 직업: ${JOB_LABELS[S.job] || S.job}${(S.aspiration && S.aspiration.kind === 'adventurer' && !hasFalna()) ? '(모험자 지망 · 팔나 전)' : ''} · 소속: ${S.familia ? S.familia.label : '없음'}${S.employer ? ' · 고용처: ' + S.employer.label : ''}`;
+    const invStr = (S.items || []).map(id => GameCore.Items.label(S, id)).join(', ');
+    if($('inventory')) $('inventory').textContent = invStr ? `소지품: ${invStr}` : '소지품: 없음';
+    if ($('relations')) $('relations').textContent = describeRelations();
+}
+
+function describeRelations() {
+    const living = GameCore.Relations.getLiving(S);
+    const count = sub => living.filter(r => r.subType === sub).length;
+    const parts = [];
+    if (count('parent')) parts.push(`부모 ${count('parent')}${S.parentFamilia ? '(' + S.parentFamilia.label + ')' : ''}`);
+    if (count('sibling')) parts.push(`형제 ${count('sibling')}`);
+    if (count('child')) parts.push(`자녀 ${count('child')}`);
+    const partner = GameCore.Relations.getCurrentPartner(S);
+    parts.push(partner ? `연인 ${partner.age}세` : '연인 없음');
+    const gone = S.relations.filter(r => r && r.alive === false).length;
+    if (gone) parts.push(`떠난 이 ${gone}`);
+    return `가족·관계: ${parts.join(' · ')}`;
 }
 
 function convertExp() {
-    if (!hasFalna() || S.exp <= 0) return;
-    const w = ABIL.map(([k]) => (((MODS.races[S.race.id] || {}).bias || {})[k] || 1) * (((MODS.talents[S.talent.id] || {}).bias || {})[k] || 1));
-    const tot = w.reduce((a, b) => a + b, 0);
-    const gain = S.exp * EXP_TO_ABIL * (S.flags.includes('liaris') ? 1.5 : 1);
-    const cap = S.flags.includes('liaris') ? ABIL_CAP_BREAK : 999;
-    ABIL.forEach(([k], i) => { S.abil[k] = Math.min(cap, Math.round(S.abil[k] + gain * w[i] / tot * (1 - S.abil[k] / (cap + 300)))); });
-    S.exp = 0;
-    tryLevelUp();
+    if (!hasFalna()) return false;
+    const converted = GameCore.Growth.convertExcelia(S, MODS);
+    // A level-up can become available from a feat-only event after the D-rank
+    // threshold was already reached. Re-check even when no new Excelia converted.
+    const leveled = tryLevelUp();
+    return converted || leveled;
 }
 
 function tryLevelUp() {
-    if (S.level >= MAX_LEVEL || S.feat < S.level) return;
-    if (Math.max(...ABIL.map(([k]) => S.abil[k])) < LEVELUP_ABIL) return;
-    const sum = ABIL.reduce((s, [k]) => s + S.abil[k], 0);
-    S.feat -= S.level; S.level++; S.hidden += sum / 5 * 0.5;
+    const level = Number.isFinite(S.level) ? Math.max(1, S.level) : 1;
+    const feat = Number.isFinite(S.feat) ? Math.max(0, S.feat) : 0;
+    const validStats = ABIL.map(([k]) => Number.isFinite(S.abil[k]) ? Math.max(0, S.abil[k]) : 0);
+    if (level >= MAX_LEVEL || feat < level) return false;
+    if (Math.max(...validStats) < LEVELUP_ABIL) return false;
+    const sum = validStats.reduce((total, value) => total + value, 0);
+    S.feat = Math.max(0, feat - level);
+    S.level = level + 1;
+    S.hidden = Math.max(0, Number.isFinite(S.hidden) ? S.hidden : 0) + sum / 5 * 0.5;
     ABIL.forEach(([k]) => { S.abil[k] = 0; });
-    say(`위업을 인정받아 위계가 승화되었다. 이제 Lv.${S.level}.`, 'event');
+    recordLevel('levelup', level, S.level);
+    say(`위업을 인정받아 위계가 승화되었다. <b class="lv">Lv.${level} → Lv.${S.level}</b>`, 'event levelup');
     S.alias = pickAlias();
     if (S.level >= 2) say(`신회에서 이명이 정해졌다: ${S.alias.label}`, 'result');
+    return true;
 }
 
 function apply(fx = {}) {
-    for (const k of ['hp', 'bond', 'valis']) if (fx[k] !== undefined) S[k] += fx[k];
-    if (fx.power) S.exp += fx.power;
-    if (fx.feat) S.feat += fx.feat;
-    
-    (fx.flags || []).forEach(f => { if (!S.flags.includes(f)) S.flags.push(f); });
+    if (!fx || typeof fx !== 'object') fx = {};
+    for (const k of ['hp', 'bond', 'valis', 'feat']) {
+        const delta = Number(fx[k]);
+        if (Number.isFinite(delta)) S[k] = (Number.isFinite(S[k]) ? S[k] : 0) + delta;
+    }
+    if (Number.isFinite(Number(fx.power))) GameCore.Growth.addExperience(S, Number(fx.power));
+    S.hp = Math.min(GameCore.Items.hpCap(S), Number.isFinite(S.hp) ? S.hp : 0);
+    for (const k of ['bond', 'valis', 'feat', 'potential', 'excelia']) {
+        S[k] = Math.max(0, Number.isFinite(S[k]) ? S[k] : 0);
+    }
+    (Array.isArray(fx.flags) ? fx.flags : []).forEach(f => { if (typeof f === 'string' && !S.flags.includes(f)) S.flags.push(f); });
+
+    if (fx.relationship === 'romance') {
+        const partner = GameCore.Relations.createRomanticPartner(S, 'event', relationCtx());
+        if (partner) say('새로운 인연과 연인 관계가 되었다.', 'result');
+    }
+    if (fx.relationship === 'child') {
+        const child = GameCore.Relations.createChild(S, relationCtx());
+        if (child) say('새로운 가족이 생겼다.', 'result');
+    }
+    if (fx.relationshipEnd === 'breakup' && S.partnerId != null) {
+        GameCore.Relations.endRelationship(S, S.partnerId, 'breakup');
+        say('서로 다른 길을 걷기로 했다.', 'result');
+    }
+    if (fx.partnerDeath === true && S.partnerId != null) {
+        GameCore.Relations.endRelationship(S, S.partnerId, 'deceased');
+        say('소중한 사람이 세상을 떠났다.', 'result');
+    }
     
     if (fx.job) setJob(fx.job);
     else if ((fx.flags || []).includes('supporter') && S.job === 'child') setJob('supporter');
     else if ((fx.flags || []).includes('soldier') && S.job !== 'soldier') setJob('soldier');
     
     if (fx.getItem) {
-        const exist = S.inventory.find(i => i.id === fx.getItem);
-        if (exist) {
-            exist.count++;
-        } else {
-            S.inventory.push({ id: fx.getItem, count: 1, equipped: false, uses: 0 });
-        }
-        const item = gachaData.items.find(i => i.id === fx.getItem);
-        say(`아이템 획득: [${item ? item.label : fx.getItem}]`, 'result');
+        const got = GameCore.Items.acquire(S, fx.getItem);
+        if (got.consumedOnAcquire && got.def) say(`[${got.def.label}]을(를) 사용해 효과를 얻었다. 물건은 사라졌다.`, 'result');
+        else if (got.added && got.def) say(`아이템 획득: [${GameCore.Items.label(S, fx.getItem)}]`, 'result');
     }
     if (fx.loseItem) {
-        const idx = S.inventory.findIndex(i => i.id === fx.loseItem);
-        if (idx !== -1) {
-            S.inventory[idx].count--;
-            say(`아이템 상실: [${fx.loseItem}]`, 'result bad');
-            if (S.inventory[idx].count <= 0) S.inventory.splice(idx, 1);
-        }
+        GameCore.Items.remove(S, fx.loseItem);
+        say(`아이템 상실: [${fx.loseItem}]`, 'result bad');
     }
     
     if (fx.milestone) {
@@ -219,232 +228,211 @@ function apply(fx = {}) {
         }
     }
     
-    if (fx.clearFlags) S.flags = S.flags.filter(f => !fx.clearFlags.includes(f));
-    if (fx.clearFlags && fx.clearFlags.includes('adventurer') && S.job === 'adventurer') setJob('retired');
-    if (fx.dropFamilia) { S.familia = null; S.falnaAt = null; if (S.job === 'adventurer' || S.job === 'supporter') setJob('retired'); }
-    if (fx.familia === 'roll') rollFamilia();
-    
-    S.hp = Math.max(0, S.hp);
-    for (const k of ['bond', 'valis', 'exp', 'feat']) S[k] = Math.max(0, S[k]);
-    
-    convertExp(); 
-    recompute(); 
+    if (Array.isArray(fx.clearFlags)) S.flags = S.flags.filter(f => !fx.clearFlags.includes(f));
+    if (Array.isArray(fx.clearFlags) && fx.clearFlags.includes('adventurer') && S.job === 'adventurer') setJob('retired');
+    if (fx.dropFamilia) { closeMembership('left'); S.familia = null; S.falnaAt = null; S.familiaAt = null; if (S.job === 'adventurer' || S.job === 'supporter') setJob('retired'); }
+    if (fx.familia === 'roll') rollFamilia();   // 신의 파밀리아 전용 추첨(조직 고용은 fx.organization)
+    if (fx.organization) joinOrganization(fx.organization);
+    convertExp(); recompute(); renderStats();
 }
 
-function rollFamilia() {
+// 파밀리아 소속 이력. 입단·탈퇴·변경을 항목별로 남기고, 팔나 취득은 falnaHistory 에 따로 기록한다.
+function ensureHistory() { S.familiaHistory ||= []; S.falnaHistory ||= []; }
+function closeMembership(reason) {
+    ensureHistory();
+    const open = S.familiaHistory.find(m => m.leftAt == null);
+    if (open) { open.leftAt = S.age; open.leftReason = reason; }
+}
+function openMembership() {
+    ensureHistory();
+    closeMembership('changed');
+    S.nextMembershipId = (S.nextMembershipId || 1);
+    S.familiaHistory.push({ id: S.nextMembershipId++, familiaId: S.familia.id, label: S.familia.label, joinedAt: S.age, leftAt: null, leftReason: null,
+        falnaAt: null, falnaAlreadyHeld: hasFalna(), viaParent: !!(S.parentFamilia && S.parentFamilia.id === S.familia.id) });
+}
+
+// 조직·고용처에 고용된다(팔나 없음). 파밀리아 추첨과 섞지 않으며, fx.organization 으로 명시된 이벤트 선택에서만 호출된다.
+function joinOrganization(orgId) {
+    const org = (gachaData.organizations || []).find(o => o.id === orgId);
+    if (!org) throw new Error('unknown organization: ' + orgId);
+    S.employer = { id: org.id, label: org.label, kind: org.kind, since: S.age };
+    if (S.job === 'child' && JOB_ORG[org.id]) setJob(JOB_ORG[org.id]);
+    say(`${org.label}에 고용되었다 — ${org.desc} (신의 파밀리아가 아니므로 팔나는 받지 않는다)`, 'result');
+    apply((MODS.organizations[org.id] || {}).fx);
+}
+
+function rollFamilia(forcedId) {
     const pool = gachaData.familias.filter(f => f.id !== 'civilian').map(f => {
         const bias = (FAMILIA_BIAS[S.origin.id] || {})[f.id] || 1;
-        return { ...f, w: f.weight * bias };
+        const parentBias = (S.parentFamilia && S.parentFamilia.id === f.id) ? PARENT_FAMILIA_BIAS : 1;   // 부모 소속 파밀리아 추천(임의 가중치)
+        return { ...f, w: f.weight * bias * parentBias };
     });
-    S.familia = getRandomItemByWeight(pool, 'w');
+    S.familia = forcedId ? pool.find(f => f.id === forcedId) : getRandomItemByWeight(pool, 'w');
+    if (!S.familia) throw new Error('unknown familia: ' + forcedId);
+    S.familiaAt = S.age;   // 파밀리아 입단(소속 결정) 달력 나이 — 팔나 취득(falnaAt)과 별개로 기록
+    openMembership();
+    // Explicit occupational Familia mappings take precedence over the broad
+    // 'adv' capability flag (e.g. Hephaestus -> blacksmith, Ares -> soldier).
+    const chosenJob = JOB_FAMILIA[S.familia.id] || ((MODS.familias[S.familia.id] || {}).adv ? 'adventurer' : 'merchant');
+    // Familia and occupation are independent. Choose a default only for a child
+    // who has not selected an occupation; joining/rejoining must not overwrite it.
+    if (S.job === 'child') setJob(chosenJob);
     const m = MODS.familias[S.familia.id] || {};
+    if (m.adv && !hasFalna()) setAspiration('adventurer', 'familia_join');
     say(`소속이 정해졌다: ${S.familia.label} — ${S.familia.desc}`, 'result');
-    S.falnaAt = (m.adv || Math.random() < 0.3) ? Math.max(S.phase, rnd(m.falna || DEFAULT_FALNA)) : null;
+    S.falnaAt = (m.adv || Math.random() < 0.3) ? Math.max(S.age, rnd(m.falna || DEFAULT_FALNA)) : null;   // 팔나 수령은 달력 나이 기준
+    // 2a-role(기록만): 팔나를 받을 예정이거나 이미 보유한 소속 = member(정식 팔나 단원), 팔나가 없는 소속 = protected(보호·거주 대상).
+    // 판정 로직은 바꾸지 않았다. 조직 고용은 S.employer 로만 기록되며 소속 이력에 들어가지 않는다.
+    { const mem = S.familiaHistory[S.familiaHistory.length - 1]; if (mem) mem.role = (S.falnaAt != null || hasFalna()) ? 'member' : 'protected'; }
     apply(m.fx);
     checkFalna();
 }
 
 function checkFalna() {
-    if (!S.familia || S.falnaAt == null || hasFalna() || S.phase < S.falnaAt) return;
-    S.flags.push('falna'); 
-    if (S.level < 1) S.level = 1;
-    say(`${S.familia.label}의 주신에게 팔나를 받았다. 등에 스테이터스가 새겨졌다.`, 'event', S.age);
-    convertExp(); recompute(); 
-}
-
-function addNewRelation(type) {
-    const types = type ? [type] : ['friend', 'rival', 'mentor', 'lover'];
-    const t = types[Math.floor(Math.random() * types.length)];
-    const rel = {
-        id: 'rel_' + Date.now() + Math.floor(Math.random()*1000),
-        name: getRandomName(),
-        type: t,
-        age: S.age + rnd([-5, 5]),
-        intimacy: 10 + rnd([0, 10]),
-        alive: true
-    };
-    S.relations.push(rel);
-    say(`[인연] 새로운 ${REL_LABELS[t] || t} '${rel.name}'(을)를 만났다.`, 'note');
+    if (!S.familia || S.falnaAt == null || hasFalna() || S.age < S.falnaAt) return;
+    const m = MODS.familias[S.familia.id] || {};
+    if (!S.flags.includes('falna')) S.flags.push('falna');
+    ensureHistory();
+    S.falnaHistory.push({ familiaId: S.familia.id, at: S.age, membershipIndex: S.familiaHistory.length - 1 });
+    if (S.aspiration && S.aspiration.kind === 'adventurer' && S.aspiration.fulfilledAt == null) { S.aspiration.fulfilledAt = S.age; const h = (S.aspirationHistory || []).filter(x => x.kind === 'adventurer').pop(); if (h) h.fulfilledAt = S.age; }
+    const mem = S.familiaHistory[S.familiaHistory.length - 1]; if (mem && mem.leftAt == null) mem.falnaAt = S.age;
+    // Familia membership/Falna does not itself define the member's occupation.
+    // setJob() remains the only authority for the adventurer role flag.
+    if (S.level < 1) { S.level = 1; recordLevel('falna', 0, 1); say(`<b class="lv">팔나 없음 → Lv.1</b>`, 'levelup', S.age); }
+    else { recordLevel('falna_again', S.level, S.level); say(`<b class="lv">팔나 재취득 · Lv.${S.level}</b>`, 'levelup', S.age); }
+    say(`${S.familia.label}의 신에게 팔나를 받았다. 등에 스테이터스가 새겨졌다.`, 'event', S.age);
+    GameCore.Growth.carryPotential(S);     // 팔나 전 잠재력의 일부가 엑세리아로 이월된다
+    convertExp(); recompute(); renderStats();
 }
 
 function startLife() {
     const origin = getRandomItemByWeight(gachaData.origins);
     const race = getRandomItemByWeight(gachaData.races);
     const talent = getRandomItemByWeight(gachaData.talents);
-    S = { age: 0, phase: 0, hp: 70, maxHp: 100, power: 0, exp: 0, feat: 0, level: 0, hidden: 0, bond: 0, valis: 0,
-          abil: { str: 0, vit: 0, dex: 0, agi: 0, mag: 0 }, flags: [], done: [], familia: null, falnaAt: null,
+    S = { age: 0, chronologicalAge: 0, physicalAge: 0, phase: 0, hp: 70, power: 0,
+          potential: 0, excelia: 0, feat: 0, level: 0, hidden: 0, bond: 0, valis: 0,
+          abil: { str: 0, vit: 0, dex: 0, agi: 0, mag: 0 }, flags: [], done: [], familia: null, falnaAt: null, familiaAt: null, familiaHistory: [], falnaHistory: [], aspiration: null, aspirationHistory: [], employer: null, parentFamilia: null,
           alias: null, origin, race, talent, cause: '', job: 'child',
-          eventCounts: {}, lastEventPhase: {}, recentEvents: [], milestones: [], logHistory: [], inventory: [], relations: [] };
-    
-    if($('log')) $('log').innerHTML = ''; 
-    if($('choices')) $('choices').innerHTML = '';
-    
+          eventCounts: {}, lastEventPhase: {}, recentEvents: [], milestones: [], logHistory: [],
+          items: [], itemUses: {}, itemsConsumed: [], relations: [], partnerId: null, nextRelationId: 1,
+          application: GameCore.Recruit.newApplicationState(), nextMembershipId: 1, minorFamilias: [],
+          raceSubtype: null, lineageSeed: 0, levelHistory: [], maxLevel: 0 };   // 2a: 비활성 데이터 모델(동작 연결 없음)
+    $('log').innerHTML = ''; $('choices').innerHTML = '';
     switchScreen('screen-play');
     apply((MODS.origins[origin.id] || {}).fx);
     apply((MODS.races[race.id] || {}).fx);
     apply((MODS.talents[talent.id] || {}).fx);
-    
-    addNewRelation('parent');
-    if (Math.random() < 0.5) addNewRelation('sibling');
-
     say(`<b>${origin.label}</b>에서 <b>${race.label}</b>으로 태어났다.<br>${origin.desc}<br>${race.desc}<br>타고난 재능: <b>${talent.label}</b> — ${talent.desc}`, 'event', 0);
-    if (Math.random() < 0.15) {
-        say('부모가 파밀리아 소속이어서, 태어나자마자 같은 파밀리아의 일원이 되었다.', 'result', 0);
-        rollFamilia();
-        S.flags.push('born_in_familia');
+    const family = GameCore.Relations.generateFamily(S, relationCtx());
+    const parents = family.filter(r => r.subType === 'parent').length, elder = family.filter(r => r.subType === 'sibling').length;
+    say(parents || elder ? `곁에는 ${[parents ? `부모 ${parents}명` : '', elder ? `손위 형제 ${elder}명` : ''].filter(Boolean).join('과 ')}이(가) 있었다.` : '의지할 가족 없이 홀로 태어났다.', 'result', 0);
+    // 가족 생성 후의 상태로 파생 시드를 확정하고, 수인이면 하위 유형을 정한다(게임 난수열 미사용).
+    S.lineageSeed = GameCore.Lineage.lifeSeed(S);
+    if (S.race.id === 'beastman') {
+        S.raceSubtype = GameCore.Lineage.pickBeastmanSubtype(S.lineageSeed);
+        say(`수인 중에서도 <b>${S.raceSubtype.label}</b>의 특징을 지니고 태어났다.${S.raceSubtype.canon === 'unverified' ? ' <small>(비공식 게임 설정)</small>' : ''}`, 'result', 0);
     }
-    
+    recordChildhood(0);
+    // 부모의 파밀리아 소속(15%, 임의 값). 부모 NPC 레코드에 소속을 기록하고, 자녀의 공식 입단은 별개 사건으로 둔다.
+    const parentRecords = family.filter(r => r.subType === 'parent');
+    if (parentRecords.length && Math.random() < 0.15) {
+        const pool = gachaData.familias.filter(f => f.id !== 'civilian').map(f => ({ ...f, w: f.weight * ((FAMILIA_BIAS[S.origin.id] || {})[f.id] || 1) }));
+        const pf = getRandomItemByWeight(pool, 'w');
+        S.parentFamilia = { id: pf.id, label: pf.label };
+        parentRecords.forEach(r => { r.familia = { id: pf.id, label: pf.label }; });
+        S.flags.push('parents_in_familia');
+        if (NEWBORN_MEMBERSHIP) {
+            say('부모가 파밀리아 소속 모험자여서, 태어나자마자 같은 파밀리아의 일원이 되었다.', 'result', 0);
+            rollFamilia(pf.id);   // 대조군: 부모와 같은 파밀리아에 즉시 입단
+            S.flags.push('born_in_familia');
+        } else {
+            say(`부모는 ${pf.label} 소속이었다. (자녀의 정식 입단은 성장한 뒤 따로 이루어진다)`, 'result', 0);
+        }
+    }
     nextYear();
 }
 
+// 직업별 연간 활동 엑세리아(팔나 전에는 잠재력). 수치는 events.js ANNUAL_ACTIVITY(임의 밸런스 값).
+function yearlyActivity() {
+    if (S.age < 6) return;
+    const amount = GameCore.Growth.rollAnnualExcelia(S, ANNUAL_ACTIVITY);
+    if (amount > 0) GameCore.Growth.addExperience(S, amount);
+    if (hasFalna()) convertExp();
+    recompute();
+}
+
+// 체력 회복 단위: 육체 나이 1년당 perYear. 달력 1년에 실제로 흐른 육체 나이(aging.rate)에 비례한다.
+// (v1.7 은 달력 1년당 +1 이라 노화가 느린 엘프·고레벨이 과도하게 회복했다 — QA_AUDIT_v1.7 §3)
+// HP_REGEN_MODE: 'physical'(기본) | 'calendar'(v1.7 방식, A/B 비교용) | 'off'
+function recoverYearly(rate) {
+    if (HP_REGEN_MODE === 'off') return;
+    const step = HP_REGEN.find(r => S.phase <= r.untilPhase);
+    if (!step) return;
+    const scale = HP_REGEN_MODE === 'calendar' ? 1 : Math.max(0, Number(rate) || 0);
+    S.hp = Math.min(GameCore.Items.hpCap(S), S.hp + step.perYear * scale);
+}
+
+// 구조 소모품 사용. 체력이 RESCUE_HP 이하일 때 1회, 그래도 0 이하면 남은 포션을 이어서 사용한다.
+function tryRescue() {
+    let used = false;
+    for (let guard = 0; guard < 8; guard++) {
+        if (used && S.hp > 0) break;
+        const rescue = GameCore.Items.takeRescue(S);
+        if (!rescue) break;
+        S.hp = Math.min(GameCore.Items.hpCap(S), Math.max(S.hp, 0) + rescue.heal);
+        say(`[${rescue.label}]을(를) 사용해 간신히 버텨 냈다.`, 'result');
+        used = true;
+    }
+    if (used) renderStats();
+    return used;
+}
+
+const RELATION_LABEL = { parent: '부모', sibling: '형제자매', child: '자녀' };
+function handleRelationEvents(events) {
+    (events || []).forEach(ev => {
+        const r = ev.relation;
+        if (ev.kind === 'birth') { say('어머니가 새 아이를 낳았다. 동생이 생겼다.', 'result', S.age); return; }
+        if (ev.kind !== 'death') return;
+        const isPartner = r.isPartner === true || r.type === 'partner' || r.subType === 'romance_candidate';
+        const who = isPartner ? '연인' : (r.name || RELATION_LABEL[r.subType] || '가까운 이');
+        const how = ev.cause === 'natural' ? '긴 생을 마치고 세상을 떠났다.' : '뜻밖의 사고와 병으로 세상을 떠났다.';
+        say(`${who}이(가) ${how}`, 'result bad', S.age);
+        S.flags.includes('bereaved') || S.flags.push('bereaved');
+        S.bond = Math.max(0, S.bond - (isPartner ? 8 : r.subType === 'child' ? 10 : 4));
+        S.hp = Math.max(1, S.hp - (isPartner || r.subType === 'child' ? 5 : 2));   // 상실감으로 체력이 줄지만 그 자체로 사망하지는 않는다
+    });
+}
+
 function nextYear() {
-    if($('choices')) $('choices').innerHTML = '';
-    if (S.hp <= 0 || S.cause) return endLife();
-    
-    S.age++;
-    const rate = (MODS.races[S.race.id] || {}).rate || 1;
-    S.phase = S.age <= 20 ? S.age : Math.floor(20 + (S.age - 20) / rate);
-    
-    checkFalna();
-    
-    let incRange = (JOB_ECON[S.job] || JOB_ECON['child']).income;
-    let cost = (JOB_ECON[S.job] || JOB_ECON['child']).cost;
-    let income = rnd(incRange);
-    
-    if (S.job === 'adventurer') income += (S.level * 800) + (S.power * 10);
-    else if (S.job === 'merchant') income += (S.power * 20);
-    else if (S.job === 'blacksmith') income += (S.power * 15);
-    
-    if (S.phase < 13) { income = Math.floor(income * 0.2); cost = Math.floor(cost * 0.3); } 
-    else if (S.phase < 20) { income = Math.floor(income * 0.7); cost = Math.floor(cost * 0.8); } 
-    
-    cost += Math.floor(S.age * 2); 
-    
-    S.valis += income;
-    S.valis -= cost;
-    
-    let econMsg = `[경제] 한 해 동안 ${income}발리스를 벌고, 생활비로 ${cost}발리스를 지출했다.`;
-    if (S.valis < 0) {
-        S.valis = 0;
-        S.hp -= 15;
-        econMsg += ` 자금이 부족해 굶주렸고 체력이 떨어졌다.`;
-    } else {
-        S.hp += 5; 
-    }
-    if (S.age > 12) say(econMsg, 'note', S.age);
-    
-    S.relations.forEach(r => {
-        if (r.alive) {
-            r.age++;
-            if (r.age > 65 && Math.random() < 0.03 + ((r.age-65)*0.01)) {
-                r.alive = false;
-                say(`[부고] ${REL_LABELS[r.type]||r.type} ${r.name}이(가) 세상을 떠났다...`, 'bad');
-                S.hp -= 10;
-            }
+    $('choices').innerHTML = '';
+    let skipped = 0;
+    while (true) {
+        const aging = GameCore.Aging.advanceYear(S, MODS);
+        handleRelationEvents(GameCore.Relations.advanceYear(S, MODS));
+        if (S.age <= 2) recordChildhood(S.age);   // 0~2세는 사건이 없어도 성장 기록을 남긴다(난수 소비 없음)
+        checkFalna();
+        yearlyActivity();
+        if (S.phase > 60) S.hp -= aging.rate;
+        else recoverYearly(aging.rate);
+        tryRescue();   // 연간 피해 직후, 사망 판정 전에 구조 포션 사용
+        if (S.hp <= 0) { S.cause = '몸이 더는 버티지 못했다.'; return endLife(); }
+        const naturalDeathChance = GameCore.Aging.naturalDeathChance(S.phase, aging.rate);
+        if (S.phase > 65 && Math.random() < naturalDeathChance) { S.cause = '긴 생을 마치고 조용히 눈을 감았다.'; return endLife(); }
+        const pool = EVENTS.filter(e => {
+            const count = S.eventCounts[e.id] || 0;
+            const last = S.lastEventPhase[e.id];
+            if (e.once && S.done.includes(e.id)) return false;
+            if (!e.once && count >= (e.maxTimes || 2)) return false;
+            if (last != null && S.phase - last < (e.cool || 2)) return false;
+            return match(e.cond);
+        }).map(e => ({ ...e, w: e.w * (S.recentEvents.slice(-4).includes(e.id) ? 0.12 : 1) }));
+        const e = getRandomItemByWeight([...pool, { w: 5, none: true }], 'w');
+        if (!e.none) {
+            renderStats();
+            if (skipped) say(`평온하게 ${skipped}년이 흘렀다.`, 'result');
+            return showEvent(e);
         }
-    });
-
-    if (S.phase > 60) S.hp -= Math.floor((S.phase - 60) / 2); 
-    recompute();
-
-    if (S.hp <= 0) {
-        S.cause = '건강 악화와 누적된 피로로 쓰러졌다.';
-        return endLife();
-    }
-    if (S.phase > 65 && Math.random() < (S.phase - 65) * 0.04) {
-        S.cause = '긴 생을 마치고 조용히 눈을 감았다.';
-        return endLife();
-    }
-    
-    showAnnualActivity();
-}
-
-function showAnnualActivity() {
-    renderStats();
-    say(`--- ${S.age}세. 올해는 어떤 활동에 집중할까? ---`, 'note');
-    if(!$('choices')) {
-        const acts = ['train', 'work', 'rest', 'social'];
-        return doActivity(acts[Math.floor(Math.random()*acts.length)]);
-    }
-    
-    const activities = [
-        { label: '전투 및 기술 훈련', type: 'train' },
-        { label: '직업 활동 (돈 벌기)', type: 'work' },
-        { label: '휴식과 건강 관리', type: 'rest' },
-        { label: '인간관계 형성', type: 'social' }
-    ];
-    
-    activities.forEach(act => {
-        const b = document.createElement('button');
-        b.className = 'choice activity-btn'; 
-        b.textContent = act.label;
-        b.onclick = () => doActivity(act.type);
-        $('choices').appendChild(b);
-    });
-
-    if ($('auto').checked) setTimeout(() => {
-        const bs = $('choices').querySelectorAll('button.activity-btn');
-        if (bs.length) bs[Math.floor(Math.random() * bs.length)].click();
-    }, 400);
-}
-
-function doActivity(type) {
-    if($('choices')) $('choices').innerHTML = '';
-    let msg = '';
-    if (type === 'train') {
-        msg = '피나는 훈련을 통해 성장을 이뤘다.';
-        S.exp += 15 + (hasFalna() ? 10 : 0);
-        S.hp -= 10;
-    } else if (type === 'work') {
-        msg = '일에 매진하여 추가 수입을 얻었다.';
-        S.valis += rnd([200, 1500]);
-        S.hp -= 5;
-    } else if (type === 'rest') {
-        msg = '충분한 휴식을 취하며 심신을 달랬다.';
-        S.hp += 25;
-        S.valis -= 100;
-    } else if (type === 'social') {
-        msg = '주변 사람들과 교류하며 인연을 쌓았다.';
-        S.bond += 5;
-        S.valis -= 200;
-        
-        const aliveRels = S.relations.filter(r => r.alive);
-        if (aliveRels.length > 0) {
-            const rel = aliveRels[Math.floor(Math.random() * aliveRels.length)];
-            rel.intimacy += 5;
-            msg += ` (${rel.name}와의 친밀도 상승)`;
-        }
-        if (Math.random() < 0.25) addNewRelation();
-    }
-    
-    say(msg, 'result');
-    recompute();
-    
-    if (S.hp <= 0) {
-        S.cause = '무리한 활동으로 쓰러졌다.';
-        return endLife();
-    }
-    
-    triggerRandomEvent();
-}
-
-function triggerRandomEvent() {
-    const pool = EVENTS.filter(e => {
-        const count = S.eventCounts[e.id] || 0;
-        const last = S.lastEventPhase[e.id];
-        if (e.once && S.done.includes(e.id)) return false;
-        if (!e.once && count >= (e.maxTimes || 2)) return false;
-        if (last != null && S.phase - last < (e.cool || 2)) return false;
-        return match(e.cond);
-    }).map(e => ({ ...e, w: e.w * (S.recentEvents.slice(-4).includes(e.id) ? 0.12 : 1) }));
-    
-    const e = getRandomItemByWeight([...pool, { w: 40, none: true }], 'w');
-    
-    if (!e.none) {
-        showEvent(e);
-    } else {
-        say('특별한 사건 없이 무탈하게 한 해가 저물었다.', 'note');
-        finishYear();
+        if (S.age > 2) skipped++;   // 0~2세는 성장 기록이 이미 남았으므로 '평온하게 N년' 집계에서 뺀다
     }
 }
 
@@ -455,11 +443,6 @@ function showEvent(e) {
     S.lastEventPhase[e.id] = S.phase;
     S.recentEvents.push(e.id);
     if (S.recentEvents.length > 8) S.recentEvents.shift();
-    
-    if(!$('choices')) {
-        return choose(e.choices[Math.floor(Math.random()*e.choices.length)]);
-    }
-
     e.choices.forEach(ch => {
         const b = document.createElement('button');
         b.className = 'choice'; b.textContent = ch.label;
@@ -467,23 +450,30 @@ function showEvent(e) {
         $('choices').appendChild(b);
     });
     if ($('auto').checked) setTimeout(() => {
-        const bs = $('choices').querySelectorAll('button.choice');
+        const bs = $('choices').querySelectorAll('button');
         if (bs.length) bs[Math.floor(Math.random() * bs.length)].click();
     }, 800);
 }
 
 function choose(ch) {
-    if($('choices')) $('choices').innerHTML = '';
+    $('choices').innerHTML = '';
     let r = ch;
     if (ch.chance) {
         const c = ch.chance;
-        const statVal = c.stat ? (ABIL.find(([k]) => k === c.stat) ? S.abil[c.stat] : S[c.stat]) : 0;
-        const p = Math.min(.95, Math.max(.05, c.p + (statVal * (c.per || .005))));
+        let p = getChoiceProbability(c);
+        if (c.stat === 'power') {
+            const boost = GameCore.Items.takePowerBoost(S, p);
+            if (boost) {
+                p = getChoiceProbability(c, boost.bonus);
+                say(`[${boost.label}]을(를) 사용했다.` + (boost.remaining > 0 ? ` (남은 횟수 ${boost.remaining})` : ' 더는 쓸 수 없게 되었다.'), 'result');
+            }
+        }
         r = Math.random() < p ? c.ok : c.fail;
     }
     const bad = r.fx && (r.fx.die || r.fx.hp < -30);
     say(r.text, 'result' + (bad ? ' bad' : ''));
     apply(r.fx);
+    if (!(r.fx && r.fx.die)) tryRescue();
     
     if (r.fx && r.fx.die) {
         if (typeof r.fx.die === 'string') {
@@ -496,15 +486,10 @@ function choose(ch) {
     }
     
     if (S.hp <= 0) { 
-        S.cause = (r.fx && r.fx.hp <= -20) ? r.text + ' 끝내 상처를 이겨 내지 못했다.' : '누적된 피해로 몸이 끝내 버티지 못했다.'; 
+        S.cause = (r.fx && r.fx.hp <= -20) ? r.text + ' 끝내 상처를 이겨 내지 못했다.' : '쌓인 피로와 세월 탓에 몸이 끝내 버티지 못했다.'; 
         return endLife(); 
     }
     
-    finishYear();
-}
-
-function finishYear() {
-    if(!$('choices')) return nextYear();
     const b = document.createElement('button');
     b.textContent = '다음 해로'; b.onclick = nextYear;
     $('choices').appendChild(b);
@@ -521,34 +506,51 @@ function pickAlias() {
 }
 
 function endLife() {
-    if($('choices')) $('choices').innerHTML = '';
+    $('choices').innerHTML = '';
+    // 규칙: 사망 시 체력은 0 으로 고정한다(음수 체력 상태를 결과에 남기지 않는다).
+    S.hp = Math.max(0, Number.isFinite(S.hp) ? S.hp : 0);
     const alias = S.alias || pickAlias();
     const notes = [];
     if (S.flags.includes('liaris')) notes.push('동경이 꺾이지 않는 한 성장을 멈추지 않았던 사람.');
     if (S.flags.includes('xenos_friend')) notes.push('몬스터와 비밀스러운 유대를 맺었던 사람.');
     if (S.flags.includes('scholar')) notes.push('신성문자를 읽어 낼 줄 알았던 학자.');
     if (S.flags.includes('fisher')) notes.push('말년을 메렌의 바닷가에서 보냈다.');
-    if (S.flags.includes('partner')) notes.push('곁에 함께한 사람이 있었다.');
-    
+    if (GameCore.Relations.hasPartner(S)) notes.push('성인인 연인과 서로의 삶을 함께했다.');
+    const lost = S.relations.filter(r => r && r.alive === false);
+    if (lost.length) notes.push(`살아오며 ${lost.length}명의 가까운 이를 떠나보냈다.`);
+    const kids = S.relations.filter(r => r && r.subType === 'child').length;
+    if (kids) notes.push(`자녀 ${kids}명을 두었다.`);
     const milestones = S.milestones.length ? S.milestones.map(m => `- ${m.age}세: ${m.label}`).join('\n') : '없음';
     const timeline = S.logHistory.filter(x => x.type === 'event' || x.type === 'job').slice(-18).map(x => `${x.age}세: ${x.text}`).join('\n');
-    const abil = S.level >= 1 ? '\n' + ABIL.map(([k, n]) => `${n} ${S.abil[k]}(${rankOf(S.abil[k])})`).join(' · ') : '';
-    
-    const content = `이명: ${alias.label}\n- ${alias.desc}\n\n` +
-        `${S.origin.label} 출신 ${S.race.label}\n소속: ${S.familia ? S.familia.label : '없음'}\n직업: ${JOB_LABELS[S.job] || S.job}\n재능: ${S.talent.label}\n\n` +
-        `${S.level >= 1 ? '도달 레벨: Lv.' + S.level + abil + '\n' : ''}향년 ${S.age}세 — ${S.cause}\n인연 ${S.bond} · 발리스 ${S.valis}` +
-        `\n\n소지품: ${S.inventory && S.inventory.length ? S.inventory.map(inv => { const it = gachaData.items.find(i=>i.id===inv.id); return it ? it.label + (inv.equipped ? '[장착]' : '') : inv.id; }).join(', ') : '없음'}` +
-        `\n\n관계: ${S.relations.filter(r=>r.alive).map(r=>`${REL_LABELS[r.type]||r.type} ${r.name}`).join(', ') || '없음'}` +
-        `\n\n일생의 업적\n${milestones}` +
-        (timeline ? `\n\n주요 연표\n${timeline}` : '') +
-        (notes.length ? '\n\n' + notes.join('\n') : '');
-
-    if($('result-content')) {
-        $('result-content').innerText = content;
-        switchScreen('screen-result');
-        window.scrollTo(0, 0);
-    }
+    const abilitySummary = S.level >= 1
+        ? ABIL.map(([k, label]) => `${label} ${S.abil[k]}(${rankOf(S.abil[k])})`).join(' · ')
+        : '';
+    const lines = [
+        `이명: ${alias.label}`,
+        `- ${alias.desc}`,
+        '',
+        `${S.origin.label} 출신 ${GameCore.Lineage.raceLabel(S)}`,
+        `소속: ${S.familia ? S.familia.label : '없음'}${S.employer ? ' (고용처: ' + S.employer.label + ')' : ''}`,
+        `직업: ${JOB_LABELS[S.job] || S.job}`,
+        `재능: ${S.talent.label}`,
+        ''
+    ];
+    lines.push(`최고 레벨: ${(S.maxLevel || 0) >= 1 ? 'Lv.' + S.maxLevel : '팔나 없음'}${(S.maxLevel || 0) >= 1 && !hasFalna() ? ' (생애 말 팔나 봉인)' : ''}`);
+    if ((S.levelHistory || []).length) lines.push('레벨 이력: ' + S.levelHistory.map(h => h.kind === 'falna' ? `${h.age}세 팔나 취득(Lv.1)` : h.kind === 'falna_again' ? `${h.age}세 팔나 재취득(Lv.${h.to})` : `${h.age}세 Lv.${h.from}→Lv.${h.to}`).join(' · '));
+    if (S.level >= 1) lines.push(abilitySummary);
+    lines.push('');
+    lines.push(`향년 ${S.age}세${S.phase + 2 <= S.age ? ` (체감 ${S.phase}세)` : ''} — ${S.cause}`, `인연 ${S.bond} · 발리스 ${S.valis}`, '');
+    lines.push(`소지품: ${S.items && S.items.length ? S.items.map(id => GameCore.Items.label(S, id)).join(', ') : '없음'}`, '', '일생의 업적', milestones);
+    if (timeline) lines.push('', '주요 연표', timeline);
+    if (S.raceSubtype && S.raceSubtype.canon === 'unverified') notes.push(`※ 수인 하위 유형 '${S.raceSubtype.label}'은 원작 근거가 확인되지 않은 비공식 게임 설정입니다.`);
+    if (notes.length) lines.push('', ...notes);
+    $('result-content').innerText = lines.join('\n');
+    switchScreen('screen-result');
+    window.scrollTo(0, 0);
 }
 
-if($('btn-start')) $('btn-start').addEventListener('click', () => { switchScreen('screen-loading'); setTimeout(startLife, 1500); });
-if($('btn-retry')) $('btn-retry').addEventListener('click', () => switchScreen('screen-start'));
+$('btn-start').addEventListener('click', () => {
+    switchScreen('screen-loading');
+    setTimeout(startLife, 1500);
+});
+$('btn-retry').addEventListener('click', () => switchScreen('screen-start'));

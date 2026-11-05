@@ -20,23 +20,26 @@ const gachaData = {
         { id: "renard", label: "르나르", weight: 4, desc: "극동 출신이 많으며 요술을 다룬다고 알려진 희귀한 여우 수인." },
         { id: "xenos", label: "이단아(제노스)", weight: 1, desc: "몬스터임에도 이성과 감정을 가지고 태어난 던전의 돌연변이." }
     ],
+    // 신격 파밀리아가 아닌 조직·고용처(팔나를 주지 않는다). v1.7.2: familias 에서 분리.
+    organizations: [
+        { id: "hostess", label: "풍요의 여주인", weight: 40, kind: "tavern", desc: "전직 모험자 출신의 강자들이 웨이트리스로 일하고 있는 위험하고 활기찬 주점." },
+        { id: "guild", label: "길드", weight: 30, kind: "administration", desc: "우라노스의 뜻에 따라 마석을 매입하고 던전과 오라리오를 통제하는 행정 기관." }
+    ],
     familias: [
-        { id: "civilian", label: "무소속 (일반 시민)", weight: 300, desc: "등에 은총을 새기지 않고 평범한 생업에 종사하는 주민." },
-        { id: "ares", label: "아레스 파밀리아", weight: 150, desc: "라키아의 정규군 그 자체로, 머릿수만큼은 세계 최대를 자랑하는 군단." },
-        { id: "ganesha", label: "가네샤 파밀리아", weight: 120, desc: "오라리오의 경찰 역할을 수행하며 군중을 통제하는 최대 규모의 파밀리아." },
-        { id: "hephaestus", label: "헤파이스토스 파밀리아", weight: 90, desc: "오라리오의 무장 수준을 책임지는 최고의 단야(대장장이) 파벌." },
-        { id: "loki", label: "로키 파밀리아", weight: 60, desc: "강력한 제일급 모험자들을 다수 보유한 오라리오 최강의 탐색 파벌." },
-        { id: "freya", label: "프레야 파밀리아", weight: 60, desc: "여신에 대한 맹목적 사랑으로 똘똘 뭉친 오라리오 최강의 무투 파벌." },
-        { id: "kali", label: "칼리 파밀리아", weight: 50, desc: "투국 텔스큐라를 지배하며, 살육을 통해 강해지는 것을 의무로 삼는 집단." },
-        { id: "hermes", label: "헤르메스 파밀리아", weight: 40, desc: "전 세계를 누비며 물건을 나르고 정보를 수집하는 다재다능한 파밀리아." },
-        { id: "hostess", label: "풍요의 여주인", weight: 40, desc: "전직 모험자 출신의 강자들이 웨이트리스로 일하고 있는 위험하고 활기찬 주점." },
-        { id: "guild", label: "길드", weight: 30, desc: "우라노스의 뜻에 따라 마석을 매입하고 던전과 오라리오를 통제하는 행정 기관." },
-        { id: "demeter", label: "데메테르 파밀리아", weight: 50, desc: "대지의 여신 아래에서 대형 농장을 꾸려 가는 농업 파밀리아." },
-        { id: "miach", label: "미아흐 파밀리아", weight: 25, desc: "의술과 약 제조를 업으로 삼는 작은 파밀리아." },
-        { id: "takemikazuchi", label: "타케미카즈치 파밀리아", weight: 20, desc: "신에게 직접 무예를 전수받는 파밀리아." },
-        { id: "soma", label: "소마 파밀리아", weight: 20, desc: "신이 단원들을 방임하는 탓에 기강이 느슨한 파밀리아." },
-        { id: "astraea", label: "아스트레아 파밀리아", weight: 10, desc: "과거 오라리오의 어둠에 맞서 질서를 수호하려 했던 정의의 파벌." },
-        { id: "hestia", label: "헤스티아 파밀리아", weight: 1, desc: "변변한 홈조차 없었으나, 놀라운 성장을 기록하며 기적을 써내려가는 파밀리아." }
+        { id: "civilian", label: "무소속 (일반 시민)", weight: 300, kind: "none", desc: "등에 은총을 새기지 않고 평범한 생업에 종사하는 주민." },
+        { id: "ares", label: "아레스 파밀리아", weight: 150, kind: "canon", official: true, desc: "라키아의 정규군 그 자체로, 머릿수만큼은 세계 최대를 자랑하는 군단." },
+        { id: "ganesha", label: "가네샤 파밀리아", weight: 120, kind: "canon", official: true, desc: "오라리오의 경찰 역할을 수행하며 군중을 통제하는 최대 규모의 파밀리아." },
+        { id: "hephaestus", label: "헤파이스토스 파밀리아", weight: 90, kind: "canon", official: true, desc: "오라리오의 무장 수준을 책임지는 최고의 단야(대장장이) 파벌." },
+        { id: "loki", label: "로키 파밀리아", weight: 60, kind: "canon", official: true, desc: "강력한 제일급 모험자들을 다수 보유한 오라리오 최강의 탐색 파벌." },
+        { id: "freya", label: "프레야 파밀리아", weight: 60, kind: "canon", official: true, desc: "여신에 대한 맹목적 사랑으로 똘똘 뭉친 오라리오 최강의 무투 파벌." },
+        { id: "kali", label: "칼리 파밀리아", weight: 50, kind: "canon", official: true, desc: "투국 텔스큐라를 지배하며, 살육을 통해 강해지는 것을 의무로 삼는 집단." },
+        { id: "hermes", label: "헤르메스 파밀리아", weight: 40, kind: "canon", official: true, desc: "전 세계를 누비며 물건을 나르고 정보를 수집하는 다재다능한 파밀리아." },
+        { id: "demeter", label: "데메테르 파밀리아", weight: 50, kind: "canon", official: true, desc: "대지의 여신 아래에서 대형 농장을 꾸려 가는 농업 파밀리아." },
+        { id: "miach", label: "미아흐 파밀리아", weight: 25, kind: "canon", official: true, desc: "의술과 약 제조를 업으로 삼는 작은 파밀리아." },
+        { id: "takemikazuchi", label: "타케미카즈치 파밀리아", weight: 20, kind: "canon", official: true, desc: "신에게 직접 무예를 전수받는 파밀리아." },
+        { id: "soma", label: "소마 파밀리아", weight: 20, kind: "canon", official: true, desc: "신이 단원들을 방임하는 탓에 기강이 느슨한 파밀리아." },
+        { id: "astraea", label: "아스트레아 파밀리아", weight: 10, kind: "canon", official: true, desc: "과거 오라리오의 어둠에 맞서 질서를 수호하려 했던 정의의 파벌." },
+        { id: "hestia", label: "헤스티아 파밀리아", weight: 1, kind: "canon", official: true, desc: "변변한 홈조차 없었으나, 놀라운 성장을 기록하며 기적을 써내려가는 파밀리아." }
     ],
     talents: [
         { id: "none", label: "무재능", weight: 400, desc: "신탁(팔나)을 받아도 어떤 마법이나 스킬도 발현되지 않는 지극히 평범한 그릇." },
