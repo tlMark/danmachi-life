@@ -1,0 +1,97 @@
+===== r3_relations.js =====
+PASS  ended 상대 후보 제외
+PASS  ended 상대 marry 거부
+PASS  현재 파트너 ended 시 hasPartner=false
+PASS  ended 직후 partnerId 잔존(정리 전)  | advanceYear 호출 전까지 stale
+PASS  advanceYear 후 partnerId=null
+PASS  새 파트너 생성 성공
+PASS  ID 고유(이전과 다름)  | relation-30-1 vs relation-30-2
+PASS  이전 ended 객체 보존/불변
+PASS  partnerId = 새 파트너
+PASS  relations 길이 2
+PASS  카운터 리셋 시에도 ID 고유(방어)  | relation-30-1 vs relation-30-2
+PASS  marry 가 subType 보존  | 실제 subType=rival
+PASS  코드 내에서 relationshipStatus='ended' 를 설정하는 곳 존재  | 없으면 필터는 죽은 코드
+PASS  코드 내에서 relation.alive=false 를 설정하는 곳 존재  | 없으면 파트너 사망 경로 없음
+PASS  1500판 중 ended/사망 파트너 발생 수  | 관계 보유 787판, ended/dead 386판, 파트너 나이≥100 45판
+EXIT:0
+===== r3_extra.js =====
+충돌 재현: 신규 반환 = {
+  id: 'relation-30-2',
+  type: 'friend',
+  subType: 'romance_candidate',
+  name: '연인',
+  age: 26,
+  alive: true,
+  metAtAge: 30,
+  source: 'event',
+  isPartner: true,
+  relationshipStatus: 'partnered'
+} | relations 길이 = 2 (기존 ended 기록 소실: false )
+정상 경로 200회 생성 고유 ID 수: 200
+createRomanticPartner 나이 범위(주인공 30): [ 20, 40 ]
+45세에 55세 파트너 → 주인공 90세 시 파트너 나이: 100 | 여전히 파트너 유효: true
+EXIT:0
+===== r3_balance.js =====
+Lv별 누적 위업 비용: Lv2=1 Lv3=3 Lv4=6 Lv5=10 Lv6=15 Lv8=28 Lv12=66
+feat 공급 이벤트 수: 15 | 이론상 총 최대공급(모든 이벤트 maxTimes×최대 성공): 34
+  find_grimoire          w=3 feat+5 once job=["adventurer"] minLv3
+  daedalus_orb           w=5 feat+4 once job=["adventurer"] minLv3
+  high_excelia           w=20 feat+3 x2 job=["adventurer"] 
+  encounter_goliath      w=12 feat+3 once job=["adventurer"] minLv2
+  minotaur               w=14 feat+2 once job=["adventurer"] 
+  expedition             w=25 feat+2 once job=["adventurer"] 
+  dive1                  w=60 feat+1 once job=["adventurer"] 
+  ritual                 w=90 feat+1 once job="any" 
+  wargame                w=8 feat+1 x2 job=["adventurer"] 
+  guild_advisor          w=20 feat+1 x2 job=["adventurer"] 
+  city_disaster          w=10 feat+1 once job="any" 
+  mentor                 w=14 feat+1 once job="any" 
+  soldier_patrol         w=18 feat+1 x2 job=["soldier"] 
+  lost_child             w=12 feat+1 once job="any" 
+  community_role         w=12 feat+1 once job="any" 
+
+[무작위 선택 3000판] 팔나 보유 1635판
+사망 시 레벨 분포: {"0":1337,"1":1567,"2":83,"3":11,"4":2}
+판당 평균 획득 feat(팔나 여부 무관 총합)/판: 2.08 | 평균 사망 시 미사용 feat(팔나 보유자): 2.08
+팔나 보유자 중 사망 시 능력치최대≥500 비율 %: 0.1 | 평균 최대능력치: 170.18
+능력치 부족으로 막힌 판(위업 충분/능력<500): 1437 | 위업 부족으로 막힌 판(능력≥500/위업 부족): 2
+Lv6 도달 필요 누적 feat=15 대비 판당 평균 획득 = 2.08 (모험자·팔나 한정 아님)
+hero_sacrifice cond: {"age":[20,60],"min":{"level":6}} w=3
+EXIT:0
+===== r3_growth.js =====
+PASS  mods=undefined  | abil={"str":100,"vit":100,"dex":100,"agi":100,"mag":100} excelia=0
+PASS  mods=null  | abil={"str":100,"vit":100,"dex":100,"agi":100,"mag":100} excelia=0
+PASS  mods={}  | abil={"str":100,"vit":100,"dex":100,"agi":100,"mag":100} excelia=0
+PASS  races=null  | abil={"str":100,"vit":100,"dex":100,"agi":100,"mag":100} excelia=0
+PASS  race.bias=undefined  | abil={"str":100,"vit":100,"dex":100,"agi":100,"mag":100} excelia=0
+PASS  race.bias=null  | abil={"str":100,"vit":100,"dex":100,"agi":100,"mag":100} excelia=0
+PASS  bias 값=NaN  | abil={"str":100,"vit":100,"dex":100,"agi":100,"mag":100} excelia=0
+PASS  bias 값=음수  | abil={"str":100,"vit":100,"dex":100,"agi":100,"mag":100} excelia=0
+PASS  bias 값=0  | abil={"str":100,"vit":100,"dex":100,"agi":100,"mag":100} excelia=0
+PASS  bias 값=Infinity  | abil={"str":217,"vit":22,"dex":22,"agi":22,"mag":217} excelia=0
+PASS  bias 값=문자열  | abil={"str":167,"vit":83,"dex":83,"agi":83,"mag":83} excelia=0
+PASS  bias 값=객체/배열  | abil={"str":214,"vit":71,"dex":71,"agi":71,"mag":71} excelia=0
+PASS  bias 자체가 문자열  | abil={"str":100,"vit":100,"dex":100,"agi":100,"mag":100} excelia=0
+PASS  실제 MODS  | abil={"str":38,"vit":38,"dex":38,"agi":38,"mag":346} excelia=0
+PASS  입력 손상 excelia=NaN  | ret=false abil={"str":0,"vit":0,"dex":0,"agi":0,"mag":0}
+PASS  입력 손상 excelia=-5  | ret=false abil={"str":0,"vit":0,"dex":0,"agi":0,"mag":0}
+PASS  입력 손상 excelia=문자열  | ret=false abil={"str":0,"vit":0,"dex":0,"agi":0,"mag":0}
+PASS  입력 손상 excelia=Infinity  | ret=false abil={"str":0,"vit":0,"dex":0,"agi":0,"mag":0}
+PASS  입력 손상 abil=undefined  | ret=true abil={"str":38,"vit":38,"dex":38,"agi":38,"mag":346}
+PASS  입력 손상 abil 값 NaN  | ret=true abil={"str":38,"vit":38,"dex":38,"agi":38,"mag":999}
+PASS  입력 손상 race=undefined  | ret=true abil={"str":71,"vit":71,"dex":71,"agi":71,"mag":214}
+PASS  입력 손상 race=문자열 id  | ret=true abil={"str":38,"vit":38,"dex":38,"agi":38,"mag":346}
+PASS  입력 손상 talent=null  | ret=true abil={"str":71,"vit":71,"dex":71,"agi":71,"mag":214}
+PASS  입력 손상 flags=undefined  | ret=false abil={"str":0,"vit":0,"dex":0,"agi":0,"mag":0}
+PASS  입력 손상 S=null  | ret=false
+PASS  손상 bias → 중립 1배와 동일 결과  | 손상={"str":40,"vit":40,"dex":40,"agi":40,"mag":40} 중립={"str":40,"vit":40,"dex":40,"agi":40,"mag":40}
+PASS  bias 누락 시 성장이 0이 아니라 균등 분배(중립 1배)  | 합계=200 → 사용자 서술 "0으로 폴백"은 finiteNonNegative(입력값)에 한정, bias는 1로 폴백
+PASS  정상 폴백 후 excelia 소모(=0)
+PASS  bias 클램프(최대 10×10=100배) 후 상한 준수  | {"str":481,"vit":481,"dex":481,"agi":481,"mag":999}
+PASS  liaris 상한 1499  | {"str":1499,"vit":1499,"dex":1499,"agi":1499,"mag":1499}
+PASS  일반 상한 999  | {"str":999,"vit":999,"dex":999,"agi":999,"mag":999}
+
+MODS↔gachaData id 불일치: races [] talents []
+gachaData엔 있고 MODS엔 없는 id: races [] talents []
+EXIT:0

@@ -1,5 +1,6 @@
-// 2a: 파밀리아 입단 절차·무명(minor) 파밀리아·명성의 **데이터 모델만** 정의한다. 게임 동작에는 연결되지 않았다(비활성).
-// 입단 판정(evaluateApplication)·모집 경로 이벤트·명성 효과는 2b 이후 단계이며 승인 전에는 구현하지 않는다.
+// 2a: 파밀리아 입단 절차·무명(minor) 파밀리아·명성의 데이터 모델.
+// 2b-b(v1.7.8-2bb, 사용자 승인): 일반 지원 심사(evaluateApplication)와 RECRUIT_TUNING 수치를 연결한다. 결과는 accepted/rejected 만(deferred·open_call·recruit_result 는 U-2b-6 미결).
+// 무명 파밀리아 생성·명성 효과·스카웃 심사(SC-1~5)는 2b-c 이며 연결하지 않는다.
 // 이 모듈은 Math.random 을 사용하지 않는다: 기존 게임 난수열을 바꾸지 않도록 자체 파생 RNG(createDerivedRng)만 쓴다.
 (function (root) {
     'use strict';
@@ -15,8 +16,34 @@
     const OUTCOMES = ['accepted', 'rejected', 'withdrawn', 'ignored', 'deferred'];
     const INITIATORS = ['applicant', 'familia', 'god', 'referrer'];
 
-    // 확률·문턱값 전용 자리. 승인 전에는 비어 있어야 한다(테스트가 강제).
-    const RECRUIT_TUNING = Object.freeze({});
+    // 2b-b 확률·쿨다운·상한 — 수치는 모두 이 객체에만 둔다(게임 고유 밸런스 값, 원작 근거 없음). 목표: U-2b-1 승인 범위(소속 50~60%, 팔나 45~55%, 지원자 중 거절 경험 20~40%).
+    const RECRUIT_TUNING = Object.freeze({
+        routeBase: Object.freeze({ self_apply: 0.68, persistence: 0.65 }),   // 경로 기본 합격률(scout 는 DIRECT_ROUTES — 심사 없음)
+        raceBonus: Object.freeze({ notHumanPallum: 0.10 }),                     // 현행 join 서술(인간·팔룸 외 종족을 신들이 먼저 눈여겨봄)과 일치
+        talentBonus: Object.freeze({ basic_magic: 0.08, chantless: 0.15, rare_skill: 0.20, liaris: 0.20 }),
+        powerPer: 0.01, powerBonusMax: 0.20,                                   // 현재 S.power 가점(상한)
+        familiaAdvDelta: -0.05, familiaNonAdvDelta: 0.10,                      // 파밀리아 모험 성향(MODS.familias[id].adv)
+        familiaLargeWeight: 100, familiaLargeDelta: 0.05,                      // 파밀리아 규모(추첨 가중치 기준)
+        pMin: 0.05, pMax: 0.95,
+        rejectCooldownYears: 2,                                                // 거절 후 일반 재지원 쿨다운(년, 달력 나이)
+        sameFamiliaRetryYears: 10,                                             // 거절한 파밀리아 재지원 제한(년) — 후보에서 제외
+        lifetimeApplicationCap: 4                                              // 생애 일반 지원 상한(직접 경로 scout 제외)
+    });
+
+    // 2b-b 심사: 순수 함수. rng 는 파생 RNG(createDerivedRng) — Math.random 을 쓰지 않는다. 결과 accepted/rejected.
+    function evaluateApplication(input, rng) {
+        const T = RECRUIT_TUNING, i = input || {};
+        if (!Object.prototype.hasOwnProperty.call(T.routeBase, i.route)) throw new Error('evaluateApplication: route without base rate: ' + i.route);
+        let p = T.routeBase[i.route];
+        if (i.raceId && i.raceId !== 'human' && i.raceId !== 'pallum') p += T.raceBonus.notHumanPallum;
+        p += T.talentBonus[i.talentId] || 0;
+        p += Math.min(T.powerBonusMax, Math.max(0, Number(i.power) || 0) * T.powerPer);
+        p += i.familiaAdv ? T.familiaAdvDelta : T.familiaNonAdvDelta;
+        if ((Number(i.familiaWeight) || 0) >= T.familiaLargeWeight) p += T.familiaLargeDelta;
+        p = Math.min(T.pMax, Math.max(T.pMin, p));
+        const roll = rng();
+        return { p: +p.toFixed(4), roll, outcome: roll < p ? 'accepted' : 'rejected' };
+    }
 
     function newApplicationState() { return { current: null, history: [] }; }
 
@@ -68,5 +95,5 @@
     }
 
     core.Recruit = { FAME_STAGES, FAME_LABELS_PERSONAL, FAME_LABELS_FAMILIA, ROUTES, DIRECT_ROUTES, OUTCOMES, INITIATORS, RECRUIT_TUNING, RESERVED_NAMES,
-        newApplicationState, createDerivedRng, createMinorFamilias };
+        newApplicationState, createDerivedRng, createMinorFamilias, evaluateApplication };
 })(globalThis);

@@ -1,0 +1,31 @@
+== r3_relations
+PASS  ended 상대 후보 제외
+PASS  ended 상대 marry 거부
+PASS  현재 파트너 ended 시 hasPartner=false
+PASS  ended 직후 partnerId 잔존(정리 전)  | advanceYear 호출 전까지 stale
+PASS  advanceYear 후 partnerId=null
+PASS  새 파트너 생성 성공
+PASS  ID 고유(이전과 다름)  | relation-30-1 vs relation-30-2
+PASS  이전 ended 객체 보존/불변
+PASS  partnerId = 새 파트너
+PASS  relations 길이 2
+PASS  카운터 리셋 시에도 ID 고유(방어)  | relation-30-1 vs relation-30-2
+PASS  marry 가 subType 보존  | 실제 subType=rival
+PASS  코드 내에서 relationshipStatus='ended' 를 설정하는 곳 존재  | 없으면 필터는 죽은 코드
+PASS  코드 내에서 relation.alive=false 를 설정하는 곳 존재  | 없으면 파트너 사망 경로 없음
+PASS  1500판 중 ended/사망 파트너 발생 수  | 관계 보유 1497판, ended/dead 1424판, 파트너 나이≥100 145판
+
+== r3_growth (PASS/FAIL 개수)
+31
+
+== r3_balance 요약
+[무작위 선택 3000판] 팔나 보유 1526판
+사망 시 레벨 분포: {"0":1395,"1":474,"2":729,"3":227,"4":53,"5":42,"6":40,"7":30,"8":6,"9":3,"10":1}
+판당 평균 획득 feat(팔나 여부 무관 총합)/판: 2.59 | 평균 사망 시 미사용 feat(팔나 보유자): 1.62
+팔나 보유자 중 사망 시 능력치최대≥500 비율 %: 13.4 | 평균 최대능력치: 328.31
+능력치 부족으로 막힌 판(위업 충분/능력<500): 717 | 위업 부족으로 막힌 판(능력≥500/위업 부족): 204
+Lv6 도달 필요 누적 feat=15 대비 판당 평균 획득 = 2.59 (모험자·팔나 한정 아님)
+hero_sacrifice cond: {"age":[20,60],"min":{"level":6}} w=3
+
+== r4_jobshift (모험자 파밀리아 가입자 중 모험자 비율)
+{"N":3000,"모험자파밀리아_소속":1044,"그중_한번도_모험자_아님":713,"비율":"68.3%","팔나보유":1526,"팔나보유_중_모험자_경험없음":1111}

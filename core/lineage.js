@@ -66,5 +66,5 @@
         return { age, stage: STAGE[age], text };
     }
 
-    core.Lineage = { BEASTMAN_SUBTYPES, CHILDHOOD_STAGES: STAGE, lifeSeed, pickBeastmanSubtype, raceLabel, childhoodRecord };
+    core.Lineage = { BEASTMAN_SUBTYPES, CHILDHOOD_STAGES: STAGE, lifeSeed, pickBeastmanSubtype, raceLabel, childhoodRecord, fnv };   // 2b-b: fnv 공개(recruit 파생 시드)
 })(globalThis);

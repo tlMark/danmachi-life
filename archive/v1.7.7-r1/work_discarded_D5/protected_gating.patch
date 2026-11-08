@@ -1,0 +1,70 @@
+--- a/script.js	2026-11-05 18:14:06.430728218 +0900
++++ b/script.js	2026-11-05 19:37:34.282965044 +0900
+@@ -73,9 +73,17 @@
+     if (c.noFlags && c.noFlags.some(f => S.flags.includes(f))) return false;
+     if (c.min) for (const k in c.min) if (S[k] < c.min[k]) return false;
+     if (c.max) for (const k in c.max) if (S[k] > c.max[k]) return false;
++    if (c.familiaRole && !c.familiaRole.includes(currentFamiliaRole())) return false;   // 정식 단원 전용 등 소속 역할 조건
+     return true;
+ }
+ 
++// 현재 소속 항목의 역할(member | protected). 소속이 없으면 null.
++function currentFamiliaRole() {
++    if (!S.familia) return null;
++    const open = (S.familiaHistory || []).find(m => m.leftAt == null);
++    return open ? (open.role || null) : null;
++}
++
+ function say(text, cls = '', age) {
+     const d = document.createElement('div');
+     d.className = 'entry ' + cls;
+--- a/events.js	2026-11-05 03:22:44.895039671 +0900
++++ b/events.js	2026-11-05 19:37:34.284098744 +0900
+@@ -157,7 +157,7 @@
+     { id: 'supporter_scorn', w: 15, cond: { age: [16, 60], job: ['supporter'] }, text: '전리품 몫을 두고 모험자에게 업신여김을 당했다.', choices: [
+         { label: '참고 넘긴다', text: '다툼은 피했지만 마음이 무거웠다.', fx: { bond: -1, valis: 100 } },
+         { label: '정당한 몫을 요구한다', chance: { p: .5, stat: 'bond', per: .005, ok: { text: '떳떳한 태도에 상대가 물러섰다.', fx: { valis: 500, bond: 2 } }, fail: { text: '주먹이 돌아왔다.', fx: { hp: -15, valis: -100 } } } }] },
+-    { id: 'wargame', w: 8, cond: { age: [20, 55], job: ['adventurer'], hasFamilia: true }, text: '파밀리아 간의 전쟁유희가 열려 우리 파밀리아도 참가하게 되었다.', choices: [
++    { id: 'wargame', w: 8, cond: { age: [20, 55], job: ['adventurer'], hasFamilia: true, familiaRole: ['member'] }, text: '파밀리아 간의 전쟁유희가 열려 우리 파밀리아도 참가하게 되었다.', choices: [
+         { label: '전선에 선다', chance: { p: .55, stat: 'power', per: .003, ok: { text: '맹활약해 승리에 크게 기여했다.', fx: { power: 12, valis: 1000, bond: 4, feat: 1 } }, fail: { text: '격전 끝에 크게 다쳤다.', fx: { hp: -50 } } } },
+         { label: '후방에서 지원한다', text: '무리하지 않고 몫을 챙겼다.', fx: { valis: 300, bond: 2 } }] },
+     { id: 'clash', w: 10, cond: { age: [8, 70], origin: ['orario'] }, text: '시가지 한복판에서 파밀리아 간의 항쟁이 터졌다.', choices: [
+@@ -294,7 +294,7 @@
+         { label: '제자로 들어가 배운다', text: '오랜 경험에서 나온 조언은 이후의 선택에 큰 도움이 되었다.', fx: { power: 5, bond: 4, feat: 1 } },
+         { label: '독립적으로 해 보겠다고 답한다', text: '스스로 판단하고 책임지는 법을 배웠다.', fx: { bond: 2, valis: 300 } }
+     ] },
+-    { id: 'supporter_route', w: 18, cool: 3, maxTimes: 2, cond: { age: [16, 60], job: ['supporter'], flags: ['falna'], hasFamilia: true }, text: '소속 파밀리아의 원정대가 짐이 많고 귀환 경로도 험한 탐색에 나선다. 팔나를 받은 서포터로서 준비와 판단이 중요해졌다.', choices: [
++    { id: 'supporter_route', w: 18, cool: 3, maxTimes: 2, cond: { age: [16, 60], job: ['supporter'], flags: ['falna'], hasFamilia: true, familiaRole: ['member'] }, text: '소속 파밀리아의 원정대가 짐이 많고 귀환 경로도 험한 탐색에 나선다. 팔나를 받은 서포터로서 준비와 판단이 중요해졌다.', choices: [
+         { label: '운반량을 줄이고 귀환 경로를 확보한다', text: '원정대가 무사히 귀환해 당신의 판단을 인정했다.', fx: { bond: 3, valis: 700 } },
+         { label: '추가 물자를 더 챙긴다', chance: { p: 0.55, stat: 'agi', per: 0.001, ok: { text: '예상치 못한 상황에 대비할 수 있었다.', fx: { valis: 900, bond: 1 } }, fail: { text: '무거운 짐 때문에 부상을 입었다.', fx: { hp: -12 } } } }
+     ] },
+--- a/test_runner.js	2026-11-05 18:14:14.305160763 +0900
++++ b/test_runner.js	2026-11-05 19:37:34.284632398 +0900
+@@ -554,8 +554,9 @@
+             const dungeonMissingGate = dungeon.filter(id => { const c = EVENTS.find(ev => ev.id === id).cond || {}; const jobs = c.job || []; const okJob = jobs.includes('adventurer') || (jobs.includes('supporter') && jobs.length === 1 && c.hasFamilia === true); return !((c.flags || []).includes('falna') && okJob); });
+             const accompanyBad = ids.filter(id => EVENT_AREA[id] && EVENT_AREA[id][0] === 'supporter_accompany').filter(id => { const ev = EVENTS.find(x => x.id === id), c = ev.cond || {}; return !((c.job || []).length === 1 && c.job[0] === 'supporter' && (c.noFlags || []).includes('falna') && c.hasFamilia === false && ev.once === true && ev.w <= 5 && c.max && Number.isFinite(c.max.valis)); });
+             const wargameGate = (EVENTS.find(ev => ev.id === 'wargame').cond || {}).hasFamilia === true;
++            const memberOnlyGate = ['wargame', 'supporter_route'].every(id => ((EVENTS.find(ev => ev.id === id).cond || {}).familiaRole || []).join() === 'member');
+             T.dungeonEventAudit = { total: ids.length, dungeon: dungeon.length, byKind: ids.reduce((m, id) => { const k = (EVENT_AREA[id] || ['?'])[0]; m[k] = (m[k] || 0) + 1; return m; }, {}), unclassified, stale, dup, badKind, refNoReason, dungeonMissingGate, accompanyBad,
+-                wargameGate, ok: wargameGate && !unclassified.length && !stale.length && !dup.length && !badKind.length && !refNoReason.length && !dungeonMissingGate.length && !accompanyBad.length };
++                wargameGate, memberOnlyGate, ok: wargameGate && memberOnlyGate && !unclassified.length && !stale.length && !dup.length && !badKind.length && !refNoReason.length && !dungeonMissingGate.length && !accompanyBad.length };
+             results.dungeonEventAudit = T.dungeonEventAudit;
+             assert(T.dungeonEventAudit.ok, 'event area catalog audit failed: ' + JSON.stringify(T.dungeonEventAudit));
+         }
+@@ -763,6 +764,7 @@
+                 if (area === 'dungeon' && S.job === 'supporter' && !S.familia) bad.push('dungeon-supporter-without-familia');
+                 if (area === 'supporter_accompany' && !(S.job === 'supporter' && !S.flags.includes('falna') && !S.familia)) bad.push('free-supporter-conditions'); }
+             if (c.hasFamilia === true && !S.familia) bad.push('hasFamilia');
++            if (c.familiaRole && !c.familiaRole.includes(currentFamiliaRole())) bad.push('familiaRole');
+             if (c.hasFamilia === false && S.familia) bad.push('noFamiliaRequired');
+             if (c.flags && !c.flags.every(f => S.flags.includes(f))) bad.push('flags');
+             if (c.noFlags && c.noFlags.some(f => S.flags.includes(f))) bad.push('noFlags');
+@@ -995,7 +997,7 @@
+         && results.negativeHpAtDeath === 0
+         && results.hpDeathsWithRescueLeft === 0
+         && results.v177.subtypeErrors === 0 && results.v177.nonBeastWithSubtype === 0 && results.v177.childhoodMissing === 0 && results.v177.childhoodDup === 0
+-        && results.v177.levelHistoryErrors === 0 && results.v177.maxLevelErrors === 0 && results.v177.roleErrors === 0 && results.v177.protectedNeverFalnaViolations === 0 && results.v177.protectedDungeon === 0
++        && results.v177.levelHistoryErrors === 0 && results.v177.maxLevelErrors === 0 && results.v177.roleErrors === 0 && results.v177.protectedNeverFalnaViolations === 0 && results.v177.protectedDungeon === 0 && results.v177.protectedWargame === 0 && Object.keys(results.v177.protectedHasFamiliaEvents).length === 0
+         && results.timeline.negativeGaps === 0 && results.timeline.overlappingMemberships === 0
+         && results.timeline.falnaWithoutMembership === 0 && results.timeline.falnaFlagWithoutHistory === 0
+         && results.invalidPartnerStates === 0

@@ -6,6 +6,14 @@ const rankOf = v => v >= 1200 ? 'SSS' : v >= 1000 ? 'SS' : RANKS[Math.min(9, Mat
 const rnd = ([a, b]) => a + Math.floor(Math.random() * (b - a + 1));
 const LEVELUP_ABIL = 500;    // 레벨업 조건: 능력치 하나가 D(500) 이상
 let S;
+// v1.7.8-2i: 팔나 상태 기록(설계 r2k-4 §2.8). 기록 전용 — 난수·판정·성장 경로를 바꾸지 않는다.
+let syncDepth = 0;                 // 동기화 범위 깊이. 모듈 로드 시 1회만 0 으로 둔다(startLife 는 대입하지 않음, U3).
+const syncInvariantLog = [];       // 기록 전용 불변식 위반(테스트 러너가 읽어 간다). 값 자동 보정 없음.
+// 직업 전투 분류(설계 §2.1, [게임 고유 규칙]). 2-i 는 정의·테스트만 한다.
+const JOB_ROLE_CLASS = { adventurer:'combat', soldier:'combat', supporter:'support', blacksmith:'noncombat', healer:'noncombat', merchant:'noncombat', farmer:'noncombat', guild_staff:'noncombat', waitstaff:'noncombat', child:'none', retired:'none' };
+const FALNA_STATES = ['none', 'active', 'unbound', 'sealed'];
+// 금지 전이(설계 §2.3). 2-i 의 전이 함수는 정의만 하고 게임 흐름에서 호출하지 않는다.
+const FALNA_FORBIDDEN = { none: ['unbound', 'sealed'], sealed: ['unbound'], unbound: ['sealed'] };
 GameCore.Items.setCatalog(gachaData.items);
 const relationCtx = () => ({ races: gachaData.races, mods: MODS });
 const JOB_LABELS = { child:'유년기', adventurer:'모험자', supporter:'서포터', guild_staff:'길드 직원', blacksmith:'대장장이', merchant:'상인', farmer:'농부', healer:'치유사', soldier:'병사', waitstaff:'종업원', retired:'은퇴자' };
@@ -71,6 +79,9 @@ function match(c = {}) {
     if (c.noRelative && GameCore.Relations.hasLivingRelative(S, c.noRelative)) return false;
     if (c.flags && !c.flags.every(f => S.flags.includes(f))) return false;
     if (c.noFlags && c.noFlags.some(f => S.flags.includes(f))) return false;
+    if (c.falnaState && !c.falnaState.includes(S.falnaState)) return false;          // 2-i: 기록 상태(설계 §2.3.2)
+    if (c.familiaRole && !c.familiaRole.includes(currentFamiliaRole())) return false;  // 2-i: 열린 소속 역할
+    if (c.canEnterDungeon === true && !canEnterDungeon(S)) return false;             // 2-i 정의 = canUseFalna
     if (c.min) for (const k in c.min) if (S[k] < c.min[k]) return false;
     if (c.max) for (const k in c.max) if (S[k] > c.max[k]) return false;
     return true;
@@ -86,6 +97,244 @@ function say(text, cls = '', age) {
 }
 
 const hasFalna = () => S.flags.includes('falna');
+
+// ── v1.7.8-2i 팔나 상태 판정 함수(설계 §2.2). 성장 경로에는 연결하지 않는다(2-ii). ──
+function deriveFalnaState(s = S) {
+    const flag = (s.flags || []).includes('falna');
+    if (flag) return s.familia ? 'active' : 'unbound';
+    return (s.falnaHistory || []).length ? 'sealed' : 'none';
+}
+function deriveFalnaHolder(s = S) { return (s.flags || []).includes('falna') && s.familia ? s.familia.id : null; }
+function openMembershipOf(s = S) { return (s.familiaHistory || []).find(m => m.leftAt == null) || null; }
+function currentFamiliaRole(s = S) { const open = s.familia ? openMembershipOf(s) : null; return open ? (open.role || null) : null; }
+const falnaEmbedded = (s = S) => ['active', 'unbound', 'sealed'].includes(s.falnaState);
+const canUseFalna = (s = S) => s.falnaState === 'active' || s.falnaState === 'unbound';
+const canUpdateStatus = (s = S) => s.falnaState === 'active' && !!s.familia && s.falnaHolder === s.familia.id && s.age >= (s.statusResumeAge ?? 0);
+const accumulatesExcelia = (s = S) => canUseFalna(s);
+const accumulatesPotential = (s = S) => s.falnaState === 'none';
+const canEnterDungeon = (s = S) => canUseFalna(s);   // 2-i 정의(= canUseFalna). 2-ii: active + member
+const combatClassOf = (s = S) => JOB_ROLE_CLASS[s.job] || null;
+
+// ── 동기화 범위(설계 §2.8 d-1). apply·checkFalna·rollFamilia 만 범위를 연다. ──
+function pushFalnaTransition(rec) { S.falnaTransitions ||= []; S.falnaTransitions.push({ age: S.age, ...rec }); }
+function updateConversionPending(from, to, dropped, eventId, fromFamiliaId) {
+    if (to === 'active') S.conversionPending = null;
+    else if (from === 'active' && to === 'unbound') S.conversionPending = { since: S.age, fromFamiliaId, reason: 'left' };
+    else if (to === 'sealed' && from !== 'sealed' && dropped) S.conversionPending = { since: S.age, fromFamiliaId, reason: eventId === 'god_gone' ? 'god_returned' : 'sealed_other' };
+}
+function lastClosedFamiliaId() { const h = (S.familiaHistory || []).filter(m => m.leftAt != null); return h.length ? h[h.length - 1].familiaId : null; }
+// 예외로 남은 기준값(또는 비정상 normal 기준값)과 지금 상태를 비교해 복구 전이를 남긴다.
+function recoverFromBaseline(b, token, cause) {
+    const to = deriveFalnaState(), holderTo = deriveFalnaHolder();
+    if (to !== b.state || holderTo !== b.holder) {
+        pushFalnaTransition({ from: b.state, to, holderFrom: b.holder, holderTo, cause, eventId: b.eventId, fromFamiliaId: b.openFamiliaId,
+            originalEventId: b.eventId, originalScopeKind: b.scopeKind, originalFxKeys: b.fxKeys, originalAt: b.at, recoveredAt: S.age,
+            recoveredAtScopeKind: token ? token.kind : 'endLife', recoveredAtEventId: S.currentEventId ?? null });
+        updateConversionPending(b.state, to, (b.fxKeys || []).includes('dropFamilia'), b.eventId, b.openFamiliaId);
+    }
+    S.falnaState = to; S.falnaHolder = holderTo;
+}
+function openScopeBaseline(token, fx) {
+    const b = S.syncBaseline;
+    if (b && b.status === 'normal') { syncInvariantLog.push({ kind: 'stale_normal_baseline', at: S.age, scopeKind: token.kind }); recoverFromBaseline(b, token, 'recovered_after_exception'); }
+    else if (b && b.status === 'pending_after_exception') recoverFromBaseline(b, token, 'recovered_after_exception');
+    else if (S.falnaState !== deriveFalnaState() || (S.falnaHolder ?? null) !== deriveFalnaHolder()) syncInvariantLog.push({ kind: 'stored_state_mismatch', at: S.age, scopeKind: token.kind });
+    S.syncBaseline = { status: 'normal', state: deriveFalnaState(), holder: deriveFalnaHolder(), openFamiliaId: S.familia ? S.familia.id : null,
+        flag: S.flags.includes('falna'), scopeKind: token.kind, eventId: S.currentEventId ?? null, fxKeys: fx && typeof fx === 'object' ? Object.keys(fx) : [], at: S.age };
+}
+function classifyFalnaCause(b, to, kind, fx) {
+    if (kind === 'checkFalna') return to === 'active' ? 'grant' : 'unclassified';
+    if (b.state === 'none' && to === 'active') return 'grant';
+    const f = fx && typeof fx === 'object' ? fx : {};
+    const dropped = !!f.dropFamilia, clearsFalna = Array.isArray(f.clearFlags) && f.clearFlags.includes('falna');
+    if (b.state === 'active' && to === 'unbound' && dropped && !clearsFalna) return 'drop_familia';
+    if (to === 'sealed' && dropped && clearsFalna) return 'leave_and_seal';
+    if (to === 'sealed' && !dropped && clearsFalna) return 'clear_falna_only';
+    if (b.state === 'active' && to === 'active' && f.familia === 'rebind') return 'legacy_auto_convert';
+    const joins = f.familia === 'roll' || f.familia === 'rebind' || !!f.recruit;   // 2b-b: fx.recruit 는 기존 fx.familia:'roll' 입단 경로를 대체(분류 동일)
+    if (b.state === 'unbound' && to === 'active' && joins) return 'legacy_rejoin';
+    if (b.state === 'sealed' && to === 'active' && joins) return 'legacy_sealed_join';
+    return 'unclassified';
+}
+// 가장 바깥 범위의 정상 종료 지점(설계 §2.8 d-1 ③). 안쪽 범위·이미 동기화된 범위는 아무것도 하지 않는다.
+function syncAtScopeEnd(token, fx) {
+    if (!token.outermost || token.synced) return;
+    token.synced = true;
+    const b = S.syncBaseline;
+    if (!b) { syncInvariantLog.push({ kind: 'missing_baseline_at_sync', at: S.age, scopeKind: token.kind }); return; }
+    const to = deriveFalnaState(), holderTo = deriveFalnaHolder();
+    if (to !== b.state || holderTo !== b.holder) {
+        let cause = classifyFalnaCause(b, to, token.kind, fx);
+        let fromFamiliaId = b.openFamiliaId;
+        if (b.state === 'active' && fromFamiliaId == null) { fromFamiliaId = lastClosedFamiliaId(); cause += '_recovered'; }
+        pushFalnaTransition({ from: b.state, to, holderFrom: b.holder, holderTo, cause, eventId: b.eventId, scopeKind: token.kind, fromFamiliaId });
+        const f = fx && typeof fx === 'object' ? fx : {};
+        updateConversionPending(b.state, to, !!f.dropFamilia, b.eventId, fromFamiliaId);
+    }
+    S.falnaState = to; S.falnaHolder = holderTo; S.syncBaseline = null;
+}
+function endScope(token) {
+    syncDepth--;
+    if (syncDepth < 0) syncInvariantLog.push({ kind: 'sync_depth_negative', value: syncDepth });
+    if (token.outermost && !token.synced && S && S.syncBaseline) S.syncBaseline.status = 'pending_after_exception';
+}
+function withScope(kind, fx, body) {
+    const token = { kind, outermost: syncDepth === 0, synced: false };
+    syncDepth++;
+    try {
+        if (token.outermost) openScopeBaseline(token, fx);
+        const r = body(token);
+        if (token.outermost && !token.synced) syncAtScopeEnd(token, fx);
+        return r;
+    } finally { endScope(token); }
+}
+
+// ── 입단 호출 모드(설계 §2.3.2). 모드는 인자로만 쓰고 S·게임 데이터에 저장하지 않는다(Q18). ──
+function rollModeAllowed(mode) {
+    const st = deriveFalnaState(), cp = S.conversionPending ?? null;
+    const noOpen = !S.familia && !openMembershipOf();   // legacy_rejoin 전용: 열린 소속 이력이 남은 오염 unbound 거부(M4)
+    if (mode === 'initial_join') return st === 'none' && cp === null && !S.familia;   // 설계 §2.3.2 그대로(열린 이력 검사 없음 — r1 단위 테스트의 오염 상태 입단 보존)
+    if (mode === 'legacy_rejoin') return st === 'unbound' && S.flags.includes('falna') && noOpen && !!cp && cp.reason === 'left';
+    if (mode === 'legacy_rebind') return true;      // 2-i: 가드 없음(현행 'roll' 과 같은 동작). active-only 가드는 2-ii
+    // 2-i 결과 보존(Q20 승인 D-2): 입단 3종의 sealed 차단(D-1)은 2-ii 로 이동했고, sealed 의 'roll' 은 현행처럼 가드 없이 처리한다. 2-ii 에서 거부로 전환.
+    if (mode === 'legacy_sealed_join') return true;
+    if (mode === 'newborn_control') return S.age === 0 && st === 'none' && !!NEWBORN_MEMBERSHIP;
+    return false;
+}
+const rollModeFor = fxFamilia => {
+    if (fxFamilia === 'rebind') return 'legacy_rebind';
+    const st = deriveFalnaState();
+    return st === 'unbound' ? 'legacy_rejoin' : st === 'sealed' ? 'legacy_sealed_join' : 'initial_join';
+};
+
+// ── 전이 함수(설계 §2.3·§2.3.1). 2-i 에서는 정의·단위 테스트만 하고 게임 흐름에서 호출하지 않는다. ──
+function rejectFalnaTransition(to, why) { pushFalnaTransition({ from: S.falnaState, to, holderFrom: S.falnaHolder ?? null, holderTo: S.falnaHolder ?? null, cause: 'rejected', reason: why, eventId: S.currentEventId ?? null }); return false; }
+function falnaTransitionAllowed(from, to) { return !(FALNA_FORBIDDEN[from] || []).includes(to); }
+function leaveFamilia() {   // 명시적 탈퇴: active → unbound (2-ii 에서 연결)
+    if (!S.familia) return false;   // 무소속이면 무변화(T3b)
+    const from = S.falnaState, fromFamiliaId = S.familia.id;
+    if (from === 'active' && !falnaTransitionAllowed(from, 'unbound')) return rejectFalnaTransition('unbound', 'forbidden');
+    closeMembership('left'); S.familia = null; S.falnaAt = null; S.familiaAt = null;
+    const to = deriveFalnaState();
+    if (to !== from || S.falnaHolder != null) {
+        pushFalnaTransition({ from, to, holderFrom: S.falnaHolder ?? null, holderTo: null, cause: 'leave', eventId: S.currentEventId ?? null, fromFamiliaId });
+        if (to === 'unbound') S.conversionPending = { since: S.age, fromFamiliaId, reason: 'left' };
+    }
+    S.falnaState = to; S.falnaHolder = null;
+    return true;
+}
+function sealByGodReturn() {   // 신의 송환: active → sealed, 레벨·능력치 보존, 직업 불변 (2-ii 에서 연결)
+    if (S.falnaState !== 'active' || !S.familia) return rejectFalnaTransition('sealed', 'not_active_member');
+    const fromFamiliaId = S.familia.id, holderFrom = S.falnaHolder;
+    closeMembership('god_returned'); S.familia = null; S.falnaAt = null; S.familiaAt = null;
+    S.flags = S.flags.filter(f => f !== 'falna');
+    pushFalnaTransition({ from: 'active', to: 'sealed', holderFrom, holderTo: null, cause: 'god_returned', eventId: S.currentEventId ?? null, fromFamiliaId });
+    S.falnaState = 'sealed'; S.falnaHolder = null; S.conversionPending = { since: S.age, fromFamiliaId, reason: 'god_returned' };
+    return true;
+}
+// 후보 파밀리아 선택만(입단 기록·직업·falnaAt·checkFalna 없음). rollFamilia 와 같은 가중치·같은 난수 소비.
+// 2b-a: opts.exclude(파밀리아 id 목록)는 후보에서 뺀다(송환된 주신의 파밀리아, 사용자 결정 2026-11-07). 기존 호출(인자 없음)은 동작 불변.
+function pickFamiliaCandidate(forcedId, opts) {
+    const exclude = (opts && Array.isArray(opts.exclude)) ? opts.exclude : [];
+    const pool = gachaData.familias.filter(f => f.id !== 'civilian' && !exclude.includes(f.id)).map(f => {
+        const bias = (FAMILIA_BIAS[S.origin.id] || {})[f.id] || 1;
+        const parentBias = (S.parentFamilia && S.parentFamilia.id === f.id) ? PARENT_FAMILIA_BIAS : 1;   // 부모 소속 파밀리아 추천(임의 가중치)
+        return { ...f, w: f.weight * bias * parentBias };
+    });
+    return forcedId ? pool.find(f => f.id === forcedId) : getRandomItemByWeight(pool, 'w');
+}
+// ── 2b-b(v1.7.8-2bb): 일반 지원 → 심사 → 결과(accepted/rejected)·재지원 쿨다운·직접 스카웃 ─────────────────
+// 난수: 후보 선택(pickFamiliaCandidate)·falnaAt 은 기존 주 RNG 그대로(U-2b-2 a). 심사는 파생 RNG(주 RNG 비소비).
+// 합격 경로의 주 RNG 소비 = 기존 rollFamilia 와 같음(후보 1회 + falnaAt). 거절 시 falnaAt 소비만 빠진다.
+function recruitRng(attempt) {
+    return GameCore.Recruit.createDerivedRng(GameCore.Lineage.fnv(S.lineageSeed >>> 0, 'recruit:' + S.age + ':' + attempt));
+}
+function recruitExcludedFamilias() {   // 거절한 파밀리아는 sameFamiliaRetryYears 동안 후보에서 뺀다
+    const T = GameCore.Recruit.RECRUIT_TUNING;
+    return (S.application.history || []).filter(h => !h.direct && h.outcome === 'rejected' && S.age - h.at < T.sameFamiliaRetryYears).map(h => h.familiaId);
+}
+function recruitBlockReason() {
+    const T = GameCore.Recruit.RECRUIT_TUNING, gen = (S.application.history || []).filter(h => !h.direct);
+    if (gen.length >= T.lifetimeApplicationCap) return 'lifetime_cap';
+    const lastRej = gen.filter(h => h.outcome === 'rejected').pop();
+    if (lastRej && S.age - lastRej.at < T.rejectCooldownYears) return 'cooldown';
+    return null;
+}
+function applyRecruit(spec) {
+    const R = GameCore.Recruit, route = spec && spec.route;
+    if (!R.ROUTES.includes(route)) { syncInvariantLog.push({ kind: 'recruit_unknown_route', value: route, eventId: S.currentEventId ?? null }); return false; }
+    S.application ||= R.newApplicationState();
+    const mode = rollModeFor('roll');
+    // 직접 경로(scout): 신청 상태를 만들지 않는다. 기존 rollFamilia 와 같은 동작·난수.
+    if (R.DIRECT_ROUTES.includes(route)) {
+        const before = (S.familiaHistory || []).length;
+        rollFamilia(undefined, mode);
+        if ((S.familiaHistory || []).length > before && S.familia) S.application.history.push({ route, at: S.age, attempt: null, familiaId: S.familia.id, outcome: 'accepted', direct: true });
+        return true;
+    }
+    // 2-i 가드에 걸리는 상태면 기존 거부 기록 경로를 그대로 탄다(난수 0, 지원 기록 없음).
+    if (!rollModeAllowed(mode)) return rollFamilia(undefined, mode);
+    const blocked = recruitBlockReason();
+    if (blocked) {
+        (S.application.blocked ||= []).push({ route, at: S.age, reason: blocked });
+        say(blocked === 'cooldown' ? '얼마 전 거절당한 기억 때문에 이번에는 지원하지 못했다.' : '더는 파밀리아의 문을 두드릴 기력이 남지 않았다.', 'result');
+        if (spec.fallback) apply(spec.fallback);
+        return false;
+    }
+    const attempt = (S.application.attemptSeq || 0) + 1; S.application.attemptSeq = attempt;
+    const cand = pickFamiliaCandidate(undefined, { exclude: recruitExcludedFamilias() });   // 주 RNG 1회(기존 후보 선택)
+    if (!cand) throw new Error('recruit: empty candidate pool');
+    S.application.current = { route, at: S.age, attempt, familiaId: cand.id };
+    const ev = R.evaluateApplication({ route, raceId: S.race && S.race.id, talentId: S.talent && S.talent.id, power: S.power,
+        familiaAdv: !!(MODS.familias[cand.id] || {}).adv, familiaWeight: cand.weight }, recruitRng(attempt));
+    S.application.history.push({ route, at: S.age, attempt, familiaId: cand.id, outcome: ev.outcome, p: ev.p });
+    S.application.current = null;
+    if (ev.outcome === 'accepted') {
+        if (spec.okText) say(spec.okText, 'result');
+        rollFamilia(cand.id, mode);   // forcedId: 추가 후보 난수 없음 → falnaAt 주 RNG 는 기존과 같음
+        return true;
+    }
+    say((spec.failText || '받아 주는 신을 찾지 못했다.') + ` (${cand.label} 심사 탈락)`, 'result');
+    if (spec.fallback) apply(spec.fallback);
+    return false;
+}
+// 2b-a: 전이 함수가 범위 안에서 스스로 전이를 기록한 뒤, 범위 끝 동기화가 같은 변화를 다시 기록하지 않도록 기준값을 현재 상태로 맞춘다.
+function rebaseSyncAfterTransition() {
+    const b = S.syncBaseline;
+    if (!b || b.status !== 'normal') return;
+    b.state = deriveFalnaState(); b.holder = deriveFalnaHolder(); b.openFamiliaId = S.familia ? S.familia.id : null; b.flag = S.flags.includes('falna');
+}
+// 2b-a: god_gone 전용. mode = 'seal'(봉인만) | 'regrant'(봉인 후 재수여). 직업은 바꾸지 않는다(Q7). 난수: regrant 의 후보 선택 1회만.
+function applyGodReturn(mode) {
+    if (mode !== 'seal' && mode !== 'regrant') { syncInvariantLog.push({ kind: 'god_return_unknown_mode', value: mode, at: S.age }); return false; }
+    if (!sealByGodReturn()) { syncInvariantLog.push({ kind: 'god_return_seal_rejected', at: S.age, eventId: S.currentEventId ?? null }); return false; }
+    rebaseSyncAfterTransition();
+    if (mode === 'seal') return true;
+    const returned = (S.familiaHistory || []).filter(m => m.leftReason === 'god_returned').map(m => m.familiaId);
+    const cand = pickFamiliaCandidate(undefined, { exclude: returned });
+    if (!cand || !completeConversion(cand.id, 'god_returned')) { syncInvariantLog.push({ kind: 'god_return_regrant_failed', at: S.age, candidate: cand ? cand.id : null }); return false; }
+    rebaseSyncAfterTransition();
+    // 재수여 = 팔나 재취득: 기존 재취득 경로(checkFalna)와 같은 레벨 이력·로그를 남긴다(레벨·능력치 불변, 난수 0).
+    recordLevel('falna_again', S.level, S.level);
+    say(`소속이 정해졌다: ${S.familia.label} — ${S.familia.desc}`, 'result');
+    say(`<b class="lv">팔나 재취득 · Lv.${S.level}</b>`, 'levelup', S.age);
+    return true;
+}
+function completeConversion(familiaId, reason) {   // 유일한 unbound/sealed → active 경로(2-ii 에서 연결)
+    const from = S.falnaState;
+    if (!(S.conversionPending != null && !S.familia && (from === 'unbound' || from === 'sealed'))) return rejectFalnaTransition('active', 'precondition');
+    const fam = gachaData.familias.find(f => f.id === familiaId);
+    if (!fam || fam.id === 'civilian') return rejectFalnaTransition('active', 'unknown_familia');
+    S.familia = fam; S.familiaAt = S.age;
+    ensureHistory(); closeMembership('changed');
+    S.nextMembershipId = (S.nextMembershipId || 1);
+    S.familiaHistory.push({ id: S.nextMembershipId++, familiaId: fam.id, label: fam.label, joinedAt: S.age, leftAt: null, leftReason: null,
+        falnaAt: S.age, falnaAlreadyHeld: true, viaParent: false, viaConversion: true, role: 'member' });
+    if (from === 'sealed') { S.flags.push('falna'); S.falnaHistory.push({ familiaId: fam.id, at: S.age, membershipIndex: S.familiaHistory.length - 1, kind: 'regrant' }); }
+    pushFalnaTransition({ from, to: 'active', holderFrom: null, holderTo: fam.id, cause: from === 'sealed' ? 'regrant' : 'convert', reason: reason || null, eventId: S.currentEventId ?? null });
+    S.falnaState = 'active'; S.falnaHolder = fam.id; S.conversionPending = null; S.statusResumeAge = S.age + 1;
+    return true;
+}
 
 // S.power는 이벤트 판정용 종합 전투력입니다. 성장 계산은 core/growth.js가 담당합니다.
 function recompute() {
@@ -177,6 +426,9 @@ function tryLevelUp() {
 
 function apply(fx = {}) {
     if (!fx || typeof fx !== 'object') fx = {};
+    return withScope('apply', fx, token => applyEffects(fx, token));   // v1.7.8-2i: 동기화 범위(기록 전용)
+}
+function applyEffects(fx, token) {
     for (const k of ['hp', 'bond', 'valis', 'feat']) {
         const delta = Number(fx[k]);
         if (Number.isFinite(delta)) S[k] = (Number.isFinite(S[k]) ? S[k] : 0) + delta;
@@ -228,11 +480,20 @@ function apply(fx = {}) {
         }
     }
     
+    // ⑥a 2b-a(Q2 승인분): 신의 송환 = 봉인(sealByGodReturn), 'regrant' 면 송환된 파밀리아를 뺀 후보로 재수여(completeConversion).
+    //     clearFlags·dropFamilia 보다 먼저 처리한다. 전이 함수가 스스로 전이를 기록하므로 범위 기준값을 갱신해 이중 기록을 막는다.
+    if (fx.godReturn) applyGodReturn(fx.godReturn);
     if (Array.isArray(fx.clearFlags)) S.flags = S.flags.filter(f => !fx.clearFlags.includes(f));
     if (Array.isArray(fx.clearFlags) && fx.clearFlags.includes('adventurer') && S.job === 'adventurer') setJob('retired');
     if (fx.dropFamilia) { closeMembership('left'); S.familia = null; S.falnaAt = null; S.familiaAt = null; if (S.job === 'adventurer' || S.job === 'supporter') setJob('retired'); }
-    if (fx.familia === 'roll') rollFamilia();   // 신의 파밀리아 전용 추첨(조직 고용은 fx.organization)
+    // 신의 파밀리아 전용 추첨(조직 고용은 fx.organization). 2-i: 'roll' 은 호출 시점 상태로 모드 결정, 'rebind' 는 legacy_rebind(Q16).
+    if (fx.familia === 'roll' || fx.familia === 'rebind') rollFamilia(undefined, rollModeFor(fx.familia));
+    if (fx.recruit) applyRecruit(fx.recruit);   // 2b-b: 지원→심사→결과(일반) / 직접 스카웃
     if (fx.organization) joinOrganization(fx.organization);
+    // ⑩ R-i: 거주·복무 기록(난수 0, 팔나·직업·소속·가족·플래그·로그 불변 — I-R1~I-R4)
+    if (fx.residence) moveResidence(fx.residence, fx.residenceReason || 'event');
+    if (fx.service) recordService(fx.service);
+    syncAtScopeEnd(token, fx);   // v1.7.8-2i 동기화 지점: ⑨ 직후·convertExp 직전(가장 바깥 범위만 기록)
     convertExp(); recompute(); renderStats();
 }
 
@@ -261,13 +522,16 @@ function joinOrganization(orgId) {
     apply((MODS.organizations[org.id] || {}).fx);
 }
 
-function rollFamilia(forcedId) {
-    const pool = gachaData.familias.filter(f => f.id !== 'civilian').map(f => {
-        const bias = (FAMILIA_BIAS[S.origin.id] || {})[f.id] || 1;
-        const parentBias = (S.parentFamilia && S.parentFamilia.id === f.id) ? PARENT_FAMILIA_BIAS : 1;   // 부모 소속 파밀리아 추천(임의 가중치)
-        return { ...f, w: f.weight * bias * parentBias };
-    });
-    S.familia = forcedId ? pool.find(f => f.id === forcedId) : getRandomItemByWeight(pool, 'w');
+// mode: v1.7.8-2i 입단 호출 모드(설계 §2.3.2). 가드는 난수 사용 전에 검사한다. mode 없이 부르면 기존 동작(가드 없음).
+function rollFamilia(forcedId, mode) {
+    return withScope('rollFamilia', null, () => rollFamiliaBody(forcedId, mode));
+}
+function rollFamiliaBody(forcedId, mode) {
+    if (mode !== undefined && !rollModeAllowed(mode)) {
+        pushFalnaTransition({ from: deriveFalnaState(), to: deriveFalnaState(), holderFrom: deriveFalnaHolder(), holderTo: deriveFalnaHolder(), cause: 'rejected', mode, eventId: S.currentEventId ?? null });
+        return false;
+    }
+    S.familia = pickFamiliaCandidate(forcedId);
     if (!S.familia) throw new Error('unknown familia: ' + forcedId);
     S.familiaAt = S.age;   // 파밀리아 입단(소속 결정) 달력 나이 — 팔나 취득(falnaAt)과 별개로 기록
     openMembership();
@@ -288,7 +552,8 @@ function rollFamilia(forcedId) {
     checkFalna();
 }
 
-function checkFalna() {
+function checkFalna() { return withScope('checkFalna', null, checkFalnaBody); }   // v1.7.8-2i: 동기화 범위(기록 전용)
+function checkFalnaBody() {
     if (!S.familia || S.falnaAt == null || hasFalna() || S.age < S.falnaAt) return;
     const m = MODS.familias[S.familia.id] || {};
     if (!S.flags.includes('falna')) S.flags.push('falna');
@@ -305,7 +570,32 @@ function checkFalna() {
     convertExp(); recompute(); renderStats();
 }
 
+// ── R-i(v1.7.8-ri): 거주지 기록 전용 ─────────────────────────────────────────────
+// 거주 필드·이력만 바꾼다. S.origin·직업·파밀리아·팔나·가족·연애·아이템·발리스·플래그·로그를 건드리지 않고 난수를 쓰지 않는다.
+function moveResidence(toRegionId, reason) {
+    if (!REGION_IDS.includes(toRegionId)) { syncInvariantLog.push({ kind: 'residence_unknown_region', value: toRegionId, eventId: S.currentEventId ?? null }); return false; }
+    if (!S.residence || !Array.isArray(S.residenceHistory) || S.residenceHistory.length === 0) { syncInvariantLog.push({ kind: 'residence_missing_state', eventId: S.currentEventId ?? null }); return false; }
+    if (S.residence.regionId === toRegionId) return false;   // 같은 지역 = 이력 무변화
+    const cur = S.residenceHistory[S.residenceHistory.length - 1];
+    cur.to = S.age;
+    S.residenceHistory.push({ seq: cur.seq + 1, regionId: toRegionId, from: S.age, to: null, reason: reason || 'event', eventId: S.currentEventId ?? null });
+    S.residence = { regionId: toRegionId, since: S.age };
+    return true;
+}
+// 복무 기록(RES-2 §3.4). S.flags 와 분리. R-i 에서는 생성만 하고 해제·조건 판정에 쓰지 않는다.
+function recordService(kind) {
+    if (kind !== 'conscripted' && kind !== 'deserter') { syncInvariantLog.push({ kind: 'service_unknown_kind', value: kind, eventId: S.currentEventId ?? null }); return false; }
+    if (!S.service) S.service = {};
+    if (S.service[kind]) return false;
+    S.service[kind] = kind === 'conscripted'
+        ? { since: S.age, regionId: 'rakia', eventId: S.currentEventId ?? null }
+        : { since: S.age, fromRegionId: 'rakia', eventId: S.currentEventId ?? null };
+    return true;
+}
+
 function startLife() {
+    // v1.7.8-2i(U3): 깊이는 검사만 하고 바꾸지 않는다(모듈 로드 시 1회 0).
+    if (syncDepth !== 0) syncInvariantLog.push({ kind: 'sync_depth_nonzero_at_life_start', value: syncDepth });
     const origin = getRandomItemByWeight(gachaData.origins);
     const race = getRandomItemByWeight(gachaData.races);
     const talent = getRandomItemByWeight(gachaData.talents);
@@ -316,7 +606,11 @@ function startLife() {
           eventCounts: {}, lastEventPhase: {}, recentEvents: [], milestones: [], logHistory: [],
           items: [], itemUses: {}, itemsConsumed: [], relations: [], partnerId: null, nextRelationId: 1,
           application: GameCore.Recruit.newApplicationState(), nextMembershipId: 1, minorFamilias: [],
-          raceSubtype: null, lineageSeed: 0, levelHistory: [], maxLevel: 0 };   // 2a: 비활성 데이터 모델(동작 연결 없음)
+          raceSubtype: null, lineageSeed: 0, levelHistory: [], maxLevel: 0,
+          // v1.7.8-2i 기록 필드(설계 §2.8 a): 생성과 동시에 none. 초기 상태는 전이 이력에 넣지 않는다.
+          falnaState: 'none', falnaHolder: null, conversionPending: null, falnaTransitions: [], currentEventId: null, syncBaseline: null,
+          // R-i(기록 전용): 출생 시 거주지 = 출생지. 이력 구간은 달력 나이 기준 반열린 구간 [from, to).
+          residence: { regionId: origin.id, since: 0 }, residenceHistory: [{ seq: 1, regionId: origin.id, from: 0, to: null, reason: 'birth', eventId: null }], service: {} };   // 2a: 비활성 데이터 모델(동작 연결 없음)
     $('log').innerHTML = ''; $('choices').innerHTML = '';
     switchScreen('screen-play');
     apply((MODS.origins[origin.id] || {}).fx);
@@ -343,7 +637,7 @@ function startLife() {
         S.flags.push('parents_in_familia');
         if (NEWBORN_MEMBERSHIP) {
             say('부모가 파밀리아 소속 모험자여서, 태어나자마자 같은 파밀리아의 일원이 되었다.', 'result', 0);
-            rollFamilia(pf.id);   // 대조군: 부모와 같은 파밀리아에 즉시 입단
+            rollFamilia(pf.id, 'newborn_control');   // 대조군: 부모와 같은 파밀리아에 즉시 입단
             S.flags.push('born_in_familia');
         } else {
             say(`부모는 ${pf.label} 소속이었다. (자녀의 정식 입단은 성장한 뒤 따로 이루어진다)`, 'result', 0);
@@ -437,6 +731,7 @@ function nextYear() {
 }
 
 function showEvent(e) {
+    S.currentEventId = e.id;   // v1.7.8-2i: 기록 전용, choose() 의 finally 에서 null
     say(e.text, 'event', S.age);
     if (e.once) S.done.push(e.id);
     S.eventCounts[e.id] = (S.eventCounts[e.id] || 0) + 1;
@@ -456,6 +751,10 @@ function showEvent(e) {
 }
 
 function choose(ch) {
+    try { return chooseBody(ch); }
+    finally { if (S) S.currentEventId = null; }   // v1.7.8-2i(d-2): 조기 반환·예외에서도 초기화
+}
+function chooseBody(ch) {
     $('choices').innerHTML = '';
     let r = ch;
     if (ch.chance) {
@@ -506,6 +805,9 @@ function pickAlias() {
 }
 
 function endLife() {
+    // v1.7.8-2i(⑤): 예외로 남은 기준값 정리. 정상 진행에서는 항상 null.
+    if (S.syncBaseline) { recoverFromBaseline(S.syncBaseline, null, 'recovered_at_life_end'); S.syncBaseline = null; }
+    S.currentEventId = null;
     $('choices').innerHTML = '';
     // 규칙: 사망 시 체력은 0 으로 고정한다(음수 체력 상태를 결과에 남기지 않는다).
     S.hp = Math.max(0, Number.isFinite(S.hp) ? S.hp : 0);

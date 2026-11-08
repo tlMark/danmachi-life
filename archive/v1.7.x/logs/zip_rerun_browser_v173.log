@@ -1,0 +1,12 @@
+PASS  초기 화면은 screen-start
+PASS  핵심 전역/모듈 로드  | {"startLife":"function","EVENTS":true,"items":"object","rel":"function","aging":"function"}
+PASS  실제 클릭으로 24번의 생애가 결과 화면까지 진행  | finished=24, clicks=2395
+PASS  #relations 에 가족·관계 요약 표시
+PASS  #inventory 소지품 표시
+PASS  출생 시 가족 문구가 로그에 표시
+INFO  체감 나이 표기 노출 14/24, 가족 사망 알림 노출 23/24 (확률적, 판정 대상 아님)
+PASS  자동 진행 모드가 결과 화면에 도달
+PASS  모바일(375px) 가로 스크롤 없음  | {"sw":375,"cw":375}
+PASS  페이지 오류/콘솔 오류 없음
+
+SUMMARY: 9/9 passed

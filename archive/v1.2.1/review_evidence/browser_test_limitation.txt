@@ -1,0 +1,9 @@
+[보관 문서 · 현재 유효하지 않음] v1.2.1 당시 검수 환경에 Playwright가 없어 실제 브라우저 테스트를 못 했다는 기록입니다.
+v1.7부터 tests/browser_test.js가 실제 Chromium으로 index.html(file://)을 직접 열어 테스트합니다(최신 로그: logs/browser_test_24lives.log, 첫 줄 ENV에 Chromium/Playwright 버전 기록).
+단, ChatGPT 검수 환경에서는 file:// 및 localhost가 ERR_BLOCKED_BY_ADMINISTRATOR로 차단되어, QA는 HTML/CSS/JS를 인라인 주입하는 방식으로만 재현했습니다. 두 결과는 실행 환경이 다른 것이며 서로 모순되지 않습니다.
+
+Chromium actual browser UI tests not executed.
+- r3_browser.js requires the Playwright package.
+- r3_auto.js requires the Playwright package.
+- require.resolve('playwright') returned MODULE_NOT_FOUND / playwright unavailable.
+- The project-level test_runner.js was extended to cover actual switchScreen handlers and automatic progression in a Mock DOM. These pass, but do not verify rendered browser layout, computed styles, mobile behavior, or real browser event timing.

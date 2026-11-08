@@ -1,0 +1,43 @@
+[보관 문서 · 현재 유효하지 않음] v1.2.1 당시 기록. 현행 상태는 루트 README.md / DEV_REPORT_v1.7.7.md / DOCS_INDEX.md 참조.
+
+==== DanMachi Life Simulation Test ==== 
+seed: 20261104 
+requested: 3000 
+completed: 3000 
+allRunsCompleted: true 
+runtimeExceptions: 0 
+guardTrips: 0 
+averageChronologicalAge: 76.81 
+averagePhysicalAge: 63.04 
+falnaRatePct: 54.5 
+averagePotential: 12.7 
+averagePostFalnaAbilityTotal: 329.87 
+retiredLifeRatePct: 83.3 
+retiredEvents: 18847 
+retiredDaysEvents: 7233 
+finalLevelDistribution: {"0":1337,"1":1568,"2":82,"3":11,"4":2} 
+maxLevelReached: 4 
+finalJobDistribution: {"retired":2484,"adventurer":313,"blacksmith":13,"supporter":60,"merchant":56,"farmer":3,"soldier":54,"guild_staff":4,"waitstaff":4,"healer":8,"child":1} 
+relationshipEvents: {"love":4405,"amazon_duel":102,"have_child":1557,"relationship_crisis":1528} 
+invalidPartnerStates: 0 
+childWithoutPartner: 0 
+nonFiniteValues: 0 
+negativeGrowthValues: 0 
+minObservedAgingRate: 0.1375 
+agingFloorUnitTest: true 
+relationshipUnitTests: {"eligibleIds":["adult","edge10"],"underageProtagonistBlocked":true,"underageTargetBlocked":true,"age18BoundaryAccepted":true,"exactlyTenYearGapAccepted":true,"familyAndDeceasedBlocked":true,"ageGapOverTenBlocked":true,"duplicatePartnerBlocked":true,"deceasedCurrentPartnerCanBeReplaced":true} 
+relationTerminationUnitTests: {"collisionSafe":true,"subtypePreserved":true,"breakupHook":true,"deathHook":true} 
+familiaOccupationUnitTests: {"hephaestusDefaultsToBlacksmith":true,"existingSupporterPreserved":true} 
+familyRelationsGenerated: 0 
+partnerAge100StillActiveUnitTest: true 
+partnerBreakups: 798 
+partnerDeaths: 0 
+levelUpFeatOnlyUnitTest: true 
+screenSwitchUnitTest: true 
+autoProgressUnitTest: true 
+partnerFlagDependencyCount: 0 
+resultRenderingUnitTest: true 
+growthUnitTests: {"preFalnaNegativeAndNaNIgnored":true,"postFalnaExceliaConverted":true,"liarisCap":1499,"allAbilitiesFiniteAndNonNegative":true} 
+allInvariantsPassed: true 
+uniqueEventTypes: 68 
+neverFiredEvents: hero_sacrifice

@@ -102,6 +102,19 @@ const EVENT_AREA = {
 };
 // 부모가 파밀리아 소속일 때 자녀의 이후 파밀리아 추첨에서 그 파밀리아에 곱하는 가중치(임의 밸런스 값).
 const PARENT_FAMILIA_BIAS = 6;
+
+// ── R-i(v1.7.8-ri): 거주지 기록 전용 데이터 ─────────────────────────────────────────
+// 지역 id = 출생지 id(data.js origins). R-i 에서는 이벤트 조건·판정에 쓰지 않는다(R-iii 미승인).
+const REGION_IDS = ['orario', 'rakia', 'melen', 'far_east', 'telskyura', 'elven_forest', 'unknown'];
+// 파밀리아 소재지(사용자 건별 지정 2026-11-07, IMPL-P0a §7.1). null = 소재지 미지정(지역·이주 규칙 미적용).
+// 등급: hephaestus·miach = 2차+사용자 확인 / ares·kali = 2차 / 그 밖 = 사용자 제공 정보. 원작 확정 0.
+// R-i 에서는 기록용 데이터일 뿐 어떤 판정에도 쓰지 않는다(입단 이주는 2b·R-ii).
+const FAMILIA_HOME = {
+    hephaestus: 'orario', miach: 'orario', ares: 'rakia', kali: 'telskyura',
+    ganesha: 'orario', loki: 'orario', freya: 'orario', hermes: 'orario', demeter: 'orario',
+    takemikazuchi: 'orario', soma: 'orario', hestia: 'orario',
+    astraea: null
+};
 // true = v1.7.1 방식(출생 직후 자녀가 부모 소속으로 즉시 입단·팔나 0세). false(기본) = 부모 소속과 자녀 입단을 분리.
 const NEWBORN_MEMBERSHIP = (typeof globalThis !== 'undefined' && globalThis.__NEWBORN_MEMBERSHIP) || false;
 
@@ -113,15 +126,15 @@ const EVENTS = [
         { label: '약을 사 먹는다', text: '돈은 들었지만 금방 나았다.', fx: { valis: -400 } },
         { label: '그냥 버틴다', chance: { p: .7, stat: 'hp', per: .003, ok: { text: '며칠 앓고 털고 일어났다.', fx: { hp: -5 } }, fail: { text: '병이 깊어졌다.', fx: { hp: -25 } } } }] },
     { id: 'join', w: 100, once: true, cond: { cage: [12, 22], hasFamilia: false, notRace: ['human', 'pallum'] }, text: '스스로 파밀리아를 찾아 나설 때가 되었다. 마법과 신체 재능이 있는 종족은 신들이 먼저 눈여겨본다.', choices: [
-        { label: '파밀리아의 문을 두드리고 다닌다', text: '몇 번 퇴짜를 맞은 끝에 받아 줄 신을 만났다.', fx: { familia: 'roll' } },
+        { label: '파밀리아의 문을 두드리고 다닌다', text: '파밀리아의 문을 두드리고 다녔다.', fx: { recruit: { route: 'self_apply', okText: '몇 번 퇴짜를 맞은 끝에 받아 줄 신을 만났다.', failText: '끝내 받아 주는 신을 찾지 못했다.' } } },
         { label: '길드 주변에서 서포터 일을 구한다', text: '짐꾼 일로 하루하루를 벌기 시작했다.', fx: { flags: ['supporter'], valis: 600 } }] },
     { id: 'latejoin', w: 12, once: true, cond: { cage: [20, 35], hasFamilia: false, flags: ['supporter'] }, text: '오랜 서포터 생활 끝에 받아 주겠다는 신이 나타났다.', choices: [
-        { label: '손을 잡는다', text: '늦었지만 새 출발을 했다.', fx: { familia: 'roll' } },
+        { label: '손을 잡는다', text: '늦었지만 새 출발을 했다.', fx: { recruit: { route: 'scout' } } },
         { label: '지금의 삶이 낫다고 거절한다', text: '안정된 일상을 택했다.', fx: { bond: 3 } }] },
-    { id: 'dive1', w: 60, once: true, cond: { flags: ['falna'], age: [15, 40], job: ['adventurer'] }, text: '처음으로 던전 상층에 내려갔다.', choices: [
+    { id: 'dive1', w: 60, once: true, cond: { canEnterDungeon: true, flags: ['falna'], age: [15, 40], job: ['adventurer'] }, text: '처음으로 던전 상층에 내려갔다.', choices: [
         { label: '1층만 신중하게 돈다', text: '고블린 몇 마리를 잡고 무사히 돌아왔다.', fx: { power: 6, valis: 400 } },
         { label: '욕심내서 더 깊이 내려간다', chance: { p: .55, stat: 'power', per: .004, ok: { text: '큰 수확을 안고 살아 돌아왔다.', fx: { power: 14, valis: 1200, feat: 1 } }, fail: { text: '몬스터 무리에 둘러싸여 간신히 도망쳤다.', fx: { hp: -60 } } } }] },
-    { id: 'routine', w: 25, cond: { flags: ['falna'], age: [16, 50], job: ['adventurer'] }, text: '평소처럼 던전에 들어갈 채비를 했다.', choices: [
+    { id: 'routine', w: 25, cond: { canEnterDungeon: true, flags: ['falna'], age: [16, 50], job: ['adventurer'] }, text: '평소처럼 던전에 들어갈 채비를 했다.', choices: [
         { label: '안전한 구간만 돈다', text: '소득은 적지만 무리 없는 하루였다.', fx: { power: 2, valis: 300 } },
         { label: '한 계층 더 내려간다', chance: { p: .6, stat: 'power', per: .004, ok: { text: '성과가 좋았다.', fx: { power: 5, valis: 900 } }, fail: { text: '부상을 입고 돌아왔다.', fx: { hp: -20, valis: -200 } } } }] },
     { id: 'tavern', w: 12, cond: { age: [16, 70] }, text: '저녁에 술집 ‘풍요의 여주인’ 앞을 지나게 되었다.', choices: [
@@ -134,30 +147,30 @@ const EVENTS = [
         { label: '마주 앉아 솔직하게 대화한다', chance: { p: .75, stat: 'bond', per: .005, ok: { text: '서로의 마음을 다시 확인하며 관계를 이어갔다.', fx: { bond: 3 } }, fail: { text: '끝내 간극을 좁히지 못하고 각자의 길을 걷게 되었다.', fx: { relationshipEnd: 'breakup', bond: -3 } } } },
         { label: '서로를 위해 헤어진다', text: '좋았던 기억을 간직한 채 연인 관계를 마무리했다.', fx: { relationshipEnd: 'breakup' } }] },
     { id: 'conscript', w: 80, once: true, cond: { cage: [17, 28], origin: ['rakia'] }, text: '라키아에서 징집 명령이 내려왔다.', choices: [
-        { label: '징집에 응한다', text: '전쟁터에서 거칠게 단련되었다.', fx: { power: 8, hp: -5, flags: ['soldier'] } },
-        { label: '오라리오로 도망친다', chance: { p: .5, ok: { text: '국경을 넘어 새 삶을 시작했다.', fx: { valis: -400, bond: -3 } }, fail: { text: '추격대에 붙잡혀 크게 다쳤다.', fx: { hp: -25 } } } }] },
-    { id: 'minotaur', w: 14, once: true, cond: { flags: ['falna'], age: [16, 40], job: ['adventurer'], max: { power: 35 } }, text: '상층에서 있을 리 없는 미노타우로스와 마주쳤다.', choices: [
+        { label: '징집에 응한다', text: '전쟁터에서 거칠게 단련되었다.', fx: { power: 8, hp: -5, flags: ['soldier'], service: 'conscripted' } },
+        { label: '오라리오로 도망친다', chance: { p: .5, ok: { text: '국경을 넘어 새 삶을 시작했다.', fx: { valis: -400, bond: -3, residence: 'orario', residenceReason: 'fled', service: 'deserter' } }, fail: { text: '추격대에 붙잡혀 크게 다쳤다.', fx: { hp: -25 } } } }] },
+    { id: 'minotaur', w: 14, once: true, cond: { canEnterDungeon: true, flags: ['falna'], age: [16, 40], job: ['adventurer'], max: { power: 35 } }, text: '상층에서 있을 리 없는 미노타우로스와 마주쳤다.', choices: [
         { label: '전력으로 도망친다', chance: { p: .5, stat: 'power', per: .004, ok: { text: '살아 돌아왔지만 공포가 오래 남았다.', fx: { hp: -15, bond: -1 } }, fail: { text: '따라잡혀 중상을 입었다.', fx: { hp: -55 } } } },
         { label: '맞서 싸운다', chance: { p: .15, stat: 'power', per: .006, ok: { text: '기적처럼 살아남아 이름이 알려졌다.', fx: { power: 25, bond: 4, feat: 2 } }, fail: { text: '압도적인 힘 앞에 쓰러졌다.', fx: { hp: -65 } } } }] },
-    { id: 'expedition', w: 25, once: true, cond: { flags: ['falna'], age: [25, 55], job: ['adventurer'], min: { power: 55 } }, text: '심층 원정대를 꾸린다는 소식이 돌았다.', choices: [
+    { id: 'expedition', w: 25, once: true, cond: { canEnterDungeon: true, flags: ['falna'], age: [25, 55], job: ['adventurer'], min: { power: 55 } }, text: '심층 원정대를 꾸린다는 소식이 돌았다.', choices: [
         { label: '참가한다', chance: { p: .5, stat: 'power', per: .003, ok: { text: '원정은 성공했고 전설로 회자되었다.', fx: { power: 25, valis: 5000, flags: ['veteran'], feat: 2 } }, fail: { text: '원정 도중 돌아오지 못했다.', fx: { die: true } } } },
         { label: '지상에 남는다', text: '대신 후방 일을 도우며 안정적으로 지냈다.', fx: { valis: 800 } }] },
     { id: 'ritual', w: 90, once: true, cond: { cage: [14, 22], origin: ['telskyura'] }, text: '텔스큐라의 의식에 휘말려 싸움에 나서야 한다.', choices: [
         { label: '정면으로 싸운다', chance: { p: .5, stat: 'power', per: .005, ok: { text: '살아남아 전사로 인정받았다.', fx: { power: 15, flags: ['warrior'], feat: 1 } }, fail: { text: '싸움에서 목숨을 잃었다.', fx: { die: true } } } },
         { label: '몰래 빠져나간다', chance: { p: .4, ok: { text: '무사히 도망쳤지만 고향을 잃었다.', fx: { bond: -3 } }, fail: { text: '붙잡혀 크게 다쳤다.', fx: { hp: -40 } } } }] },
-    { id: 'xenos', w: 6, once: true, cond: { flags: ['falna'], age: [20, 50], job: ['adventurer'] }, text: '미궁 깊은 곳에서 이성을 가진 몬스터와 마주쳤다.', choices: [
+    { id: 'xenos', w: 6, once: true, cond: { canEnterDungeon: true, flags: ['falna'], age: [20, 50], job: ['adventurer'] }, text: '미궁 깊은 곳에서 이성을 가진 몬스터와 마주쳤다.', choices: [
         { label: '대화를 시도한다', text: '인간과 몬스터 사이의 비밀스러운 유대가 생겼다.', fx: { flags: ['xenos_friend'], bond: 10 } },
         { label: '길드에 보고한다', text: '포상금을 받았지만 마음 한구석이 불편했다.', fx: { valis: 1600, bond: -4 } }] },
     { id: 'retire', w: 30, once: true, cond: { age: [45, 70] }, text: '몸이 예전 같지 않다. 앞으로를 생각할 때가 왔다.', choices: [
         { label: '후배를 가르친다', text: '후배들이 따르는 사람이 되었다.', fx: { bond: 8, job: 'retired' } },
         { label: '메렌으로 이주해 낚시로 지낸다', text: '그물을 손질하며 평온한 나날을 보냈다.', fx: { hp: 12, flags: ['fisher'], job: 'retired' } }] },
     { id: 'join_hard', w: 100, once: true, cond: { cage: [12, 22], hasFamilia: false, race: ['human', 'pallum'] }, text: '팔나를 받으려 파밀리아를 찾아다니지만, 특별한 재능이 없어 보이면 문전박대를 당하기 쉽다.', choices: [
-        { label: '끈질기게 문을 두드린다', chance: { p: .55, stat: 'power', per: .01, ok: { text: '끝내 받아 주는 신을 만났다.', fx: { familia: 'roll' } }, fail: { text: '모두 거절당해 서포터 일부터 시작했다.', fx: { flags: ['supporter'], valis: 400 } } } },
+        { label: '끈질기게 문을 두드린다', text: '끈질기게 문을 두드렸다.', fx: { recruit: { route: 'persistence', okText: '끝내 받아 주는 신을 만났다.', failText: '모두 거절당해 서포터 일부터 시작했다.', fallback: { flags: ['supporter'], valis: 400 } } } },
         { label: '길드 주변에서 서포터 일을 구한다', text: '짐꾼 일로 하루하루를 벌기 시작했다.', fx: { flags: ['supporter'], valis: 600 } }] },
     { id: 'supporter_scorn', w: 15, cond: { age: [16, 60], job: ['supporter'] }, text: '전리품 몫을 두고 모험자에게 업신여김을 당했다.', choices: [
         { label: '참고 넘긴다', text: '다툼은 피했지만 마음이 무거웠다.', fx: { bond: -1, valis: 100 } },
         { label: '정당한 몫을 요구한다', chance: { p: .5, stat: 'bond', per: .005, ok: { text: '떳떳한 태도에 상대가 물러섰다.', fx: { valis: 500, bond: 2 } }, fail: { text: '주먹이 돌아왔다.', fx: { hp: -15, valis: -100 } } } }] },
-    { id: 'wargame', w: 8, cond: { age: [20, 55], job: ['adventurer'], hasFamilia: true }, text: '파밀리아 간의 전쟁유희가 열려 우리 파밀리아도 참가하게 되었다.', choices: [
+    { id: 'wargame', w: 8, cond: { age: [20, 55], job: ['adventurer'], hasFamilia: true, familiaRole: ['member'] }, text: '파밀리아 간의 전쟁유희가 열려 우리 파밀리아도 참가하게 되었다.', choices: [
         { label: '전선에 선다', chance: { p: .55, stat: 'power', per: .003, ok: { text: '맹활약해 승리에 크게 기여했다.', fx: { power: 12, valis: 1000, bond: 4, feat: 1 } }, fail: { text: '격전 끝에 크게 다쳤다.', fx: { hp: -50 } } } },
         { label: '후방에서 지원한다', text: '무리하지 않고 몫을 챙겼다.', fx: { valis: 300, bond: 2 } }] },
     { id: 'clash', w: 10, cond: { age: [8, 70], origin: ['orario'] }, text: '시가지 한복판에서 파밀리아 간의 항쟁이 터졌다.', choices: [
@@ -178,13 +191,14 @@ const EVENTS = [
     { id: 'amazon_duel', w: 10, cond: { age: [18, 45], race: ['amazon'], hasPartner: false }, text: '마음에 든 상대에게 승부를 청할 기회가 왔다.', choices: [
         { label: '정면 승부를 건다', chance: { p: .5, stat: 'power', per: .003, ok: { text: '승부 끝에 서로를 인정하게 되었다.', fx: { relationship: 'romance', bond: 10 } }, fail: { text: '완패했지만 다음을 기약했다.', fx: { hp: -10, power: 3 } } } },
         { label: '그냥 지나친다', text: '아무 일도 일어나지 않았다.', fx: {} }] },
-    { id: 'neglect', w: 25, once: true, cond: { age: [16, 50], familia: ['soma'] }, text: '주신이 단원들을 방임하는 탓에 파밀리아가 점점 어수선해졌다.', choices: [
+    { id: 'neglect', w: 25, once: true, cond: { age: [16, 50], familia: ['soma'], familiaRole: ['member'] }, text: '주신이 단원들을 방임하는 탓에 파밀리아가 점점 어수선해졌다.', choices: [
         { label: '기강을 바로잡으려 나선다', chance: { p: .5, stat: 'bond', per: .01, ok: { text: '뜻을 같이하는 단원들이 모여들었다.', fx: { bond: 6, power: 3 } }, fail: { text: '반발을 사 몸싸움이 벌어졌다.', fx: { hp: -15, bond: -4 } } } },
         { label: '모른 척한다', text: '분란에 휘말리지 않으려 몸을 사렸다.', fx: { bond: -2 } }] },
-    { id: 'god_gone', w: 3, once: true, cond: { age: [20, 60], job: ['adventurer'] }, text: '주신이 규칙을 어겨 천계로 송환되었고, 새겨진 팔나가 봉인되었다.', choices: [
-        { label: '새 주신을 찾아 나선다', chance: { p: .6, stat: 'bond', per: .004, ok: { text: '받아 주는 신을 만나 힘을 되찾았다.', fx: { familia: 'roll' } }, fail: { text: '받아 줄 신을 찾지 못해 평범한 사람으로 돌아갔다.', fx: { dropFamilia: true, clearFlags: ['adventurer', 'falna'], bond: -3 } } } },
-        { label: '모험을 접고 일상으로 돌아간다', text: '힘을 잃은 채 평범한 생활을 택했다.', fx: { dropFamilia: true, clearFlags: ['adventurer', 'falna'], hp: 5 } }] },
-    { id: 'purple_moth', w: 15, once: true, cond: { flags: ['falna'], age: [15, 50], job: ['adventurer'] }, text: '상층에서 독가루를 뿌리는 퍼플 모스와 마주쳤다.', choices: [
+    // 2b-a(2026-11-07): 팔나 보유(active) 조건 추가(사용자 결정), 송환 = 봉인(godReturn), 성공 시 송환된 파밀리아를 뺀 재수여. 실패·포기는 봉인 유지 + 명시된 clearFlags(adventurer).
+    { id: 'god_gone', w: 3, once: true, cond: { age: [20, 60], job: ['adventurer'], falnaState: ['active'] }, text: '주신이 규칙을 어겨 천계로 송환되었고, 새겨진 팔나가 봉인되었다.', choices: [
+        { label: '새 주신을 찾아 나선다', chance: { p: .6, stat: 'bond', per: .004, ok: { text: '받아 주는 신을 만나 힘을 되찾았다.', fx: { godReturn: 'regrant' } }, fail: { text: '받아 줄 신을 찾지 못해 평범한 사람으로 돌아갔다.', fx: { godReturn: 'seal', clearFlags: ['adventurer'], bond: -3 } } } },
+        { label: '모험을 접고 일상으로 돌아간다', text: '힘을 잃은 채 평범한 생활을 택했다.', fx: { godReturn: 'seal', clearFlags: ['adventurer'], hp: 5 } }] },
+    { id: 'purple_moth', w: 15, once: true, cond: { canEnterDungeon: true, flags: ['falna'], age: [15, 50], job: ['adventurer'] }, text: '상층에서 독가루를 뿌리는 퍼플 모스와 마주쳤다.', choices: [
         { label: '해독약을 쓰고 물러난다', text: '비용은 들었지만 안전하게 빠져나왔다.', fx: { valis: -1000 } },
         { label: '독을 무릅쓰고 맞선다', chance: { p: .55, stat: 'hp', per: .003, ok: { text: '독을 이겨 내며 몸이 독에 익숙해졌다.', fx: { power: 4, flags: ['resist'] } }, fail: { text: '독이 번져 앓아누웠다.', fx: { hp: -30, valis: -500 } } } }] },
     { id: 'theology', w: 8, once: true, cond: { age: [16, 40], noFlags: ['scholar'] }, text: '학구에서 신성문자를 가르치는 종합신학 강의를 들어 볼 기회가 생겼다. 합격하는 사람은 열에 하나도 되지 않는다.', choices: [
@@ -196,7 +210,7 @@ const EVENTS = [
     { id: 'gods_whim', w: 12, cond: { age: [15, 55], flags: ['falna'] }, text: '천계의 지루함을 참지 못하고 내려온 어느 신의 변덕스러운 유희에 휘말렸다.', choices: [
         { label: '신의 장단에 맞춰 준다', chance: { p: .6, ok: { text: '신을 즐겁게 해준 대가로 후한 보상을 받았다.', fx: { valis: 800, bond: 3 } }, fail: { text: '장난이 너무 지나쳐 크게 다쳤다.', fx: { hp: -25 } } } },
         { label: '재빨리 도망친다', text: '신들의 장난을 피했지만 눈밖에 났다.', fx: { bond: -3 } }] },
-    { id: 'high_excelia', w: 20, cond: { age: [18, 50], job: ['adventurer'], flags: ['falna'] }, text: '던전 탐색 중 자신의 한계를 아득히 뛰어넘는 몬스터와 마주쳤다. 랭크 업을 위한 상위 엑세리아(위업)를 쌓을 절호의, 그리고 치명적인 기회다.', choices: [
+    { id: 'high_excelia', w: 20, cond: { canEnterDungeon: true, age: [18, 50], job: ['adventurer'], flags: ['falna'] }, text: '던전 탐색 중 자신의 한계를 아득히 뛰어넘는 몬스터와 마주쳤다. 랭크 업을 위한 상위 엑세리아(위업)를 쌓을 절호의, 그리고 치명적인 기회다.', choices: [
         { label: '죽음을 각오하고 홀로 맞선다', chance: { p: .15, stat: 'power', per: .005, ok: { text: '불가능을 가능으로 바꾸며 엄청난 위업을 달성했다!', fx: { power: 25, hp: -30, feat: 3 } }, fail: { text: '압도적인 힘에 유린당해 치명상을 입었다.', fx: { hp: -60 } } } },
         { label: '파티원들과 협력해 싸운다', chance: { p: .6, stat: 'bond', per: .01, ok: { text: '모두의 힘을 합쳐 쓰러트리고 경험을 나누었다.', fx: { power: 10, bond: 5 } }, fail: { text: '전멸의 위기를 간신히 넘기고 후퇴했다.', fx: { hp: -35 } } } }] },
     { id: 'curse_awaken', w: 8, once: true, cond: { age: [15, 60], flags: ['falna'], max: { bond: 5 } }, text: '극한의 스트레스와 세상에 대한 원망이 마법 슬롯에 끔찍한 주술적 힘인 커스(저주)로 발현되려 한다.', choices: [
@@ -211,7 +225,7 @@ const EVENTS = [
     { id: 'hero_sacrifice', w: 3, once: true, cond: { age: [20, 60], min: { level: 6 } }, text: '오라리오에 흑룡이 습격해왔다. 도시의 존망이 걸린 절망적인 전투가 시작된다.', choices: [
         { label: '선두에 서서 흑룡에게 돌격한다', chance: { p: 0.05, stat: 'power', per: 0.001, ok: { text: '기적적인 일격으로 흑룡을 물리치고 전설이 되었다.', fx: { milestone: 'hero', flags: ['hero'] } }, fail: { text: '흑룡의 브레스에 흔적도 없이 사라졌다.', fx: { die: true } } } },
         { label: '후방 벙커로 피난한다', text: '영웅들의 희생으로 도시는 구원받았으나 평생 죄책감을 안고 살게 되었다.', fx: { bond: -10, hp: -5 } }] },
-    { id: 'guild_advisor', w: 20, cond: { flags: ['falna'], age: [14, 20], job: ['adventurer'], max: { level: 1 } }, text: '길드 본부에 방문하여 어드바이저에게 던전 탐색 가이드라인을 제공받았다.', choices: [
+    { id: 'guild_advisor', w: 20, cond: { canEnterDungeon: true, flags: ['falna'], age: [14, 20], job: ['adventurer'], max: { level: 1 } }, text: '길드 본부에 방문하여 어드바이저에게 던전 탐색 가이드라인을 제공받았다.', choices: [
         { label: '안전한 상층(1~12계층) 공략법을 따른다', text: '어드바이저의 조언에 따라 무리하지 않고 저급 몬스터를 사냥하여 마석을 모았다.', fx: { valis: 500, hp: 10 } },
         { label: '조언을 무시하고 중층(13~24계층)으로 직행한다', chance: { p: 0.2, stat: 'dex', per: 0.01, ok: { text: '퍼스트 라인이라 불리는 중층에서 간신히 살아남아 큰 경험을 얻었다.', fx: { feat: 1, power: 15 } }, fail: { text: '13계층에서 헬 하운드의 화염에 큰 화상을 입고 도망쳤다.', fx: { hp: -30, valis: -200 } } } } ] },
     
@@ -222,7 +236,7 @@ const EVENTS = [
     { id: 'magic_sword_crozzo', w: 10, once: true, cond: { job: ['adventurer'], min: { valis: 15000 } }, text: '무영창으로 마법 발동이 가능한 강력한 소모품, 크로조의 마검을 구매할 기회가 생겼다.', choices: [
         { label: '거금을 들여 마검을 하나 장만한다', text: '비싼 가격을 지불했지만, 심층 원정이나 위기 상황을 타개할 강력한 결전 병기를 얻었다.', fx: { valis: -15000, getItem: 'magic_sword' } },
         { label: '비싼 소모품이라 포기한다', text: '마검에 의존하지 않고 자신의 순수한 전투력만으로 미궁에 도전하기로 했다.', fx: { valis: 0 } } ] },
-    { id: 'encounter_goliath', w: 12, once: true, cond: { flags: ['falna'], job: ['adventurer'], min: { level: 2 } }, text: '17계층 통곡의 대벽에서 신장 7m의 계층 터주(몬스터 렉스) 골라이아스와 조우했다.', choices: [
+    { id: 'encounter_goliath', w: 12, once: true, cond: { canEnterDungeon: true, flags: ['falna'], job: ['adventurer'], min: { level: 2 } }, text: '17계층 통곡의 대벽에서 신장 7m의 계층 터주(몬스터 렉스) 골라이아스와 조우했다.', choices: [
         { label: '파티원들과 연계하여 전면전에 나선다', chance: { p: 0.4, stat: 'power', per: 0.005, ok: { text: '사투 끝에 골라이아스를 토벌하고 18계층 리빌라 마을로 무사히 진입했다.', fx: { valis: 20000, feat: 3 } }, fail: { text: '계층 터주의 압도적인 파괴력에 짓눌려 뼈가 부러지는 중상을 입었다.', fx: { hp: -50 } } } },
         { label: '패스 퍼레이드를 일으켜 다른 파티에 몬스터 떠넘긴다', text: '비겁한 수단으로 목숨은 건졌으나 오라리오 내에서 모험자로서의 평판이 하락했다.', fx: { hp: -10, feat: -2 } } ] },
     { id: 'buy_elemental_cloth', w: 15, cond: { age: [15, 50], job: ['adventurer'], noItem: ['salamander_wool', 'undine_cloth'], min: { level: 2, valis: 8000 } }, text: '중층과 하층의 가혹한 환경을 버티기 위해 정령의 가호가 깃든 방호포를 구매할 기회가 생겼다.', choices: [
@@ -235,10 +249,10 @@ const EVENTS = [
     { id: 'buy_dual_potion', w: 20, cond: { job: ['adventurer'], noItem: ['dual_potion'], min: { valis: 2000 } }, text: '미아흐 파밀리아의 『푸른 약포』에서 체력과 마인드를 동시에 회복시키는 신약 듀얼 포션을 판매하고 있다.', choices: [
         { label: '비상용으로 듀얼 포션을 대량 구매한다', text: '위험한 던전 탐색 중 큰 위기를 넘길 수 있는 생명줄을 확보했다.', fx: { valis: -2000, getItem: 'dual_potion' } },
         { label: '일반 포션으로 만족한다', text: '비용을 아꼈으나, 전투 지속력에는 한계가 남았다.', fx: { valis: 0 } } ] },
-    { id: 'find_grimoire', w: 3, once: true, cond: { flags: ['falna'], age: [15, 60], job: ['adventurer'], min: { level: 3 } }, text: '던전 탐색 중 혹은 우연한 기회로, 읽는 것만으로 마법을 각성시켜 준다는 초희귀 마도서 『그리므와르』를 손에 넣었다.', choices: [
+    { id: 'find_grimoire', w: 3, once: true, cond: { canEnterDungeon: true, flags: ['falna'], age: [15, 60], job: ['adventurer'], min: { level: 3 } }, text: '던전 탐색 중 혹은 우연한 기회로, 읽는 것만으로 마법을 각성시켜 준다는 초희귀 마도서 『그리므와르』를 손에 넣었다.', choices: [
         { label: '마도서를 직접 읽어 마법을 각성한다', text: '책은 재가 되어 사라졌지만, 강력한 마법을 깨우쳐 압도적인 힘을 얻었다.', fx: { feat: 5, flags: ['magic_user'], getItem: 'grimoire' } },
         { label: '경매에 올려 막대한 부를 얻는다', text: '최상위 파밀리아에게 1억 발리스가 넘는 가격에 매각하여 평생 쓸 돈을 벌었다.', fx: { valis: 1000000 } } ] },
-    { id: 'daedalus_orb', w: 5, once: true, cond: { flags: ['falna'], job: ['adventurer'], min: { level: 3 } }, text: '어둠의 파벌(이블스)의 잔당을 토벌하던 중, 붉은 눈알에 D가 새겨진 기괴한 아이템 『다이달로스의 눈』을 주웠다.', choices: [
+    { id: 'daedalus_orb', w: 5, once: true, cond: { canEnterDungeon: true, flags: ['falna'], job: ['adventurer'], min: { level: 3 } }, text: '어둠의 파벌(이블스)의 잔당을 토벌하던 중, 붉은 눈알에 D가 새겨진 기괴한 아이템 『다이달로스의 눈』을 주웠다.', choices: [
         { label: '인조 미궁 크노소스 탐색에 뛰어든다', chance: { p: 0.3, stat: 'power', per: 0.005, ok: { text: '미궁의 함정을 돌파하고 엄청난 밀수품과 마석을 탈취했다.', fx: { valis: 50000, feat: 4 } }, fail: { text: '독 포자를 뿜는 몬스터와 폭발 트랩에 휘말려 사경을 헤맸다.', fx: { hp: -60, valis: -10000 } } } },
         { label: '위험한 물건이라 판단해 길드에 넘긴다', text: '길드로부터 포상금을 받고 불필요한 위험을 피했다.', fx: { valis: 15000, feat: 1 } } ] },
 
@@ -250,7 +264,7 @@ const EVENTS = [
         { label: '농장 일을 돕는다', text: '계절에 맞춰 씨를 뿌리고 거두는 삶을 시작했다.', fx: { job: 'farmer', hp: 5, valis: 400 } },
         { label: '치유사의 조수가 된다', text: '약초와 치료 도구를 다루며 다친 이들을 돌보는 일을 배웠다.', fx: { job: 'healer', bond: 3, valis: 300 } },
         { label: '대장간에서 기술을 배운다', text: '쇠를 두드리고 무기를 수리하는 법을 익혀 장인의 길에 들어섰다.', fx: { job: 'blacksmith', valis: 500 } },
-        { label: '모험자 파밀리아에 들어간다', text: '팔나를 받고 던전에 도전할 기회를 얻었다.', fx: { familia: 'roll' } },
+        { label: '모험자 파밀리아에 들어간다', text: '모험자 파밀리아의 문을 두드렸다.', fx: { recruit: { route: 'self_apply', okText: '팔나를 받고 던전에 도전할 기회를 얻었다.', failText: '받아 주는 파밀리아를 찾지 못했다.' } } },
         { label: '서포터로 일한다', text: '모험자들의 짐을 나르고 전리품을 정리하는 일을 시작했다.', fx: { job: 'supporter', valis: 600 } }
     ] },
     { id: 'guild_counter', w: 22, cool: 4, maxTimes: 3, cond: { age: [18, 70], job: ['guild_staff'] }, text: '길드 창구에는 의뢰를 접수하려는 모험자와 항의하러 온 시민이 뒤섞여 긴 줄을 만들었다.', choices: [
@@ -294,7 +308,7 @@ const EVENTS = [
         { label: '제자로 들어가 배운다', text: '오랜 경험에서 나온 조언은 이후의 선택에 큰 도움이 되었다.', fx: { power: 5, bond: 4, feat: 1 } },
         { label: '독립적으로 해 보겠다고 답한다', text: '스스로 판단하고 책임지는 법을 배웠다.', fx: { bond: 2, valis: 300 } }
     ] },
-    { id: 'supporter_route', w: 18, cool: 3, maxTimes: 2, cond: { age: [16, 60], job: ['supporter'], flags: ['falna'], hasFamilia: true }, text: '소속 파밀리아의 원정대가 짐이 많고 귀환 경로도 험한 탐색에 나선다. 팔나를 받은 서포터로서 준비와 판단이 중요해졌다.', choices: [
+    { id: 'supporter_route', w: 18, cool: 3, maxTimes: 2, cond: { age: [16, 60], job: ['supporter'], flags: ['falna'], hasFamilia: true, familiaRole: ['member'] }, text: '소속 파밀리아의 원정대가 짐이 많고 귀환 경로도 험한 탐색에 나선다. 팔나를 받은 서포터로서 준비와 판단이 중요해졌다.', choices: [
         { label: '운반량을 줄이고 귀환 경로를 확보한다', text: '원정대가 무사히 귀환해 당신의 판단을 인정했다.', fx: { bond: 3, valis: 700 } },
         { label: '추가 물자를 더 챙긴다', chance: { p: 0.55, stat: 'agi', per: 0.001, ok: { text: '예상치 못한 상황에 대비할 수 있었다.', fx: { valis: 900, bond: 1 } }, fail: { text: '무거운 짐 때문에 부상을 입었다.', fx: { hp: -12 } } } }
     ] },
@@ -378,19 +392,19 @@ const EVENTS = [
         { label: '이웃과 친구들에게 먼저 안부를 건넨다', text: '새로운 인연이 빈자리를 조금씩 채워 주었다.', fx: { bond: 4 } }] },
 
     // ---- v1.7: 위업 공급 (모험자·팔나 보유자 전용, 레벨 단계별 / 임의 밸런스 값) ----
-    { id: 'floor_boss_upper', w: 24, cool: 4, maxTimes: 3, cond: { age: [15, 55], job: ['adventurer'], flags: ['falna'], min: { level: 1 } }, text: '상층의 터주급 몬스터 토벌 의뢰가 길드 게시판에 붙었다.', choices: [
+    { id: 'floor_boss_upper', w: 24, cool: 4, maxTimes: 3, cond: { canEnterDungeon: true, age: [15, 55], job: ['adventurer'], flags: ['falna'], min: { level: 1 } }, text: '상층의 터주급 몬스터 토벌 의뢰가 길드 게시판에 붙었다.', choices: [
         { label: '파티를 모집해 정면으로 토벌한다', chance: { p: .6, stat: 'power', per: .004, ok: { text: '파티와 호흡을 맞춰 토벌에 성공했다.', fx: { power: 6, feat: 1, valis: 1500 } }, fail: { text: '반격에 밀려 후퇴했다.', fx: { hp: -18, valis: -300 } } } },
         { label: '후방 지원 역할을 맡는다', text: '무리하지 않고 파티를 도와 보수를 나눠 받았다.', fx: { power: 2, bond: 2, valis: 500 } }] },
-    { id: 'mid_floor_expedition', w: 22, cool: 5, maxTimes: 3, cond: { age: [18, 55], job: ['adventurer'], flags: ['falna'], min: { level: 2 } }, text: '중층 탐사대가 신규 단원을 모집한다. 보수와 위험이 모두 크다.', choices: [
+    { id: 'mid_floor_expedition', w: 22, cool: 5, maxTimes: 3, cond: { canEnterDungeon: true, age: [18, 55], job: ['adventurer'], flags: ['falna'], min: { level: 2 } }, text: '중층 탐사대가 신규 단원을 모집한다. 보수와 위험이 모두 크다.', choices: [
         { label: '탐사대의 선봉을 맡는다', chance: { p: .5, stat: 'power', per: .003, ok: { text: '미지의 구역을 개척하고 이름이 알려졌다.', fx: { power: 10, feat: 2, valis: 3000 } }, fail: { text: '기습을 받아 큰 부상을 입고 귀환했다.', fx: { hp: -28, valis: -500 } } } },
         { label: '후위에서 안전하게 따라간다', text: '위험은 피했지만 얻은 것도 많지 않았다.', fx: { power: 3, valis: 800 } }] },
-    { id: 'deep_floor_survey', w: 20, cool: 5, maxTimes: 3, cond: { age: [20, 55], job: ['adventurer'], flags: ['falna'], min: { level: 3 } }, text: '하층 조사 의뢰가 길드에서 상급 모험자에게만 전달되었다.', choices: [
+    { id: 'deep_floor_survey', w: 20, cool: 5, maxTimes: 3, cond: { canEnterDungeon: true, age: [20, 55], job: ['adventurer'], flags: ['falna'], min: { level: 3 } }, text: '하층 조사 의뢰가 길드에서 상급 모험자에게만 전달되었다.', choices: [
         { label: '조사대를 이끌고 심부로 향한다', chance: { p: .45, stat: 'power', per: .0025, ok: { text: '위협을 돌파하고 귀중한 정보를 가져왔다.', fx: { power: 14, feat: 3, valis: 6000 } }, fail: { text: '퇴로가 막혀 간신히 탈출했다.', fx: { hp: -35, valis: -800 } } } },
         { label: '정찰 임무만 수행한다', text: '위험을 줄이고 확실한 성과만 챙겼다.', fx: { power: 4, valis: 1500 } }] },
-    { id: 'floor_lord_hunt', w: 18, cool: 6, maxTimes: 2, cond: { age: [20, 58], job: ['adventurer'], flags: ['falna'], min: { level: 4 } }, text: '계층 주인급 몬스터의 출현이 확인되었다. 각 파벌이 연합 토벌대를 꾸리고 있다.', choices: [
+    { id: 'floor_lord_hunt', w: 18, cool: 6, maxTimes: 2, cond: { canEnterDungeon: true, age: [20, 58], job: ['adventurer'], flags: ['falna'], min: { level: 4 } }, text: '계층 주인급 몬스터의 출현이 확인되었다. 각 파벌이 연합 토벌대를 꾸리고 있다.', choices: [
         { label: '토벌대의 중핵으로 참가한다', chance: { p: .45, stat: 'power', per: .002, ok: { text: '연합 토벌에서 결정타를 날렸다.', fx: { power: 18, feat: 4, valis: 9000, bond: 3 } }, fail: { text: '격전 끝에 크게 다쳤다.', fx: { hp: -40 } } } },
         { label: '보급과 퇴로 확보에 전념한다', text: '묵묵히 뒤를 받치며 토벌을 성공으로 이끌었다.', fx: { power: 5, bond: 3, valis: 2000 } }] },
-    { id: 'legend_clash', w: 16, cool: 6, maxTimes: 2, cond: { age: [20, 60], job: ['adventurer'], flags: ['falna'], min: { level: 5 } }, text: '전설로만 전해지던 규격 외 몬스터가 모습을 드러냈다. 이름 있는 모험자들이 하나둘 모여든다.', choices: [
+    { id: 'legend_clash', w: 16, cool: 6, maxTimes: 2, cond: { canEnterDungeon: true, age: [20, 60], job: ['adventurer'], flags: ['falna'], min: { level: 5 } }, text: '전설로만 전해지던 규격 외 몬스터가 모습을 드러냈다. 이름 있는 모험자들이 하나둘 모여든다.', choices: [
         { label: '최전선에서 맞선다', chance: { p: .4, stat: 'power', per: .0015, ok: { text: '모두의 힘으로 전설을 쓰러뜨렸다.', fx: { power: 24, feat: 5, valis: 15000, bond: 5 } }, fail: { text: '압도적인 힘 앞에 중상을 입고 후퇴했다.', fx: { hp: -45 } } } },
         { label: '후방에서 부상자를 구한다', text: '많은 이를 살렸고 그 일은 오래 기억되었다.', fx: { power: 6, feat: 1, bond: 6 } }] }
 ];
