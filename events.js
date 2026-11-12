@@ -165,7 +165,7 @@ const EVENTS = [
         { label: '후배를 가르친다', text: '후배들이 따르는 사람이 되었다.', fx: { bond: 8, job: 'retired' } },
         { label: '메렌으로 이주해 낚시로 지낸다', text: '그물을 손질하며 평온한 나날을 보냈다.', fx: { hp: 12, flags: ['fisher'], job: 'retired' } }] },
     { id: 'join_hard', w: 100, once: true, cond: { cage: [12, 22], hasFamilia: false, race: ['human', 'pallum'] }, text: '팔나를 받으려 파밀리아를 찾아다니지만, 특별한 재능이 없어 보이면 문전박대를 당하기 쉽다.', choices: [
-        { label: '끈질기게 문을 두드린다', text: '끈질기게 문을 두드렸다.', fx: { recruit: { route: 'persistence', okText: '끝내 받아 주는 신을 만났다.', failText: '모두 거절당해 서포터 일부터 시작했다.', fallback: { flags: ['supporter'], valis: 400 } } } },
+        { label: '끈질기게 문을 두드린다', text: '끈질기게 문을 두드렸다.', fx: { recruit: { route: 'persistence', okText: '끝내 받아 주는 신을 만났다.', failText: '{familia}의 심사에서 탈락했다.', followup: 'recruit_after_fail' } } },
         { label: '길드 주변에서 서포터 일을 구한다', text: '짐꾼 일로 하루하루를 벌기 시작했다.', fx: { flags: ['supporter'], valis: 600 } }] },
     { id: 'supporter_scorn', w: 15, cond: { age: [16, 60], job: ['supporter'] }, text: '전리품 몫을 두고 모험자에게 업신여김을 당했다.', choices: [
         { label: '참고 넘긴다', text: '다툼은 피했지만 마음이 무거웠다.', fx: { bond: -1, valis: 100 } },

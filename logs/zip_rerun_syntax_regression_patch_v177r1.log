@@ -1,0 +1,7 @@
+syntax_ok
+SAME  calendar/20261104: baseline=127410497 now=127410497 exit=0
+SAME  newborn_parent_familia/20261104: baseline=3932767934 now=3932767934 exit=0
+PASS: 2개 구성 모두 기준과 동일 (필터: calendar newborn_parent_familia, 전체 10개 중)
+checking file script.js
+checking file events.js
+checking file test_runner.js

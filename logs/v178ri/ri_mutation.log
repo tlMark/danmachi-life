@@ -1,0 +1,7 @@
+MUT rng: exit=1 fails=1 [RI-2b 난수 호출 0 —;]
+MUT job: exit=1 fails=2 [RI-2c 거주 외 S 동일;RI-6c 직업·소속·팔;]
+MUT origin: exit=1 fails=3 [RI-2c 거주 외 S 동일;RI-2g origin 불변;RI-6d origin rakia 유지;]
+MUT noFlee: exit=1 fails=2 [RI-6a 거주 orario, 이�;RI-6b deserter 생성, co;]
+MUT flagSvc: exit=1 fails=2 [RI-5d S.flags 에 넣지 ;RI-6c 직업·소속·팔;]
+MUT sameRegion: exit=1 fails=1 [RI-3;]
+MUT homeMissing: exit=1 fails=2 [RI-10a 모든 파밀리�;RI-10c astraea = null(미;]

@@ -1,0 +1,7 @@
+MUT noExclude: exit=1 fails=1 [GG-4a 400시드 재수여 결과에;]
+MUT noRebase: exit=1 fails=3 [GG-3a fail 전이 god_returned 1건;GG-3a giveup 전이 god_returned 1�;GG-7b chance 실패(난수 0.999) �;]
+MUT dropBack_giveup: exit=1 fails=1 [GG-8 giveup dropFamilia 없음·god;]
+MUT dropBack_fail: exit=1 fails=1 [GG-8 fail dropFamilia 없음·godRe;]
+MUT noCond: exit=1 fails=3 [GG-1b 팔나 없는 소속 모험�;GG-1c sealed → match false;GG-8 cond.falnaState = [active] —;]
+MUT jobChange: exit=1 fails=5 [GG-2d seed 1 직업 adventurer 유�;GG-2d seed 11 직업 adventurer 유;GG-2d seed 20261104 직업 adventur;GG-2d seed 5 직업 adventurer 유�;GG-2d seed 777 직업 adventurer �;]
+MUT extraRng: exit=1 fails=9 [GG-2g seed 1 난수: ok 분기 직�;GG-2g seed 11 난수: ok 분기 직;GG-2g seed 20261104 난수: ok 분�;GG-2g seed 5 난수: ok 분기 직�;GG-2g seed 777 난수: ok 분기 �;GG-3f fail 난수 0(봉인 경로) ;GG-3f giveup 난수 0(봉인 경로;GG-7a chance 성공(난수 0.0) →;GG-7b chance 실패(난수 0.999) �;]

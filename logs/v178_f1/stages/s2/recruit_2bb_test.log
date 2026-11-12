@@ -1,0 +1,50 @@
+PASS RB-1a evaluateApplication 에 Math.random 없음
+PASS RB-1b 같은 시드 → 같은 결과 — {"p":0.63,"roll":0.6011037519201636,"outcome":"accepted"}
+PASS RB-1c 결과는 accepted/rejected 만
+PASS RB-1d 기본 확률 = routeBase + 모험 성향 보정 — 0.63
+PASS RB-1e 확률 상한 pMax·하한 이상 — {"hi":0.95,"lo":0.6}
+PASS RB-1f roll < p → accepted, roll ≥ p → rejected
+PASS RB-1g scout(직접 경로)는 심사 대상 아님(기본 합격률 없음 → 예외)
+PASS RB-1h RECRUIT_TUNING 동결·쿨다운·상한·같은 파밀리아 제한 정의
+PASS RB-2a join_hard 의 기존 chance 제거(U-2b-3 b)
+PASS RB-2b join → self_apply
+PASS RB-2c career_choice → self_apply
+PASS RB-2d latejoin → scout(DIRECT_ROUTES)
+PASS RB-2e 네 이벤트에 fx.familia:"roll" 남지 않음
+PASS RB-2f join_hard 거절 대체 fx = 기존 실패 fx(서포터·400)
+PASS RB-3a 합격 생애 존재
+PASS RB-3b 주 RNG 호출 수 동일(후보 1 + falnaAt) — {"recruit":2,"roll":2}
+PASS RB-3c 같은 파밀리아·같은 falnaAt·같은 role — {"a":["astraea",15],"b":["astraea",15]}
+PASS RB-3d 이력 1건(self_apply·accepted·attempt 1·familiaId 일치)·current null — {"route":"self_apply","at":15,"attempt":1,"familiaId":"astraea","outcome":"accepted","p":0.66}
+PASS RB-3e 전이 grant 또는 소속만(초기 none→)·직업 merchant 유지(입단이 직업을 덮어쓰지 않음)
+PASS RB-4a 거절 생애 존재
+PASS RB-4b 주 RNG 호출 1회(후보 선택만, falnaAt 생략) — 1
+PASS RB-4c 무소속·falnaAt null·팔나 none·소속 이력 0
+PASS RB-4d 이력 rejected·current null·직업 불변 — {"route":"self_apply","at":15,"attempt":1,"familiaId":"ganesha","outcome":"rejected","p":0.7}
+PASS RB-5a 심사 시점 current = { route, at, attempt, familiaId } — {"route":"self_apply","at":15,"attempt":1,"familiaId":"demeter"}
+PASS RB-5b 결과 처리 후 current null
+PASS RB-6a recruitRng 호출로 주 RNG 0회
+PASS RB-6b 같은 attempt·나이 → 같은 값, attempt 다르면 다른 값 — [0.6793373965192586,0.6793373965192586,0.048933800775557756]
+PASS RB-6c 신규 지원 함수에 Math.random 없음
+PASS RB-6d 같은 시드 반복 → 이력·결과 동일
+PASS RB-7a 쿨다운 중 → blocked(cooldown)·이력 추가 0·주 RNG 0 — [{"route":"self_apply","at":16,"reason":"cooldown"}]
+PASS RB-7b 쿨다운 이후: 거절한 파밀리아 제외 목록에 포함 — ["ganesha"]
+PASS RB-7c 제외 후보 300회 추첨에 거절 파밀리아 0회 — 0
+PASS RB-7d 쿨다운 이후 재지원 허용(이력 +1, attempt 2) — {"route":"self_apply","at":17,"attempt":2,"familiaId":"hephaestus","outcome":"rejected","p":0.65}
+PASS RB-7e sameFamiliaRetryYears 경과 → 제외 해제
+PASS RB-7f 일반 지원 상한 도달 → lifetime_cap
+PASS RB-7g 직접 경로는 상한에 세지 않음(cap-1 + direct → 허용)
+PASS RB-8a 심사 호출 0·current null
+PASS RB-8b 입단·이력 direct 1건(scout·accepted·attempt null) — [{"route":"scout","at":25,"attempt":null,"familiaId":"ganesha","outcome":"accepted","direct":true}]
+PASS RB-8c attemptSeq 증가 없음(일반 지원과 분리)
+PASS RB-9a 거절 → supporter 플래그·직업 supporter·valis +400 — {"job":"supporter","flags":["supporter"]}
+PASS RB-9b 합격 → supporter 대체 fx 미적용 — {"job":"adventurer","flags":["adventurer","falna"]}
+PASS RB-10a 이력 0·current null·주 RNG 0
+PASS RB-10b 기존 rejected 전이 기록 — {"age":15,"from":"none","to":"none","holderFrom":null,"holderTo":null,"cause":"rejected","mode":"initial_join","eventId":null}
+PASS RB-11 accepted 가족·아이템·거주·출신 불변
+PASS RB-11 rejected 가족·아이템·거주·출신 불변
+PASS RB-12a 신뢰도·스카웃 심사(SC)·통찰력·무명 파밀리아 생성·FAMILIA_HOME 미사용
+PASS RB-12b FAMILIA_BIAS 기준은 출생지(S.origin) 유지(U-2b-5 는 2b-c)
+PASS RB-12c deferred·open_call·recruit_result 미사용
+PASS RB-12d 신규 상태 필드 S.minorFamilias 비어 있음(생성 없음)
+RESULT: PASS 49/49

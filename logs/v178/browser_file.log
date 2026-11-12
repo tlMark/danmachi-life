@@ -1,0 +1,22 @@
+ENV  chromium=153.0.8010.12 playwright=1.63.0 node=v22.23.4 load=file:// (index.html 직접 열기) executable=playwright-bundled
+PASS  초기 화면은 screen-start
+PASS  핵심 전역/모듈 로드  | {"startLife":"function","EVENTS":true,"items":"object","rel":"function","aging":"function"}
+PASS  실제 클릭으로 24번의 생애가 결과 화면까지 진행  | finished=24, clicks=2121
+PASS  #relations 에 가족·관계 요약 표시
+PASS  #inventory 소지품 표시
+PASS  출생 시 가족 문구가 로그에 표시
+PASS  상태창 레벨 표기(팔나 없음 / Lv.N / 봉인) — 생애 시작 직후  | 24/24
+PASS  상태창 종족 표기(수인만 하위 유형)  | 24/24
+PASS  0~2세 성장 기록(신생아·영아기·유아 초기)이 로그에 표시  | 24/24
+PASS  레벨 변화 강조 항목 수 = 레벨 이력 수  | 24/24
+PASS  결과 화면에 최고 레벨·레벨 이력  | 24/24
+PASS  결과 화면 종족 표기(수인만 하위 유형)  | 24/24
+INFO  수인 생애 7/24, 레벨업이 있었던 생애 6/24 (확률적, 판정 대상 아님)
+INFO  체감 나이 표기 노출 12/24, 가족 사망 알림 노출 20/24 (확률적, 판정 대상 아님)
+PASS  수인 생애: 상태창·출생 기록·결과 화면의 하위 유형 일치  | tries=19, subtype=늑대, canon=unverified
+PASS  자동 진행 모드가 결과 화면에 도달
+PASS  모바일(375px) 가로 스크롤 없음  | {"sw":375,"cw":375}
+PASS  페이지 오류/콘솔 오류 없음
+
+SUMMARY: 16/16 passed
+exit=0

@@ -1,0 +1,9 @@
+기준 ZIP: Danmachi_v1.7.8-2bb-js1_integrated.zip  66fe8c3c303ce0a538f62f6066edbfbc0689cae032ee897bcce68ba496181cea (압축 해제본 = base, 191 파일)
+실행 환경: Node v22.23.4, 4 vCPU, Playwright 1.63.0, Chromium 153.0.8010.12(Playwright 번들). 실행자 Claude Code(2026-11-10). ChatGPT 독립 재실행 아님.
+stages/base = js1 기준선(변경 전) 실행 로그. stages/s1~s4 = 단계별 회귀 로그. 최상위 *.log = 최종 코드(S5) 실행 로그.
+stages/s4/f1_transition_test_run2_expectation_error.log = RB-M9 변이 예상 목록 오류(mut1·mut3)가 드러난 실행. 원인은 예상 쪽 오류(테스트 파일 주석·개발 보고서 §5).
+browser_file_run1_defect_status_not_refreshed.log = 서포터 전직 후 상태창이 갱신되지 않는 게임 결함을 찾은 실행(18/19). 수정 후 browser_file.log·browser_inline.log 19/19.
+statusfix_premutation.log = 위 결함 수정 전 코드에 새 단위 검사(SV-U1e)를 돌려 실패를 확인한 기록.
+48k_base = base 사본(러너에만 생애별 기록 계측 추가, 결과 불변: lifeDigest 10/10 js1 과 동일) / 48k_impl = 최종 구현. 생애별 기록 JSON(약 38MB×2)은 용량 때문에 ZIP 에서 뺐고 요약은 48k_compare.md·48k_compare.json.
+tools/ = 이 로그를 만든 외부 실행 도구(게임 코드 아님).
+r1 폴더(Danmachi_v1.7.7r1_integrated.zip)가 없어 `node tests/sync_2i_test.js <r1>` 대조는 미실행. 인수 없는 실행(108/108)만 함.

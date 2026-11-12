@@ -1,0 +1,6 @@
+DIFF  physical/777: baseline=2529723506 now=1476379107 exit=0
+DIFF  physical/314159: baseline=559088383 now=944325663 exit=0
+DIFF  physical/8675309: baseline=1718625649 now=2519385181 exit=0
+DIFF  physical/20261104: baseline=1438657387 now=3527191366 exit=0
+FAIL: 4/4 불일치
+exit=1

@@ -1,0 +1,6 @@
+SAME  off/777: baseline=3177826000 now=3177826000 exit=0
+SAME  off/314159: baseline=3810621462 now=3810621462 exit=0
+SAME  off/8675309: baseline=2186328106 now=2186328106 exit=0
+SAME  off/20261104: baseline=1815170708 now=1815170708 exit=0
+PASS: 4개 구성 모두 기준과 동일 (필터: off, 전체 10개 중)
+exit=0

@@ -1,0 +1,8 @@
+$ (2ba 판 도구) FORCE_COLOR=1 node tests/d3_wiring_mutation.js
+FAIL none: exit=0
+PASS remove ① showEvent 래퍼의 measurePolluted: exit=1 실패 항목=trackedEventViaShowEventWrapper,untrackedDetectedEvent
+PASS remove ② rollFamilia 래퍼의 trackSealedJoin: exit=1 실패 항목=trackedIdViaRollFamiliaWrapper,trackedEventViaShowEventWrapper,trackedEndLifeViaEndLifeWrapper,noUntrackedInPositive,mixedSplit
+PASS remove ③ endLife 래퍼의 measurePolluted: exit=1 실패 항목=trackedEndLifeViaEndLifeWrapper,untrackedDetectedEndLife,mixedSplit
+PASS remove helper 내부 id 추가: exit=1 실패 항목=trackedIdViaRollFamiliaWrapper,trackedEventViaShowEventWrapper,trackedEndLifeViaEndLifeWrapper,noUntrackedInPositive,mixedSplit
+RESULT: FAIL 1/5
+exit=1

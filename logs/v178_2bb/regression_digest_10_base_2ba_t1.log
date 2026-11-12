@@ -1,0 +1,12 @@
+DIFF  physical/777: baseline=2529723506 now=596465386 exit=0
+DIFF  physical/314159: baseline=559088383 now=1569741996 exit=0
+DIFF  physical/8675309: baseline=1718625649 now=4890153 exit=0
+DIFF  physical/20261104: baseline=1438657387 now=2109524451 exit=0
+DIFF  calendar/20261104: baseline=127410497 now=2617292688 exit=0
+DIFF  newborn_parent_familia/20261104: baseline=3932767934 now=2325388316 exit=0
+DIFF  off/777: baseline=3177826000 now=602453231 exit=0
+DIFF  off/314159: baseline=3810621462 now=2153423888 exit=0
+DIFF  off/8675309: baseline=2186328106 now=931218491 exit=0
+DIFF  off/20261104: baseline=1815170708 now=324474948 exit=0
+FAIL: 10/10 불일치
+exit=1

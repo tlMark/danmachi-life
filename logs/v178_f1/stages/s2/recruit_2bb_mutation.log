@@ -1,0 +1,11 @@
+PASS M-RB0 무변이 사본 exit 0 — RESULT: PASS 49/49
+PASS M-RB1 심사에 주 RNG 사용 검출(exit 1) — ["RB-1a evaluateApplication 에 Math.ra","RB-1b 같은 시드 → 같은 결과 — {\"p\":0.63,\"ro","RB-1f roll < p → accepted, roll ≥ p","RB-3b 주 RNG 호출 수 동일(후보 1 + falnaAt)"]
+PASS M-RB2 쿨다운 제거 검출(exit 1) — ["RB-7a 쿨다운 중 → blocked(cooldown)·이력 ","RB-7d 쿨다운 이후 재지원 허용(이력 +1, attempt "]
+PASS M-RB3 application.current 미종료 검출(exit 1) — ["RB-3d 이력 1건(self_apply·accepted·att","RB-4d 이력 rejected·current null·직업 불","RB-5b 결과 처리 후 current null"]
+PASS M-RB4 거절 파밀리아 제외 제거 검출(exit 1) — ["RB-7d 쿨다운 이후 재지원 허용(이력 +1, attempt "]
+PASS M-RB5 거절해도 입단 검출(exit 1) — ["RB-4b 주 RNG 호출 1회(후보 선택만, falnaAt 생","RB-4c 무소속·falnaAt null·팔나 none·소속 이","RB-7 재지원 쿨다운·같은 파밀리아 제한·생애 상한 — 예외 ","RB-9a 거절 → supporter 플래그·직업 support"]
+PASS M-RB6 scout 도 신청 상태 생성 검출(exit 1) — ["RB-8a 심사 호출 0·current null"]
+PASS M-RB7 join_hard chance 복원 검출(exit 1) — ["RB-2a join_hard 의 기존 chance 제거(U-2b"]
+PASS M-RB8 생애 상한 제거 검출(exit 1) — ["RB-7f 일반 지원 상한 도달 → lifetime_cap"]
+PASS M-RB9 합격 시 후보 재추첨(주 RNG +1) 검출(exit 1) — ["RB-3b 주 RNG 호출 수 동일(후보 1 + falnaAt)","RB-3c 같은 파밀리아·같은 falnaAt·같은 role — ","RB-3d 이력 1건(self_apply·accepted·att"]
+RESULT: PASS 10/10

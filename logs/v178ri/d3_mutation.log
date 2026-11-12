@@ -1,0 +1,7 @@
+PASS none: exit=0
+PASS remove ① showEvent 래퍼의 measurePolluted: exit=1 실패 항목=trackedEventViaShowEventWrapper,untrackedDetectedEvent
+PASS remove ② rollFamilia 래퍼의 trackSealedJoin: exit=1 실패 항목=trackedIdViaRollFamiliaWrapper,trackedEventViaShowEventWrapper,trackedEndLifeViaEndLifeWrapper,noUntrackedInPositive,mixedSplit
+PASS remove ③ endLife 래퍼의 measurePolluted: exit=1 실패 항목=trackedEndLifeViaEndLifeWrapper,untrackedDetectedEndLife,mixedSplit
+PASS remove helper 내부 id 추가: exit=1 실패 항목=trackedIdViaRollFamiliaWrapper,trackedEventViaShowEventWrapper,trackedEndLifeViaEndLifeWrapper,noUntrackedInPositive,mixedSplit
+RESULT: PASS 5/5
+exit=0

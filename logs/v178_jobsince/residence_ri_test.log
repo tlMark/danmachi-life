@@ -1,0 +1,37 @@
+PASS RI-1 seed 1 — {"o":"melen","r":{"regionId":"melen","since":0},"h":[{"seq":1,"regionId":"melen","from":0,"to":null,"reason":"birth","eventId":null}]}
+PASS RI-1 seed 777 — {"o":"melen","r":{"regionId":"melen","since":0},"h":[{"seq":1,"regionId":"melen","from":0,"to":null,"reason":"birth","eventId":null}]}
+PASS RI-1 seed 20261104 — {"o":"melen","r":{"regionId":"melen","since":0},"h":[{"seq":1,"regionId":"melen","from":0,"to":null,"reason":"birth","eventId":null}]}
+PASS RI-2a 반환 true
+PASS RI-2b 난수 호출 0 — {"d":0}
+PASS RI-2c 거주 외 S 동일(origin·직업·소속·팔나·가족·플래그·발리스 포함)
+PASS RI-2d 로그 무변화
+PASS RI-2e 이력 반열린 구간 — [{"seq":1,"regionId":"rakia","from":0,"to":23,"reason":"birth","eventId":null},{"seq":2,"regionId":"orario","from":23,"to":null,"reason":"fled","eventId":"sick"}]
+PASS RI-2f residence = 마지막 구간
+PASS RI-2g origin 불변
+PASS RI-2h 동기화 로그 추가 0
+PASS RI-3
+PASS RI-4
+PASS RI-5a conscripted 생성
+PASS RI-5b 중복 무변화
+PASS RI-5c 알 수 없는 종류 거부·계측
+PASS RI-5d S.flags 에 넣지 않음
+PASS RI-6a 거주 orario, 이유 fled — [{"seq":1,"regionId":"rakia","from":0,"to":20,"reason":"birth","eventId":null},{"seq":2,"regionId":"orario","from":20,"to":null,"reason":"fled","eventId":"conscript"}]
+PASS RI-6b deserter 생성, conscripted 없음
+PASS RI-6c 직업·소속·팔나·플래그·가족·아이템 불변 — {"job":"child","flags":[]}
+PASS RI-6d origin rakia 유지
+PASS RI-7
+PASS RI-8
+PASS RI-9a 소속 유지 — {"fam":"loki","now":"loki"}
+PASS RI-9b 명시된 dropFamilia 만 적용
+PASS RI-9c 동기화 불변식 위반 0(본 시나리오 기록 외) — []
+PASS RI-10a 모든 파밀리아 등재(누락·잉여 0) — {"missing":[],"extra":[]}
+PASS RI-10b 값은 지역 id 또는 null
+PASS RI-10c astraea = null(미지정)
+PASS RI-10d REGION_IDS = origins
+PASS RI-11a 예외 없음 — null
+PASS RI-11b false 반환
+PASS RI-11c 거주·이력 무변화
+PASS RI-11d 난수 0
+PASS RI-11e 계측 정확히 1건 = residence_missing_state — [{"kind":"residence_missing_state","eventId":"sick"}]
+RESULT: PASS 35/35
+residence exit=0

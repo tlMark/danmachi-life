@@ -1,0 +1,107 @@
+PASS S1 초기 필드 — {"falnaState":"none","falnaHolder":null,"cp":null}
+PASS S1 출신·종족·재능 apply 후 전이 0, 동기화 로그 0 — {"transitions":0,"log":[]}
+PASS S2 none→active grant 1건 — {"age":25,"from":"none","to":"active","holderFrom":null,"holderTo":"loki","cause":"grant","eventId":null,"scopeKind":"checkFalna","fromFamiliaId":"loki"}
+PASS S2 falnaHistory 1건(기존 경로)
+PASS N5 eventId null — null
+PASS N8f 기준값 null·scopeKind checkFalna
+PASS S3 같은 상태 반복 동기화 전이 0
+PASS S6 이동 성공(가드 없음)
+PASS S3b/N3 active→active holder 변경 1건 legacy_auto_convert — {"age":25,"from":"active","to":"active","holderFrom":"loki","holderTo":"ganesha","cause":"legacy_auto_convert","eventId":"god_gone","scopeKind":"apply","fromFamiliaId":"loki"}
+PASS N3 eventId god_gone
+PASS M6 모드 legacy_rebind — ["legacy_rebind"]
+PASS N4 안쪽 apply 에서 currentEventId 불변 — ["god_gone","god_gone"]
+PASS god_gone 성공 fx 표기 rebind
+PASS S4 active→unbound drop_familia — {"age":25,"from":"active","to":"unbound","holderFrom":"loki","holderTo":null,"cause":"drop_familia","eventId":"have_child_like","scopeKind":"apply","fromFamiliaId":"loki"}
+PASS S4 conversionPending left·fromFamiliaId 복원 — {"since":25,"fromFamiliaId":"loki","reason":"left"}
+PASS S5 active→sealed leave_and_seal — {"age":25,"from":"active","to":"sealed","holderFrom":"loki","holderTo":null,"cause":"leave_and_seal","eventId":"god_gone","scopeKind":"apply","fromFamiliaId":"loki"}
+PASS S5 reason god_returned·fromFamiliaId — {"since":25,"fromFamiliaId":"loki","reason":"god_returned"}
+PASS S5 소속 이력 종료 사유는 기존 left 그대로
+PASS S5b reason sealed_other — {"since":25,"fromFamiliaId":"loki","reason":"sealed_other"}
+PASS S5c fromFamiliaId 마지막 종료 이력에서 복원·cause _recovered — {"age":25,"from":"active","to":"unbound","holderFrom":"loki","holderTo":null,"cause":"drop_familia_recovered","eventId":"s5c","scopeKind":"apply","fromFamiliaId":"loki"}
+PASS M2 모드 legacy_rejoin — ["legacy_rejoin"]
+PASS S7 unbound→active legacy_rejoin·pending null — {"age":25,"from":"unbound","to":"active","holderFrom":null,"holderTo":"hestia","cause":"legacy_rejoin","eventId":"latejoin","scopeKind":"apply","fromFamiliaId":null}
+PASS S9 동기화가 falnaHistory·familiaHistory·flags 를 쓰지 않음
+PASS M1 initial_join 입단 — ["initial_join"]
+PASS M3(2-i) sealed 의 roll → legacy_sealed_join·입단(현행 보존) — ["legacy_sealed_join"]
+PASS T11 initial_join 에 sealed 투입 → 거부·rejected 1건 — {"age":25,"from":"sealed","to":"sealed","holderFrom":null,"holderTo":null,"cause":"rejected","mode":"initial_join","eventId":null}
+PASS M8 거부 경로 난수 0 — 0
+PASS T11 이력 무변화
+PASS M4 unbound + 열린 소속 → 거부·난수 0
+PASS M5 사유가 left 가 아니면 거부
+PASS M7 none·무소속 rebind 거부 안 함(2-i) — ["legacy_rebind"]
+PASS M10 join → initial_join — ["initial_join"]
+PASS M10 latejoin → initial_join — ["initial_join"]
+PASS M10 join_hard → initial_join — ["initial_join"]
+PASS M10 career_choice → initial_join — ["initial_join"]
+PASS M10 god_gone 성공 → legacy_rebind — ["legacy_rebind"]
+PASS M10 startLife 출생 대조군 → newborn_control — {"modes":["newborn_control"],"lives":2}
+PASS N1 전이 정확히 1건 none→active grant — [{"age":18,"from":"none","to":"active","holderFrom":null,"holderTo":"loki","cause":"grant","eventId":"n1","scopeKind":"apply","fromFamiliaId":null}]
+PASS N1 바깥 동기화 1회, 바깥 convertExp 직전 — ["sync:apply:false","convertExp:3","convertExp:3","sync:apply:true","convertExp:1"]
+PASS N2 수여 전 입단 → 전이 0
+PASS N6 명시적 사망 후 currentEventId null
+PASS N7 체력 0 사망 후 currentEventId null
+PASS N8 예외 전파
+PASS N8 소속·팔나 불변·전이 0
+PASS N8 RNG {state, calls} 변화 0 — {"r0":{"state":54967235494,"calls":30},"r1":{"state":54967235494,"calls":30}}
+PASS N8 syncDepth 0·currentEventId null
+PASS N8 기준값 pending = 예외 전 상태 — {"status":"pending_after_exception","state":"active","holder":"loki","openFamiliaId":"loki","flag":true,"scopeKind":"apply","eventId":"inj_job","fxKeys":["bond","job"],"at":25}
+PASS N8d 다음 정상 이벤트: 복구 0·정상 0·기준값 null
+PASS N8a 예외·⑦까지 적용
+PASS N8a 전이 0·기준값 pending(active, loki) — {"status":"pending_after_exception","state":"active","holder":"loki","openFamiliaId":"loki","flag":true,"scopeKind":"apply","eventId":"inj_org","fxKeys":["dropFamilia","organization"],"at":25}
+PASS N8a RNG 변화(⑦까지 소비분, 기록용) — {"before":{"state":54967235494,"calls":30},"after":{"state":54967235494,"calls":30}}
+PASS N8b 복구 전이 정확히 1건 — {"age":25,"from":"active","to":"unbound","holderFrom":"loki","holderTo":null,"cause":"recovered_after_exception","eventId":"inj_org","fromFamiliaId":"loki","originalEventId":"inj_org","originalScopeKind":"apply","originalFxKeys":["dropFamilia","organization"],"originalAt":25,"recoveredAt":25,"recoveredAtScopeKind":"apply","recoveredAtEventId":"normal_after"}
+PASS N8b 이후 기준값 null·pending left
+PASS N8k recovered_at_life_end 1건·기준값 null — {"age":25,"from":"active","to":"unbound","holderFrom":"loki","holderTo":null,"cause":"recovered_at_life_end","eventId":"inj_org","fromFamiliaId":"loki","originalEventId":"inj_org","originalScopeKind":"apply","originalFxKeys":["dropFamilia","organization"],"originalAt":25,"recoveredAt":25,"recoveredAtScopeKind":"endLife","recoveredAtEventId":null}
+PASS N8c 참조와 from/to/holder/fromFamiliaId 동일(cause 만 다름) — {"ref":{"age":25,"from":"active","to":"unbound","holderFrom":"loki","holderTo":null,"cause":"drop_familia","eventId":"ref","scopeKind":"apply","fromFamiliaId":"loki"},"rec":{"age":25,"from":"active","to":"unbound","holderFrom":"loki","holderTo":null,"cause":"recovered_after_exception","eventId":"inj_org","fromFamiliaId":"loki","originalEventId":"inj_org","originalScopeKind":"apply","originalFxKeys":["dropFamilia","organization"],"originalAt":25,"recoveredAt":25,"recoveredAtScopeKind":"apply","recoveredAtEventId":"normal_after"}}
+PASS N8g 예외 직후 전이 0·pending(none, checkFalna, eventId null)·깊이 0 — {"status":"pending_after_exception","state":"none","holder":null,"openFamiliaId":"loki","flag":false,"scopeKind":"checkFalna","eventId":null,"fxKeys":[],"at":25}
+PASS N8g 복구 전이 1건 none→active — {"age":25,"from":"none","to":"active","holderFrom":null,"holderTo":"loki","cause":"recovered_after_exception","eventId":null,"fromFamiliaId":"loki","originalEventId":null,"originalScopeKind":"checkFalna","originalFxKeys":[],"originalAt":25,"recoveredAt":25,"recoveredAtScopeKind":"checkFalna","recoveredAtEventId":null}
+PASS N8h 출생 입단 정상 경로: 0세 전이는 grant 뿐, 기준값 null — []
+PASS N8i 예외 전파·깊이 0·pending(rollFamilia) — {"err":"INJECT_MFX","depth":0,"b":{"status":"pending_after_exception","state":"none","holder":null,"openFamiliaId":null,"flag":false,"scopeKind":"rollFamilia","eventId":null,"fxKeys":[],"at":0}}
+PASS N8i 다음 범위: 상태 그대로면 복구 0·기준값 null
+PASS N8i 재시도 중 생애 시작 깊이 기록 0
+PASS N8j 사전 상태
+PASS N8j-1 1단계 pending(active, loki)
+PASS N8j-1 전이 정확히 2건 — [{"age":25,"from":"active","to":"unbound","holderFrom":"loki","holderTo":null,"cause":"recovered_after_exception","eventId":"inj_org","fromFamiliaId":"loki","originalEventId":"inj_org","originalScopeKind":"apply","originalFxKeys":["dropFamilia","organization"],"originalAt":25,"recoveredAt":25,"recoveredAtScopeKind":"apply","recoveredAtEventId":"latejoin"},{"age":25,"from":"unbound","to":"active","holderFrom":null,"holderTo":"hestia","cause":"legacy_rejoin","eventId":"latejoin","scopeKind":"apply","fromFamiliaId":null}]
+PASS N8j-1 ① 복구 active→unbound — {"age":25,"from":"active","to":"unbound","holderFrom":"loki","holderTo":null,"cause":"recovered_after_exception","eventId":"inj_org","fromFamiliaId":"loki","originalEventId":"inj_org","originalScopeKind":"apply","originalFxKeys":["dropFamilia","organization"],"originalAt":25,"recoveredAt":25,"recoveredAtScopeKind":"apply","recoveredAtEventId":"latejoin"}
+PASS N8j-1 ② legacy_rejoin unbound→active — {"age":25,"from":"unbound","to":"active","holderFrom":null,"holderTo":"hestia","cause":"legacy_rejoin","eventId":"latejoin","scopeKind":"apply","fromFamiliaId":null}
+PASS N8j-1 모드 legacy_rejoin — ["legacy_rejoin"]
+PASS N8m 복구(413행 checkFalna 범위)가 후보 판정(match)보다 먼저 — ["checkFalna:transitions=1","match"]
+PASS N8j-2 복구 1건(recoveredAt 다음 해, originalAt 25, checkFalna) — {"age":26,"from":"active","to":"unbound","holderFrom":"loki","holderTo":null,"cause":"recovered_after_exception","eventId":"inj_org","fromFamiliaId":"loki","originalEventId":"inj_org","originalScopeKind":"apply","originalFxKeys":["dropFamilia","organization"],"originalAt":25,"recoveredAt":26,"recoveredAtScopeKind":"checkFalna","recoveredAtEventId":null}
+PASS N8j-2 latejoinMatch === false — false
+PASS N8j-2 supporterFlag === false — ["falna"]
+PASS N8j-2 job === retired — retired
+PASS N8l stale_normal_baseline 기록 → 해당 실행 실패 판정 — {"syncInvariantLog":["stale_normal_baseline"],"verdict":"detected(실패 판정)"}
+PASS N8n-1 생애 시작 깊이 오류 기록 1건 — {"syncInvariantLog":["sync_depth_nonzero_at_life_start:2"],"depthAfter":2,"ctxPropertyUntouched":true,"transitions":0,"syncBaseline":null,"verdict":"detected(실패 판정)"}
+PASS N8n-1 깊이 자동 보정 없음 — 2
+PASS N8n-1 가장 바깥으로 인식 안 됨 → 전이 0·기준값 null
+PASS N8n-2 생애 시작 깊이 오류 기록 1건 — {"syncInvariantLog":["sync_depth_nonzero_at_life_start:-1","sync_depth_negative:-1","sync_depth_negative:-1","sync_depth_negative:-1","sync_depth_negative:-1","sync_depth_negative:-1","sync_depth_negative:-1","sync_depth_negative:-1"],"depthAfter":-1,"ctxPropertyUntouched":true,"transitions":0,"syncBaseline":null,"verdict":"detected(실패 판정)"}
+PASS N8n-2 깊이 자동 보정 없음 — -1
+PASS N8n-2 가장 바깥으로 인식 안 됨 → 전이 0·기준값 null
+PASS N8n-3 예외 주입 연속 후 생애 시작 깊이 기록 0·깊이 0 — []
+PASS N9 조직 고용 안쪽 apply → 전이 0
+PASS T3 leaveFamilia active→unbound — {"age":25,"from":"active","to":"unbound","holderFrom":"loki","holderTo":null,"cause":"leave","eventId":null,"fromFamiliaId":"loki"}
+PASS T3b 무소속 leaveFamilia 무변화
+PASS T4 송환 active→sealed·보존·god_returned
+PASS T7 completeConversion(unbound)
+PASS T8 completeConversion(sealed) regrant
+PASS T9 전제 위반 거부: 소속있음
+PASS T9 전제 위반 거부: 대기없음
+PASS T9 전제 위반 거부: none
+PASS T9 전제 위반 거부: active
+PASS T10 금지 전이 표
+PASS T11c newborn_control 0세 none 입단
+PASS T12 pickFamiliaCandidate 상태 무변화
+PASS 2-i 전이 함수는 게임 흐름에서 호출되지 않음 — []
+PASS 판정 함수 none — [false,false,false,false,true,false]
+PASS 판정 함수 active — [true,true,true,true,false,true]
+PASS 판정 함수 unbound — [true,true,false,true,false,true]
+PASS 판정 함수 sealed — [true,false,false,false,false,false]
+PASS §6 protected 기대 노출 0 집합(던전16+wargame+neglect+supporter_route) — []
+PASS §6 protected 허용 목록(출력만) — book_discovery,career_pivot,charity_work,city_disaster,clash,conscript,elf_touch,family_gathering,farm_season,festival,god_gone,lost_child,love,neighborhood_help,old_friend,parent_wellbeing,parent_worry,sea,seasonal_fair,sibling_rivalry,sibling_visit,sick,small_injury,street_performance,supporter_scorn,tavern,theology,travel_offer,unexpected_rain
+PASS §6 god_gone 은 2-i 기대 집합 밖(알려진 2-ii 대상) — {"god_gone_shown_to_protected_adventurer":true}
+PASS §8 JOB_ROLE_CLASS 완전성 — {"missing":[],"jobs":11}
+PASS §8 이벤트 조건 키가 match() 에 구현됨 — []
+PASS §8 EVENT_AREA 81개 전수 — 81
+n8nResults(전용 결과 객체, 본 실행에 이관하지 않음): {"N8n-1":{"syncInvariantLog":["sync_depth_nonzero_at_life_start:2"],"depthAfter":2,"ctxPropertyUntouched":true,"transitions":0,"syncBaseline":null,"verdict":"detected(실패 판정)"},"N8n-2":{"syncInvariantLog":["sync_depth_nonzero_at_life_start:-1","sync_depth_negative:-1","sync_depth_negative:-1","sync_depth_negative:-1","sync_depth_negative:-1","sync_depth_negative:-1","sync_depth_negative:-1","sync_depth_negative:-1"],"depthAfter":-1,"ctxPropertyUntouched":true,"transitions":0,"syncBaseline":null,"verdict":"detected(실패 판정)"}}
+RESULT: PASS 104/104
+exit=0

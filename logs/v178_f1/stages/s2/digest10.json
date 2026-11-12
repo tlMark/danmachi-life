@@ -1,0 +1,102 @@
+[
+ {
+  "key": "physical/777",
+  "exit": 0,
+  "lifeDigest": "1476379107",
+  "rngCallDigest": "4205704456",
+  "completed": "3000",
+  "allInv": "true",
+  "exc": "0",
+  "vsRef": "SAME"
+ },
+ {
+  "key": "physical/314159",
+  "exit": 0,
+  "lifeDigest": "944325663",
+  "rngCallDigest": "3785517296",
+  "completed": "3000",
+  "allInv": "true",
+  "exc": "0",
+  "vsRef": "SAME"
+ },
+ {
+  "key": "physical/8675309",
+  "exit": 0,
+  "lifeDigest": "2519385181",
+  "rngCallDigest": "1681402043",
+  "completed": "3000",
+  "allInv": "true",
+  "exc": "0",
+  "vsRef": "SAME"
+ },
+ {
+  "key": "physical/20261104",
+  "exit": 0,
+  "lifeDigest": "3527191366",
+  "rngCallDigest": "168120683",
+  "completed": "3000",
+  "allInv": "true",
+  "exc": "0",
+  "vsRef": "SAME"
+ },
+ {
+  "key": "calendar/20261104",
+  "exit": 0,
+  "lifeDigest": "461599345",
+  "rngCallDigest": "3279802657",
+  "completed": "3000",
+  "allInv": "true",
+  "exc": "0",
+  "vsRef": "SAME"
+ },
+ {
+  "key": "newborn_parent_familia/20261104",
+  "exit": 0,
+  "lifeDigest": "2517192438",
+  "rngCallDigest": "2091679331",
+  "completed": "3000",
+  "allInv": "true",
+  "exc": "0",
+  "vsRef": "SAME"
+ },
+ {
+  "key": "off/777",
+  "exit": 0,
+  "lifeDigest": "2713588218",
+  "rngCallDigest": "2626048764",
+  "completed": "3000",
+  "allInv": "true",
+  "exc": "0",
+  "vsRef": "SAME"
+ },
+ {
+  "key": "off/314159",
+  "exit": 0,
+  "lifeDigest": "3867915972",
+  "rngCallDigest": "1968081513",
+  "completed": "3000",
+  "allInv": "true",
+  "exc": "0",
+  "vsRef": "SAME"
+ },
+ {
+  "key": "off/8675309",
+  "exit": 0,
+  "lifeDigest": "4093356830",
+  "rngCallDigest": "3908055029",
+  "completed": "3000",
+  "allInv": "true",
+  "exc": "0",
+  "vsRef": "SAME"
+ },
+ {
+  "key": "off/20261104",
+  "exit": 0,
+  "lifeDigest": "612591511",
+  "rngCallDigest": "4157386054",
+  "completed": "3000",
+  "allInv": "true",
+  "exc": "0",
+  "vsRef": "SAME"
+ }
+]

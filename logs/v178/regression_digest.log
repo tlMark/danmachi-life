@@ -1,0 +1,12 @@
+SAME  physical/777: baseline=2529723506 now=2529723506 exit=0
+SAME  physical/314159: baseline=559088383 now=559088383 exit=0
+SAME  physical/8675309: baseline=1718625649 now=1718625649 exit=0
+SAME  physical/20261104: baseline=1438657387 now=1438657387 exit=0
+SAME  calendar/20261104: baseline=127410497 now=127410497 exit=0
+SAME  newborn_parent_familia/20261104: baseline=3932767934 now=3932767934 exit=0
+SAME  off/777: baseline=3177826000 now=3177826000 exit=0
+SAME  off/314159: baseline=3810621462 now=3810621462 exit=0
+SAME  off/8675309: baseline=2186328106 now=2186328106 exit=0
+SAME  off/20261104: baseline=1815170708 now=1815170708 exit=0
+PASS: 10개 구성 모두 기준과 동일
+exit=0

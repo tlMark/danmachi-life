@@ -1,0 +1,4 @@
+기준 ZIP: Danmachi_v1.7.8-2ba-t1_integrated.zip  c425d8a1c419a4ac496b0923af13e0dd6f73f302556c83242242cfd2d106d68a
+r1 ZIP(sync_2i_test r1 대조용): Danmachi_v1.7.7r1_integrated.zip  51890b66e77dd7822d6cc04a68b2881586c1bd1267a1272c1feaebb21a6fdef7
+base_tr_*.log, regression_digest_10_base_2ba_t1.log = 기준 ZIP 압축 해제본에서 그 버전의 러너로 실행
+실행 환경: v22.23.4, 실행자 Claude(2026-11-08). ChatGPT 독립 재실행 아님.

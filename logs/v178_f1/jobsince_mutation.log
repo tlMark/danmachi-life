@@ -1,0 +1,9 @@
+PASS M0 원본 통과 exit=0
+PASS M1 같은 직업 재설정에도 갱신(조건 제거) — exit=1, 검출 JS-3 — {"jobSince":25} / JS-9b jobSince 쓰기 = setJob 안 1곳 + 출생 리터럴 — {"sinceWrite
+PASS M2 출생 초기화 누락 — exit=1, 검출 JS-1 seed 1 — {"job":"child"} / JS-1 seed 777 — {"job":"child"} / JS-1 seed 20261104 — {"job":"child"}
+PASS M3 setJob 갱신 누락 — exit=1, 검출 JS-1b 새 생애 시작 시 0 으로 초기화(이전 생애 값 미승계) — {"prev":0,"now" / JS-2 — {"job":"merchant","jobSince":0} / JS-3 — {"jobSince":0}
+PASS M4 고용처 설정 시 jobSince 갱신(J-5 위반) — exit=1, 검출 JS-7b merchant → hostess 고용: 직업 불변, jobSince 불변(12), em / JS-7c 고용처만 변경(guild → hostess, 직업 guild_staff 유지): jobS / JS-8 joinOrganization·기존 직업(523 미진입) — {"job":"farmer",
+PASS M5 retired 전환 시 미갱신(J-6 위반) — exit=1, 검출 JS-5a clearFlags 경로(490) — {"job":"retired","jobSince": / JS-5b dropFamilia 경로(491) — {"job":"retired","jobSince" / JS-5c fx.job retired 경로(463) — {"job":"retired","jobSin
+PASS M6 갱신 기준을 육체 나이로 — exit=1, 검출 JS-1b 새 생애 시작 시 0 으로 초기화(이전 생애 값 미승계) — {"prev":31,"now / JS-2 — {"job":"merchant","jobSince":18} / JS-3 — {"jobSince":18}
+결과: 7/7 통과
+exit=0

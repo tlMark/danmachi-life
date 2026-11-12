@@ -1,0 +1,11 @@
+SAME physical/777: lifeDigest=1476379107 rng=4205704456 exit=0 completed=3000 inv=true exc=0 ref=1476379107
+SAME physical/314159: lifeDigest=944325663 rng=3785517296 exit=0 completed=3000 inv=true exc=0 ref=944325663
+SAME physical/8675309: lifeDigest=2519385181 rng=1681402043 exit=0 completed=3000 inv=true exc=0 ref=2519385181
+SAME physical/20261104: lifeDigest=3527191366 rng=168120683 exit=0 completed=3000 inv=true exc=0 ref=3527191366
+SAME calendar/20261104: lifeDigest=461599345 rng=3279802657 exit=0 completed=3000 inv=true exc=0 ref=461599345
+SAME newborn_parent_familia/20261104: lifeDigest=2517192438 rng=2091679331 exit=0 completed=3000 inv=true exc=0 ref=2517192438
+SAME off/777: lifeDigest=2713588218 rng=2626048764 exit=0 completed=3000 inv=true exc=0 ref=2713588218
+SAME off/314159: lifeDigest=3867915972 rng=1968081513 exit=0 completed=3000 inv=true exc=0 ref=3867915972
+SAME off/8675309: lifeDigest=4093356830 rng=3908055029 exit=0 completed=3000 inv=true exc=0 ref=4093356830
+SAME off/20261104: lifeDigest=612591511 rng=4157386054 exit=0 completed=3000 inv=true exc=0 ref=612591511
+SUMMARY: 10/10 SAME vs ref

@@ -1,0 +1,5 @@
+MUT noExclude: exit=1 fails=1 [GG-4a 400시드 �;]
+MUT noRebase: exit=1 fails=2 [GG-3a fail 전이;GG-3a giveup 전�;]
+MUT dropBack: exit=0 fails=0 []
+MUT noCond: exit=1 fails=2 [GG-1b 팔나 없�;GG-1c sealed → ;]
+MUT jobChange: exit=1 fails=5 [GG-2d seed 1 직�;GG-2d seed 11 직;GG-2d seed 202611;GG-2d seed 5 직�;GG-2d seed 777 �;]

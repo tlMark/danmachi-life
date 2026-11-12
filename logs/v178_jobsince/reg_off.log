@@ -1,0 +1,6 @@
+DIFF  off/777: baseline=3177826000 now=2713588218 exit=0
+DIFF  off/314159: baseline=3810621462 now=3867915972 exit=0
+DIFF  off/8675309: baseline=2186328106 now=4093356830 exit=0
+DIFF  off/20261104: baseline=1815170708 now=612591511 exit=0
+FAIL: 4/4 불일치
+exit=1

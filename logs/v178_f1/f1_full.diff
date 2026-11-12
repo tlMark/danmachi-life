@@ -1,0 +1,1654 @@
+diff -ruN -x logs base/events.js impl/events.js
+--- base/events.js	2026-11-08 17:55:48.000000000 +0000
++++ impl/events.js	2026-11-10 10:44:38.856343427 +0000
+@@ -165,7 +165,7 @@
+         { label: '후배를 가르친다', text: '후배들이 따르는 사람이 되었다.', fx: { bond: 8, job: 'retired' } },
+         { label: '메렌으로 이주해 낚시로 지낸다', text: '그물을 손질하며 평온한 나날을 보냈다.', fx: { hp: 12, flags: ['fisher'], job: 'retired' } }] },
+     { id: 'join_hard', w: 100, once: true, cond: { cage: [12, 22], hasFamilia: false, race: ['human', 'pallum'] }, text: '팔나를 받으려 파밀리아를 찾아다니지만, 특별한 재능이 없어 보이면 문전박대를 당하기 쉽다.', choices: [
+-        { label: '끈질기게 문을 두드린다', text: '끈질기게 문을 두드렸다.', fx: { recruit: { route: 'persistence', okText: '끝내 받아 주는 신을 만났다.', failText: '모두 거절당해 서포터 일부터 시작했다.', fallback: { flags: ['supporter'], valis: 400 } } } },
++        { label: '끈질기게 문을 두드린다', text: '끈질기게 문을 두드렸다.', fx: { recruit: { route: 'persistence', okText: '끝내 받아 주는 신을 만났다.', failText: '{familia}의 심사에서 탈락했다.', followup: 'recruit_after_fail' } } },
+         { label: '길드 주변에서 서포터 일을 구한다', text: '짐꾼 일로 하루하루를 벌기 시작했다.', fx: { flags: ['supporter'], valis: 600 } }] },
+     { id: 'supporter_scorn', w: 15, cond: { age: [16, 60], job: ['supporter'] }, text: '전리품 몫을 두고 모험자에게 업신여김을 당했다.', choices: [
+         { label: '참고 넘긴다', text: '다툼은 피했지만 마음이 무거웠다.', fx: { bond: -1, valis: 100 } },
+diff -ruN -x logs base/script.js impl/script.js
+--- base/script.js	2026-11-09 13:49:48.000000000 +0000
++++ impl/script.js	2026-11-10 11:03:28.333331516 +0000
+@@ -6,6 +6,80 @@
+ const rnd = ([a, b]) => a + Math.floor(Math.random() * (b - a + 1));
+ const LEVELUP_ABIL = 500;    // 레벨업 조건: 능력치 하나가 D(500) 이상
+ let S;
++// ── T1-F/F-1 공통 후속 선택 수명주기(결정 r9 C26·C27, 설계 r7 §N-1) ─────────────────────────────
++// 보류 상태 = S.pendingFollowup(데이터만, 함수 저장 없음). 사건별 선택지·효과는 FOLLOWUP_KINDS[kind] 에 둔다.
++const followupDiagLog = [];        // 진단 전용(S 밖). lifeDigest·RNG 에 관여하지 않는다.
++function followupDiag(event, data) {
++    const p = S && S.pendingFollowup ? S.pendingFollowup : null;
++    followupDiagLog.push({ event, at: S ? S.age : null, seq: p ? p.seq : null, phase: p ? p.phase : null, ...(data || {}) });
++}
++const FOLLOWUP_KINDS = {};
++// ── 예외 후 진행 정지(N1-6b)·생애 세대 토큰(N1-6c G1+G1+). 모두 S 밖의 모듈 변수 — lifeDigest·RNG 에 관여하지 않는다. ──
++let progressHalted = false;        // 후속 선택 처리 중 예외가 나면 true. 해제는 startLife(새 게임)에서만 한다.
++let lifeGen = 0;                   // startLife 마다 +1. 이전 생애에 예약된 자동 진행 타이머를 무효로 만든다.
++const autoTimers = [];             // 예약된 자동 진행 타이머 id(취소용 보조 수단, G1+)
++function haltedEntry(name) {       // 함수 진입 가드. 정지 중이면 진단만 남기고 true(호출자는 즉시 반환).
++    if (!progressHalted) return false;
++    followupDiag('halted_entry', { fn: name });
++    return true;
++}
++// 자동 진행 타이머는 이 래퍼로만 예약한다. 콜백 첫 줄에서 정지·세대를 검사한 뒤에만 본문(난수·클릭)을 실행한다.
++function scheduleAuto(fn, ms) {
++    const gen = lifeGen; let id = null, fired = false;
++    id = setTimeout(() => {
++        fired = true;
++        const i = autoTimers.indexOf(id); if (i >= 0) autoTimers.splice(i, 1);
++        if (progressHalted || gen !== lifeGen) { followupDiag('stale_timer', { gen, lifeGen, halted: progressHalted }); return; }
++        fn();
++    }, ms);
++    if (!fired) autoTimers.push(id);
++    return id;
++}
++function clearAutoTimers() { while (autoTimers.length) clearTimeout(autoTimers.pop()); }
++// R1 롤백(N1-6): 후속 선택 효과가 바꿀 수 있는 필드만 저장한다. 복사본은 원본 참조와 독립이다.
++// 2-i 기록(falnaState·falnaHolder·falnaTransitions·conversionPending·syncBaseline)과 application·소속·관계 내용은 복원 대상이 아니다(효과가 건드리지 않으며 테스트로 직접 확인).
++const ROLLBACK_VALUE_FIELDS = ['job', 'jobSince', 'valis', 'hp', 'bond', 'feat', 'potential', 'excelia', 'level', 'hidden', 'maxLevel', 'power', 'alias', 'nextRelationId'];
++const ROLLBACK_CONTAINER_FIELDS = ['items', 'itemUses', 'itemsConsumed', 'relations'];   // 존재 여부·교체 여부만 되돌린다(내용은 효과가 바꾸지 않음)
++function takeRollbackSnapshot() {
++    const has = k => Object.prototype.hasOwnProperty.call(S, k);
++    const copy = v => Array.isArray(v) ? v.slice() : (v && typeof v === 'object') ? { ...v } : v;
++    const rb = { values: {}, copies: {}, containers: {}, logLen: Array.isArray(S.logHistory) ? S.logHistory.length : null,
++        levelHistory: { has: has('levelHistory'), ref: S.levelHistory, len: Array.isArray(S.levelHistory) ? S.levelHistory.length : null } };
++    ROLLBACK_VALUE_FIELDS.forEach(k => { rb.values[k] = { has: has(k), value: S[k] }; });
++    ['flags', 'employer', 'abil'].forEach(k => { rb.copies[k] = { has: has(k), value: copy(S[k]) }; });
++    ROLLBACK_CONTAINER_FIELDS.forEach(k => { rb.containers[k] = { has: has(k), ref: S[k] }; });
++    return rb;
++}
++function restoreRollbackSnapshot(rb) {
++    const put = (k, r) => { if (r.has) S[k] = r.value; else delete S[k]; };
++    Object.keys(rb.values).forEach(k => put(k, rb.values[k]));
++    Object.keys(rb.copies).forEach(k => put(k, rb.copies[k]));
++    // 컨테이너: 원래 없던 필드는 지우고, 다른 객체로 교체된 필드(예: null → [])는 원래 값으로 되돌린다.
++    Object.keys(rb.containers).forEach(k => { const r = rb.containers[k]; if (!r.has) delete S[k]; else if (S[k] !== r.ref) S[k] = r.ref; });
++    if (rb.logLen != null && Array.isArray(S.logHistory) && S.logHistory.length > rb.logLen) S.logHistory.length = rb.logLen;
++    const lh = rb.levelHistory;
++    if (!lh.has) delete S.levelHistory;
++    else if (S.levelHistory !== lh.ref) S.levelHistory = lh.ref;
++    if (lh.has && lh.len != null && Array.isArray(S.levelHistory) && S.levelHistory.length > lh.len) S.levelHistory.length = lh.len;
++}
++// R-E: 예외 경로 전용 렌더. renderStats 가 조회 중 만들 수 있는 컨테이너(관계·아이템)가 실제 S 에 생기지 않도록 복제본으로 그린다.
++function cloneStateForRender(v) {
++    if (Array.isArray(v)) return v.map(cloneStateForRender);
++    if (v && typeof v === 'object') { const o = {}; Object.keys(v).forEach(k => { o[k] = cloneStateForRender(v[k]); }); return o; }
++    return v;
++}
++function renderStatsFromClone() {
++    const real = S;
++    try { S = cloneStateForRender(real); renderStats(); }
++    finally { S = real; }
++}
++function showHaltNotice() {        // 화면 전용(logHistory 미기록)
++    const d = document.createElement('div');
++    d.className = 'entry result bad';
++    d.innerHTML = '선택을 처리하는 중 오류가 발생해 진행을 멈췄다. 처음부터 다시 시작해 주세요.';
++    $('log').appendChild(d);
++    d.scrollIntoView({ block: 'nearest' });
++}         // kind → { prompt, options(S, pending) → [{ id, label, stay }], resolve(S, optionId, pending) }
+ // v1.7.8-2i: 팔나 상태 기록(설계 r2k-4 §2.8). 기록 전용 — 난수·판정·성장 경로를 바꾸지 않는다.
+ let syncDepth = 0;                 // 동기화 범위 깊이. 모듈 로드 시 1회만 0 으로 둔다(startLife 는 대입하지 않음, U3).
+ const syncInvariantLog = [];       // 기록 전용 불변식 위반(테스트 러너가 읽어 간다). 값 자동 보정 없음.
+@@ -21,6 +95,7 @@
+ const JOB_ORG = { guild: 'guild_staff', hostess: 'waitstaff' };
+ const JOB_FAMILIA = { hephaestus:'blacksmith', demeter:'farmer', miach:'healer', ares:'soldier', kali:'soldier' };
+ function setAspiration(kind, source) {
++    if (haltedEntry('setAspiration')) return;   // H3 정지 가드
+     S.aspirationHistory ||= [];
+     if (S.aspiration && S.aspiration.kind === kind) return;
+     S.aspiration = { kind, since: S.age, source, fulfilledAt: null };
+@@ -28,6 +103,7 @@
+ }
+ 
+ function setJob(job) {
++    if (haltedEntry('setJob')) return;   // H3 정지 가드
+     const previous = S.job;
+     S.job = job;
+     // T1-F F1-d4b J-3(승인 2026-11-09): 실제 직업 변경 시에만 근속 시작 달력 나이 갱신. 같은 직업 재설정은 유지.
+@@ -213,7 +289,9 @@
+ // ── 전이 함수(설계 §2.3·§2.3.1). 2-i 에서는 정의·단위 테스트만 하고 게임 흐름에서 호출하지 않는다. ──
+ function rejectFalnaTransition(to, why) { pushFalnaTransition({ from: S.falnaState, to, holderFrom: S.falnaHolder ?? null, holderTo: S.falnaHolder ?? null, cause: 'rejected', reason: why, eventId: S.currentEventId ?? null }); return false; }
+ function falnaTransitionAllowed(from, to) { return !(FALNA_FORBIDDEN[from] || []).includes(to); }
+-function leaveFamilia() {   // 명시적 탈퇴: active → unbound (2-ii 에서 연결)
++function leaveFamilia() {
++    if (haltedEntry('leaveFamilia')) return;   // H3 정지 가드
++     // 명시적 탈퇴: active → unbound (2-ii 에서 연결)
+     if (!S.familia) return false;   // 무소속이면 무변화(T3b)
+     const from = S.falnaState, fromFamiliaId = S.familia.id;
+     if (from === 'active' && !falnaTransitionAllowed(from, 'unbound')) return rejectFalnaTransition('unbound', 'forbidden');
+@@ -226,7 +304,9 @@
+     S.falnaState = to; S.falnaHolder = null;
+     return true;
+ }
+-function sealByGodReturn() {   // 신의 송환: active → sealed, 레벨·능력치 보존, 직업 불변 (2-ii 에서 연결)
++function sealByGodReturn() {
++    if (haltedEntry('sealByGodReturn')) return;   // H3 정지 가드
++     // 신의 송환: active → sealed, 레벨·능력치 보존, 직업 불변 (2-ii 에서 연결)
+     if (S.falnaState !== 'active' || !S.familia) return rejectFalnaTransition('sealed', 'not_active_member');
+     const fromFamiliaId = S.familia.id, holderFrom = S.falnaHolder;
+     closeMembership('god_returned'); S.familia = null; S.falnaAt = null; S.familiaAt = null;
+@@ -264,6 +344,7 @@
+     return null;
+ }
+ function applyRecruit(spec) {
++    if (haltedEntry('applyRecruit')) return;   // H3 정지 가드
+     const R = GameCore.Recruit, route = spec && spec.route;
+     if (!R.ROUTES.includes(route)) { syncInvariantLog.push({ kind: 'recruit_unknown_route', value: route, eventId: S.currentEventId ?? null }); return false; }
+     S.application ||= R.newApplicationState();
+@@ -281,7 +362,7 @@
+     if (blocked) {
+         (S.application.blocked ||= []).push({ route, at: S.age, reason: blocked });
+         say(blocked === 'cooldown' ? '얼마 전 거절당한 기억 때문에 이번에는 지원하지 못했다.' : '더는 파밀리아의 문을 두드릴 기력이 남지 않았다.', 'result');
+-        if (spec.fallback) apply(spec.fallback);
++        if (spec.followup) createFollowup(spec.followup, { route, reason: blocked });   // F-1(C23·C27): 자동 대체 효과 없음. 생존 확인 뒤 후속 선택으로 이어진다
+         return false;
+     }
+     const attempt = (S.application.attemptSeq || 0) + 1; S.application.attemptSeq = attempt;
+@@ -297,10 +378,61 @@
+         rollFamilia(cand.id, mode);   // forcedId: 추가 후보 난수 없음 → falnaAt 주 RNG 는 기존과 같음
+         return true;
+     }
+-    say((spec.failText || '받아 주는 신을 찾지 못했다.') + ` (${cand.label} 심사 탈락)`, 'result');
+-    if (spec.fallback) apply(spec.fallback);
++    // T-1: 거절 문구에 {familia} 치환자가 있으면 파밀리아 이름으로 바꾸고 접미사를 붙이지 않는다(이름 1회). 치환자가 없으면 기존 접미사를 유지한다.
++    { const failText = spec.failText || '받아 주는 신을 찾지 못했다.';
++      say(failText.includes('{familia}') ? failText.split('{familia}').join(cand.label) : failText + ` (${cand.label} 심사 탈락)`, 'result'); }
++    if (spec.followup) createFollowup(spec.followup, { route, reason: 'rejected' });      // F-1(C23·C27)
+     return false;
+ }
++// F1-d4a 퇴직금 고정액(C31). **액수는 사용자 미결** — 숫자가 정해지기 전에는 null 로 두고 지급하지 않는다(임의 금액 금지).
++const SEVERANCE_AMOUNT = null;
++// ── F-1 후속 선택(일반 지원 거절·차단 뒤): 선택지 C25 + S-1. 자동 진행은 항상 stay(C21·C24). 선택지 노출은 C20(이미 서포터면 숨김). ──
++FOLLOWUP_KINDS.recruit_after_fail = {
++    prompt: '앞으로 어떻게 지낼까?',
++    options(S) {
++        const list = [];
++        if (S.job !== 'supporter') {
++            const label = S.employer ? '현재 고용처를 그만두고 서포터로 전직한다'
++                : S.job === 'retired' ? '은퇴 생활을 접고 서포터 일을 시작한다'
++                : S.job === 'child' ? '서포터 일을 시작한다'
++                : '현재 직업을 그만두고 서포터로 전직한다';
++            list.push({ id: 'supporter', label });
++        }
++        list.push({ id: 'stay', label: '지금 생활을 이어간다', stay: true });
++        return list;
++    },
++    resolve(S, optionId) {
++        if (optionId === 'stay') return;                 // C29: 아무 상태도 바꾸지 않는다
++        if (optionId !== 'supporter') throw new Error('recruit_after_fail: 알 수 없는 선택 ' + optionId);
++        // ① J-4 판정 스냅숏: 전직 전의 직업·근속으로 고정한다. 이후 단계에서 다시 계산하지 않는다(setJob 뒤에는 근속이 0 이 된다).
++        const tenureYears = S.age - S.jobSince;
++        const sev = Object.freeze({ job: S.job, jobSince: S.jobSince, age: S.age, tenureYears,
++            eligible: S.job !== 'child' && S.job !== 'supporter' && S.job !== 'retired' && Number.isFinite(tenureYears) && tenureYears >= 5,
++            employerId: S.employer ? S.employer.id : null, amount: SEVERANCE_AMOUNT });
++        followupDiag('severance_snapshot', { sev });
++        // ② 고용처 퇴직(C22 E-1): 연표 기록 1건 후 해제. setJob 은 고용처를 건드리지 않으므로 여기서만 처리한다.
++        if (S.employer) {
++            const text = `${S.employer.label}을(를) 그만두었다.`;
++            S.logHistory.push({ age: S.age, type: 'job', kind: 'employer_quit', text });
++            S.employer = null;
++            sayDomOnly(text, 'result');
++        }
++        // ③ 주 직업 전환(C28) 후 성공 확인. 팔나·소속·application 은 건드리지 않는다(C30).
++        setJob('supporter');
++        if (!(S.job === 'supporter' && S.jobSince === S.age && S.flags.includes('supporter'))) throw new Error('recruit_after_fail: 서포터 전직 확인 실패');
++        // ④ 퇴직금(C11·C13, 지급 방법 P2): 전직이 끝난 뒤, ①의 스냅숏으로만 판정한다. 자격이 없거나 액수가 0·미결이면 apply 를 부르지 않는다.
++        if (sev.eligible) {
++            if (Number.isFinite(sev.amount) && sev.amount > 0) {
++                apply({ valis: sev.amount });
++                const text = `${JOB_LABELS[sev.job] || sev.job}(으)로 ${sev.tenureYears}년 일한 끝에 퇴직금 ${sev.amount}발리스를 받았다.`;
++                S.logHistory.push({ age: S.age, type: 'job', kind: 'severance', text });
++                sayDomOnly(text, 'result');
++            } else {
++                followupDiag('severance_amount_undecided', { tenureYears: sev.tenureYears, job: sev.job });
++            }
++        }
++    }
++};
+ // 2b-a: 전이 함수가 범위 안에서 스스로 전이를 기록한 뒤, 범위 끝 동기화가 같은 변화를 다시 기록하지 않도록 기준값을 현재 상태로 맞춘다.
+ function rebaseSyncAfterTransition() {
+     const b = S.syncBaseline;
+@@ -309,6 +441,7 @@
+ }
+ // 2b-a: god_gone 전용. mode = 'seal'(봉인만) | 'regrant'(봉인 후 재수여). 직업은 바꾸지 않는다(Q7). 난수: regrant 의 후보 선택 1회만.
+ function applyGodReturn(mode) {
++    if (haltedEntry('applyGodReturn')) return;   // H3 정지 가드
+     if (mode !== 'seal' && mode !== 'regrant') { syncInvariantLog.push({ kind: 'god_return_unknown_mode', value: mode, at: S.age }); return false; }
+     if (!sealByGodReturn()) { syncInvariantLog.push({ kind: 'god_return_seal_rejected', at: S.age, eventId: S.currentEventId ?? null }); return false; }
+     rebaseSyncAfterTransition();
+@@ -323,7 +456,9 @@
+     say(`<b class="lv">팔나 재취득 · Lv.${S.level}</b>`, 'levelup', S.age);
+     return true;
+ }
+-function completeConversion(familiaId, reason) {   // 유일한 unbound/sealed → active 경로(2-ii 에서 연결)
++function completeConversion(familiaId, reason) {
++    if (haltedEntry('completeConversion')) return;   // H3 정지 가드
++     // 유일한 unbound/sealed → active 경로(2-ii 에서 연결)
+     const from = S.falnaState;
+     if (!(S.conversionPending != null && !S.familia && (from === 'unbound' || from === 'sealed'))) return rejectFalnaTransition('active', 'precondition');
+     const fam = gachaData.familias.find(f => f.id === familiaId);
+@@ -341,6 +476,7 @@
+ 
+ // S.power는 이벤트 판정용 종합 전투력입니다. 성장 계산은 core/growth.js가 담당합니다.
+ function recompute() {
++    if (haltedEntry('recompute')) return;   // H3 정지 가드
+     // 장착 중인 무기·방어구만 전투력에 반영한다. 소모품은 사용될 때만 효과가 난다(core/items.js).
+     const itemPower = GameCore.Items.equipmentPower(S);
+ 
+@@ -364,6 +500,7 @@
+ }
+ 
+ function recordLevel(kind, from, to) {
++    if (haltedEntry('recordLevel')) return;   // H3 정지 가드
+     S.levelHistory ||= [];
+     S.levelHistory.push({ age: S.age, kind, from, to });
+     S.maxLevel = Math.max(S.maxLevel || 0, to);
+@@ -401,6 +538,7 @@
+ }
+ 
+ function convertExp() {
++    if (haltedEntry('convertExp')) return;   // H3 정지 가드
+     if (!hasFalna()) return false;
+     const converted = GameCore.Growth.convertExcelia(S, MODS);
+     // A level-up can become available from a feat-only event after the D-rank
+@@ -410,6 +548,7 @@
+ }
+ 
+ function tryLevelUp() {
++    if (haltedEntry('tryLevelUp')) return;   // H3 정지 가드
+     const level = Number.isFinite(S.level) ? Math.max(1, S.level) : 1;
+     const feat = Number.isFinite(S.feat) ? Math.max(0, S.feat) : 0;
+     const validStats = ABIL.map(([k]) => Number.isFinite(S.abil[k]) ? Math.max(0, S.abil[k]) : 0);
+@@ -428,6 +567,7 @@
+ }
+ 
+ function apply(fx = {}) {
++    if (haltedEntry('apply')) return;   // H3 정지 가드
+     if (!fx || typeof fx !== 'object') fx = {};
+     return withScope('apply', fx, token => applyEffects(fx, token));   // v1.7.8-2i: 동기화 범위(기록 전용)
+ }
+@@ -501,13 +641,17 @@
+ }
+ 
+ // 파밀리아 소속 이력. 입단·탈퇴·변경을 항목별로 남기고, 팔나 취득은 falnaHistory 에 따로 기록한다.
+-function ensureHistory() { S.familiaHistory ||= []; S.falnaHistory ||= []; }
++function ensureHistory() {
++    if (haltedEntry('ensureHistory')) return;   // H3 정지 가드
++    S.familiaHistory ||= []; S.falnaHistory ||= []; }
+ function closeMembership(reason) {
++    if (haltedEntry('closeMembership')) return;   // H3 정지 가드
+     ensureHistory();
+     const open = S.familiaHistory.find(m => m.leftAt == null);
+     if (open) { open.leftAt = S.age; open.leftReason = reason; }
+ }
+ function openMembership() {
++    if (haltedEntry('openMembership')) return;   // H3 정지 가드
+     ensureHistory();
+     closeMembership('changed');
+     S.nextMembershipId = (S.nextMembershipId || 1);
+@@ -517,6 +661,7 @@
+ 
+ // 조직·고용처에 고용된다(팔나 없음). 파밀리아 추첨과 섞지 않으며, fx.organization 으로 명시된 이벤트 선택에서만 호출된다.
+ function joinOrganization(orgId) {
++    if (haltedEntry('joinOrganization')) return;   // H3 정지 가드
+     const org = (gachaData.organizations || []).find(o => o.id === orgId);
+     if (!org) throw new Error('unknown organization: ' + orgId);
+     S.employer = { id: org.id, label: org.label, kind: org.kind, since: S.age };
+@@ -527,6 +672,7 @@
+ 
+ // mode: v1.7.8-2i 입단 호출 모드(설계 §2.3.2). 가드는 난수 사용 전에 검사한다. mode 없이 부르면 기존 동작(가드 없음).
+ function rollFamilia(forcedId, mode) {
++    if (haltedEntry('rollFamilia')) return;   // H3 정지 가드
+     return withScope('rollFamilia', null, () => rollFamiliaBody(forcedId, mode));
+ }
+ function rollFamiliaBody(forcedId, mode) {
+@@ -555,7 +701,9 @@
+     checkFalna();
+ }
+ 
+-function checkFalna() { return withScope('checkFalna', null, checkFalnaBody); }   // v1.7.8-2i: 동기화 범위(기록 전용)
++function checkFalna() {
++    if (haltedEntry('checkFalna')) return;   // H3 정지 가드
++    return withScope('checkFalna', null, checkFalnaBody); }   // v1.7.8-2i: 동기화 범위(기록 전용)
+ function checkFalnaBody() {
+     if (!S.familia || S.falnaAt == null || hasFalna() || S.age < S.falnaAt) return;
+     const m = MODS.familias[S.familia.id] || {};
+@@ -576,6 +724,7 @@
+ // ── R-i(v1.7.8-ri): 거주지 기록 전용 ─────────────────────────────────────────────
+ // 거주 필드·이력만 바꾼다. S.origin·직업·파밀리아·팔나·가족·연애·아이템·발리스·플래그·로그를 건드리지 않고 난수를 쓰지 않는다.
+ function moveResidence(toRegionId, reason) {
++    if (haltedEntry('moveResidence')) return;   // H3 정지 가드
+     if (!REGION_IDS.includes(toRegionId)) { syncInvariantLog.push({ kind: 'residence_unknown_region', value: toRegionId, eventId: S.currentEventId ?? null }); return false; }
+     if (!S.residence || !Array.isArray(S.residenceHistory) || S.residenceHistory.length === 0) { syncInvariantLog.push({ kind: 'residence_missing_state', eventId: S.currentEventId ?? null }); return false; }
+     if (S.residence.regionId === toRegionId) return false;   // 같은 지역 = 이력 무변화
+@@ -587,6 +736,7 @@
+ }
+ // 복무 기록(RES-2 §3.4). S.flags 와 분리. R-i 에서는 생성만 하고 해제·조건 판정에 쓰지 않는다.
+ function recordService(kind) {
++    if (haltedEntry('recordService')) return;   // H3 정지 가드
+     if (kind !== 'conscripted' && kind !== 'deserter') { syncInvariantLog.push({ kind: 'service_unknown_kind', value: kind, eventId: S.currentEventId ?? null }); return false; }
+     if (!S.service) S.service = {};
+     if (S.service[kind]) return false;
+@@ -597,6 +747,7 @@
+ }
+ 
+ function startLife() {
++    progressHalted = false; lifeGen += 1; clearAutoTimers();   // 새 게임: 정지 해제는 여기서만. 이전 생애의 자동 진행 타이머는 세대 불일치로 무효
+     // v1.7.8-2i(U3): 깊이는 검사만 하고 바꾸지 않는다(모듈 로드 시 1회 0).
+     if (syncDepth !== 0) syncInvariantLog.push({ kind: 'sync_depth_nonzero_at_life_start', value: syncDepth });
+     const origin = getRandomItemByWeight(gachaData.origins);
+@@ -606,6 +757,7 @@
+           potential: 0, excelia: 0, feat: 0, level: 0, hidden: 0, bond: 0, valis: 0,
+           abil: { str: 0, vit: 0, dex: 0, agi: 0, mag: 0 }, flags: [], done: [], familia: null, falnaAt: null, familiaAt: null, familiaHistory: [], falnaHistory: [], aspiration: null, aspirationHistory: [], employer: null, parentFamilia: null,
+           alias: null, origin, race, talent, cause: '', job: 'child', jobSince: 0,
++          pendingFollowup: null, followupSeq: 0,   // T1-F: 후속 선택 보류 상태(생애 시작 시 초기화)·생애 내 일련번호
+           eventCounts: {}, lastEventPhase: {}, recentEvents: [], milestones: [], logHistory: [],
+           items: [], itemUses: {}, itemsConsumed: [], relations: [], partnerId: null, nextRelationId: 1,
+           application: GameCore.Recruit.newApplicationState(), nextMembershipId: 1, minorFamilias: [],
+@@ -651,6 +803,7 @@
+ 
+ // 직업별 연간 활동 엑세리아(팔나 전에는 잠재력). 수치는 events.js ANNUAL_ACTIVITY(임의 밸런스 값).
+ function yearlyActivity() {
++    if (haltedEntry('yearlyActivity')) return;   // H3 정지 가드
+     if (S.age < 6) return;
+     const amount = GameCore.Growth.rollAnnualExcelia(S, ANNUAL_ACTIVITY);
+     if (amount > 0) GameCore.Growth.addExperience(S, amount);
+@@ -662,6 +815,7 @@
+ // (v1.7 은 달력 1년당 +1 이라 노화가 느린 엘프·고레벨이 과도하게 회복했다 — QA_AUDIT_v1.7 §3)
+ // HP_REGEN_MODE: 'physical'(기본) | 'calendar'(v1.7 방식, A/B 비교용) | 'off'
+ function recoverYearly(rate) {
++    if (haltedEntry('recoverYearly')) return;   // H3 정지 가드
+     if (HP_REGEN_MODE === 'off') return;
+     const step = HP_REGEN.find(r => S.phase <= r.untilPhase);
+     if (!step) return;
+@@ -671,6 +825,7 @@
+ 
+ // 구조 소모품 사용. 체력이 RESCUE_HP 이하일 때 1회, 그래도 0 이하면 남은 포션을 이어서 사용한다.
+ function tryRescue() {
++    if (haltedEntry('tryRescue')) return;   // H3 정지 가드
+     let used = false;
+     for (let guard = 0; guard < 8; guard++) {
+         if (used && S.hp > 0) break;
+@@ -686,6 +841,7 @@
+ 
+ const RELATION_LABEL = { parent: '부모', sibling: '형제자매', child: '자녀' };
+ function handleRelationEvents(events) {
++    if (haltedEntry('handleRelationEvents')) return;   // H3 정지 가드
+     (events || []).forEach(ev => {
+         const r = ev.relation;
+         if (ev.kind === 'birth') { say('어머니가 새 아이를 낳았다. 동생이 생겼다.', 'result', S.age); return; }
+@@ -701,6 +857,9 @@
+ }
+ 
+ function nextYear() {
++    if (haltedEntry('nextYear')) return;   // H1 정지 가드
++    // T1-F: 후속 선택이 남아 있으면 다음 해로 넘어가지 않는다(DOM·RNG·상태 변경보다 먼저 검사).
++    if (S && S.pendingFollowup) { followupDiag('nextyear_blocked'); return; }
+     $('choices').innerHTML = '';
+     let skipped = 0;
+     while (true) {
+@@ -734,6 +893,7 @@
+ }
+ 
+ function showEvent(e) {
++    if (haltedEntry('showEvent')) return;   // H1 정지 가드
+     S.currentEventId = e.id;   // v1.7.8-2i: 기록 전용, choose() 의 finally 에서 null
+     say(e.text, 'event', S.age);
+     if (e.once) S.done.push(e.id);
+@@ -747,17 +907,19 @@
+         b.onclick = () => choose(ch);
+         $('choices').appendChild(b);
+     });
+-    if ($('auto').checked) setTimeout(() => {
++    if ($('auto').checked) scheduleAuto(() => {
+         const bs = $('choices').querySelectorAll('button');
+         if (bs.length) bs[Math.floor(Math.random() * bs.length)].click();
+     }, 800);
+ }
+ 
+ function choose(ch) {
++    if (haltedEntry('choose')) return;   // H1 정지 가드
+     try { return chooseBody(ch); }
+     finally { if (S) S.currentEventId = null; }   // v1.7.8-2i(d-2): 조기 반환·예외에서도 초기화
+ }
+ function chooseBody(ch) {
++    if (haltedEntry('chooseBody')) return;   // H1 정지 가드
+     $('choices').innerHTML = '';
+     let r = ch;
+     if (ch.chance) {
+@@ -792,10 +954,91 @@
+         return endLife(); 
+     }
+     
++    // T1-F(C27): 사망·HP 0 판정을 지난 생존 경로에서만 후속 선택 화면을 띄운다. '다음 해로' 는 선택 처리 후에 만든다.
++    if (S.pendingFollowup) {
++        S.pendingFollowup.phase = 'awaiting_choice';
++        if (renderFollowup()) return;
++        followupDiag('followup_render_failed'); S.pendingFollowup = null;
++    }
++    renderNextYearButton();
++}
++function renderNextYearButton() {
+     const b = document.createElement('button');
+     b.textContent = '다음 해로'; b.onclick = nextYear;
+     $('choices').appendChild(b);
+-    if ($('auto').checked) setTimeout(() => b.isConnected && b.click(), 600);
++    if ($('auto').checked) scheduleAuto(() => b.isConnected && b.click(), 600);
++}
++
++// ── 후속 선택 공통부. 사건 id 를 하드코딩하지 않는다(문맥은 pending.sourceEventId 로 복원). ──
++// 보류 상태 생성: 난수 0, pending·followupSeq 외 게임 상태 변경 0. 이미 보류가 있으면 만들지 않는다(중첩 금지).
++function createFollowup(kind, context) {
++    if (haltedEntry('createFollowup')) return;   // H3 정지 가드
++    if (!FOLLOWUP_KINDS[kind]) { followupDiag('followup_unknown_kind', { kind }); return false; }
++    if (S.pendingFollowup) { followupDiag('followup_already_pending', { kind }); return false; }
++    S.followupSeq = (S.followupSeq || 0) + 1;
++    S.pendingFollowup = { seq: S.followupSeq, kind, phase: 'resolving_event', sourceEventId: S.currentEventId ?? null, context: { ...(context || {}) }, createdAt: S.age };
++    return true;
++}
++// 화면 전용 출력(logHistory 에 남기지 않는다 — 후속 화면 표시만으로 게임 상태가 바뀌지 않게 한다, C29).
++function sayDomOnly(text, cls = '') {
++    const d = document.createElement('div');
++    d.className = 'entry ' + cls;
++    d.innerHTML = text;
++    $('log').appendChild(d);
++    d.scrollIntoView({ block: 'nearest' });
++}
++function followupOptions(p) {
++    const kind = p && FOLLOWUP_KINDS[p.kind];
++    const list = kind ? kind.options(S, p) : [];
++    return Array.isArray(list) ? list.filter(o => o && typeof o.id === 'string') : [];
++}
++function renderFollowup() {
++    if (haltedEntry('renderFollowup')) return;   // H1 정지 가드
++    const p = S.pendingFollowup, kind = p && FOLLOWUP_KINDS[p.kind];
++    const options = followupOptions(p);
++    if (!kind || !options.length) return false;
++    $('choices').innerHTML = '';
++    sayDomOnly(kind.prompt, 'event');
++    let stayButton = null;
++    options.forEach(o => {
++        const b = document.createElement('button');
++        b.className = 'choice'; b.textContent = o.label;
++        (b.dataset || (b.dataset = {})).followup = o.id;      // 러너·자동 진행이 난수 없이 고를 수 있게 하는 표식
++        b.onclick = () => chooseFollowup(o.id);
++        $('choices').appendChild(b);
++        if (o.stay && !stayButton) stayButton = b;
++    });
++    // 자동 진행(C21·C24): 무작위 클릭 대신 '지금 생활을 이어간다' 를 고정 선택한다(난수 호출 없음).
++    if ($('auto').checked && stayButton) scheduleAuto(() => stayButton.isConnected && stayButton.click(), 800);
++    return true;
++}
++function chooseFollowup(optionId) {
++    if (haltedEntry('chooseFollowup')) return;   // H1 정지 가드
++    const p = S.pendingFollowup;
++    // a. 검증: 실패하면 상태·보류·화면을 바꾸지 않는다(중복 클릭·무효 선택 포함).
++    if (!p || p.phase !== 'awaiting_choice' || !followupOptions(p).some(o => o.id === optionId)) { followupDiag('followup_invalid', { optionId }); return; }
++    p.phase = 'resolving_choice'; $('choices').innerHTML = '';     // b. 확정
++    S.currentEventId = p.sourceEventId;                             // c. 원래 사건 문맥 복원
++    const rb = takeRollbackSnapshot();                              // d. 롤백 스냅숏
++    try {
++        withScope('followup', null, () => FOLLOWUP_KINDS[p.kind].resolve(S, optionId, p));   // e. 사건별 효과
++    } catch (err) {
++        progressHalted = true;                                      // X0 첫 문장: 이후 어떤 정리 단계가 실패해도 정지는 유지된다
++        const cleanupErrors = [];
++        const step = (name, fn) => { try { fn(); } catch (e) { try { cleanupErrors.push({ step: name, message: String(e && e.message) }); } catch (_) {} } };
++        step('clearTimers', clearAutoTimers);                       // X0b
++        step('rollback', () => restoreRollbackSnapshot(rb));        // X1
++        step('render', renderStatsFromClone);                       // X2 (R-E)
++        step('notice', showHaltNotice);                             // X5b
++        step('diag', () => followupDiag('followup_resolve_exception', { optionId, message: String(err && err.message), cleanupErrors: cleanupErrors.slice() }));   // X3
++        try { if (cleanupErrors.length) err.followupCleanupErrors = cleanupErrors; } catch (_) {}
++        throw err;                                                  // X6 원래 예외를 그대로 다시 던진다('다음 해로' 는 만들지 않는다)
++    } finally {
++        S.pendingFollowup = null; S.currentEventId = null;         // f. 정리(단순 대입만)
++    }
++    if (S.hp <= 0) { S.cause = '쌓인 피로와 세월 탓에 몸이 끝내 버티지 못했다.'; return endLife(); }   // g. 방어 판정(후속 효과는 HP 를 바꾸지 않는다)
++    renderStats();                                                  // 상태창 갱신(직업·고용처 표시). 지급이 없으면 apply 가 불리지 않아 갱신되지 않던 결함 수정(브라우저 검증에서 발견)
++    renderNextYearButton();                                         // h.
+ }
+ 
+ function pickAlias() {
+@@ -808,6 +1051,12 @@
+ }
+ 
+ function endLife() {
++    if (haltedEntry('endLife')) return;   // H1 정지 가드
++    // T1-F: 후속 선택 화면 표시 전(resolving_event)의 사망은 정상 처리하고 보류를 정리한다(C27).
++    //       화면 표시 후(awaiting_choice)·선택 처리 중(resolving_choice)에는 생애를 끝내지 않는다. 기존 정리 작업보다 먼저 검사한다.
++    { const p = S ? S.pendingFollowup : null;
++      if (p && p.phase !== 'resolving_event') { followupDiag('endlife_blocked'); return; }
++      if (p) { followupDiag('followup_discarded_on_death'); S.pendingFollowup = null; } }
+     // v1.7.8-2i(⑤): 예외로 남은 기준값 정리. 정상 진행에서는 항상 null.
+     if (S.syncBaseline) { recoverFromBaseline(S.syncBaseline, null, 'recovered_at_life_end'); S.syncBaseline = null; }
+     S.currentEventId = null;
+diff -ruN -x logs base/test_runner.js impl/test_runner.js
+--- base/test_runner.js	2026-11-08 17:56:24.000000000 +0000
++++ impl/test_runner.js	2026-11-10 11:08:44.390348208 +0000
+@@ -142,6 +142,7 @@
+     __rngState: () => rng.getState(),
+     __rngRestore: value => rng.setState(value),
+     __rngCalls: () => rng.calls(),
++    __lifeDump: process.env.SIM_LIFE_DUMP ? [] : undefined,
+     __NEWBORN_MEMBERSHIP: process.env.SIM_NEWBORN_MEMBERSHIP === '1' ? true : undefined,   // A/B: 1 = v1.7.1 방식(출생 즉시 입단)
+     __HP_REGEN_MODE: process.env.SIM_HP_REGEN_MODE || undefined   // A/B 비교용(physical|calendar|off). 기본: 게임 기본값(physical)
+ };
+@@ -932,6 +933,11 @@
+         V8.d3SyntheticTest.rngRestored = JSON.stringify(__rngState()) === JSON.stringify(snap);
+         assert(Object.values(V8.d3SyntheticTest).every(Boolean), 'D-3 synthetic polluted-sealed test failed: ' + JSON.stringify(V8.d3SyntheticTest));
+     }
++    // T1-F/F-1 후속 선택 계측(읽기 전용). 러너는 후속 화면에서 항상 '지금 생활을 이어간다' 를 난수 없이 고른다(C21·C24).
++    const HAS_F1 = typeof FOLLOWUP_KINDS !== 'undefined' && typeof followupDiagLog !== 'undefined';
++    const F1 = results.f1Followup = { hasF1: HAS_F1, followups: 0, byReason: {}, byKind: {}, supporterOptionShown: 0, badPhase: 0, applicationChanged: 0, stayStateChanged: 0, rngDuringStay: 0, notCleaned: 0, jobChangedByFollowup: 0, nextButtonBad: 0, pendingLeftAtLifeEnd: 0, livesWithFollowup: 0, fallbackSpecs: 0, diagByEvent: {}, diagUnitPhase: HAS_F1 ? followupDiagLog.length : 0 };
++    if (HAS_F1) F1.fallbackSpecs = EVENTS.filter(event => JSON.stringify(event.choices).indexOf('"fallback"') >= 0).length;
++    const f1Strip = (key, value) => (key === 'pendingFollowup' || key === 'currentEventId') ? undefined : value;
+     let lifeDigest = 2166136261;
+     let syncSeen = HAS_2I ? syncInvariantLog.length : 0;   // 단위 테스트 단계의 기록은 본 실행 판정에서 제외(별도 보고)
+     V8.syncLogUnitPhase = syncSeen;
+@@ -960,7 +966,25 @@
+                 if (usable.length === 0) {
+                     throw new Error('simulation stalled: no actionable choice at age ' + S.age + ', job=' + S.job);
+                 }
+-                usable[Math.floor(Math.random() * usable.length)].onclick();
++                if (S.pendingFollowup) {
++                    const stay = usable.find(button => button.dataset && button.dataset.followup === 'stay');
++                    if (!stay) throw new Error('followup screen without stay option at age ' + S.age + ', job=' + S.job);
++                    const f1p = S.pendingFollowup, f1App = JSON.stringify(S.application), f1Rng = __rngCalls(), f1Job = S.job, f1State = JSON.stringify(S, f1Strip);
++                    F1.followups += 1; if (f1p.seq === 1) F1.livesWithFollowup += 1;
++                    tally(F1.byReason, String(f1p.context && f1p.context.reason)); tally(F1.byKind, f1p.kind);
++                    if (f1p.phase !== 'awaiting_choice') F1.badPhase += 1;
++                    if (usable.some(button => button.dataset && button.dataset.followup === 'supporter')) F1.supporterOptionShown += 1;
++                    stay.onclick();
++                    if (JSON.stringify(S.application) !== f1App) F1.applicationChanged += 1;      // V-2(C-10): 후속 선택으로 application 추가 변경 0
++                    if (JSON.stringify(S, f1Strip) !== f1State) F1.stayStateChanged += 1;         // C29: stay 는 상태를 바꾸지 않는다
++                    if (__rngCalls() !== f1Rng) F1.rngDuringStay += 1;                            // C24: 주 RNG 0
++                    if (S.pendingFollowup !== null || S.currentEventId !== null) F1.notCleaned += 1;
++                    if (S.job !== f1Job) F1.jobChangedByFollowup += 1;                            // F1-T12
++                    const f1After = ($('choices').kids || []).filter(button => typeof button.onclick === 'function');
++                    if (f1After.length !== 1 || f1After[0].textContent !== '다음 해로') F1.nextButtonBad += 1;
++                } else {
++                    usable[Math.floor(Math.random() * usable.length)].onclick();
++                }
+                 actions += 1;
+                 if (S.job === 'retired') wasRetired = true;
+                 if (firstAdventurerAge == null && S.job === 'adventurer') firstAdventurerAge = S.age;
+@@ -1010,6 +1034,12 @@
+                 }
+             }
+             lifeDigest = fnv(lifeDigest, JSON.stringify([S.age, +S.physicalAge.toFixed(3), S.level, S.job, S.familia ? S.familia.id : null, Math.round(S.hp * 1000), S.valis, S.bond, S.power, S.cause, currentLifeEvents.join(',')]));
++            if (typeof __lifeDump !== 'undefined' && __lifeDump) {   // 생애별 기록(읽기 전용, SIM_LIFE_DUMP 지정 시에만)
++                const app = S.application || {};
++                const persistenceFail = (app.history || []).some(h => h.route === 'persistence' && h.outcome === 'rejected') || (app.blocked || []).some(b => b.route === 'persistence');
++                __lifeDump.push({ i: run, d: fnv(2166136261, JSON.stringify([S.age, +S.physicalAge.toFixed(3), S.level, S.job, S.familia ? S.familia.id : null, Math.round(S.hp * 1000), S.valis, S.bond, S.power, S.cause, currentLifeEvents.join(',')])), pf: persistenceFail, job: S.job, sup: S.flags.includes('supporter'), fam: !!(S.familiaHistory || []).length, falna: (S.falnaHistory || []).length > 0, ev: currentLifeEvents.slice() });
++            }
++            if (S.pendingFollowup) F1.pendingLeftAtLifeEnd += 1;
+             if (HAS_RI) {   // R-i 생애 단위 검사(읽기 전용)
+                 RI.lives += 1;
+                 const H = S.residenceHistory, R = S.residence, O = S.origin && S.origin.id;
+@@ -1186,6 +1216,11 @@
+     results.lifeDigest = lifeDigest;
+     { const RB = results.recruit2bb; RB.membershipLivesPct = results.completedRuns ? +(results.timeline.livesWithMembership / results.completedRuns * 100).toFixed(2) : 0; RB.rejectionAmongAppliedPct = RB.livesApplied ? +(RB.livesWithRejection / RB.livesApplied * 100).toFixed(2) : 0; }
+     results.residenceRi = RI;
++    if (HAS_F1) {
++        followupDiagLog.slice(F1.diagUnitPhase).forEach(entry => tally(F1.diagByEvent, entry.event));
++        ['badPhase', 'applicationChanged', 'stayStateChanged', 'rngDuringStay', 'notCleaned', 'jobChangedByFollowup', 'nextButtonBad', 'pendingLeftAtLifeEnd', 'fallbackSpecs'].forEach(key => { if (F1[key]) results.invariantFailures.push('f1:' + key + '=' + F1[key]); });
++        Object.keys(F1.diagByEvent).forEach(event => results.invariantFailures.push('f1:diag:' + event + '=' + F1.diagByEvent[event]));
++    }
+     results.averageChronologicalAge = results.completedRuns ? +(chronologicalTotal / results.completedRuns).toFixed(2) : 0;
+     results.averagePhysicalAge = results.completedRuns ? +(physicalTotal / results.completedRuns).toFixed(2) : 0;
+     results.averagePotential = results.completedRuns ? +(results.totalPotential / results.completedRuns).toFixed(2) : 0;
+@@ -1297,6 +1332,7 @@
+     '\nv177:', JSON.stringify(results.v177),
+     '\nv178:', JSON.stringify(results.v178),
+     '\nresidenceRi:', JSON.stringify(results.residenceRi),
++    '\nf1Followup:', JSON.stringify(results.f1Followup),
+     '\nv1aRngRestore:', results.v1aRngRestore,
+     '\nhpInvariants:', JSON.stringify({ regenMode: process.env.SIM_HP_REGEN_MODE || 'physical', negativeHpWhileAlive: results.negativeHpWhileAlive, negativeHpAtDeath: results.negativeHpAtDeath, hpDeathsWithRescueLeft: results.hpDeathsWithRescueLeft, minHpSeenAlive: results.minHpSeenAlive }),
+     '\ndungeonEventAudit:', JSON.stringify(results.dungeonEventAudit),
+@@ -1310,3 +1346,4 @@
+ );
+ if (results.firstRuntimeError) console.error('firstRuntimeError:', JSON.stringify(results.firstRuntimeError, null, 2));
+ if (!results.allRunsCompleted || !results.allInvariantsPassed || !results.agingFloorUnitTest || !results.resultRenderingUnitTest || results.partnerFlagDependencyCount !== 0 || !results.levelUpFeatOnlyUnitTest || !results.screenSwitchUnitTest || !results.autoProgressUnitTest || !results.partnerAge100StillActiveUnitTest || !results.familiaOccupationUnitTests.hephaestusDefaultsToBlacksmith || !results.familiaOccupationUnitTests.existingSupporterPreserved || Object.values(results.v17UnitTests).some(v => v === false)) process.exitCode = 1;
++if (process.env.SIM_LIFE_DUMP && context.__lifeDump) fs.writeFileSync(process.env.SIM_LIFE_DUMP, JSON.stringify(context.__lifeDump));
+diff -ruN -x logs base/tests/browser_test.js impl/tests/browser_test.js
+--- base/tests/browser_test.js	2026-11-08 17:52:50.000000000 +0000
++++ impl/tests/browser_test.js	2026-11-10 11:01:30.509135986 +0000
+@@ -131,6 +131,35 @@
+   const overflow = await mobile.evaluate(() => ({ sw: document.documentElement.scrollWidth, cw: document.documentElement.clientWidth }));
+   check('모바일(375px) 가로 스크롤 없음', overflow.sw <= overflow.cw, JSON.stringify(overflow));
+ 
++  // 4) T1-F/F-1 후속 선택 화면: 실제 브라우저 DOM·실제 클릭. [합성 상태 주입] join_hard 심사 결과를 거절로 고정하고 고용 중인 인물로 만든다(실제 생애 결과 아님).
++  {
++    const setup = `S.race = gachaData.races.find(r => r.id === 'human'); S.familia = null; S.flags = S.flags.filter(f => f !== 'falna' && f !== 'supporter');
++      S.falnaState = 'none'; S.falnaHistory = []; S.familiaHistory = []; S.pendingFollowup = null; S.application = GameCore.Recruit.newApplicationState();
++      S.age = 20; S.chronologicalAge = 20; S.phase = 20; S.physicalAge = 20; S.hp = 70; setJob('guild_staff'); S.jobSince = 14;
++      S.employer = { id: 'guild', label: '길드', kind: 'administration', since: 14 };
++      GameCore.Recruit.evaluateApplication = () => ({ outcome: 'rejected', p: 0 });
++      document.getElementById('choices').innerHTML = ''; showEvent(EVENTS.find(e => e.id === 'join_hard'));`;
++    const fp = await browser.newPage({ viewport: { width: 1100, height: 800 } });
++    watch(fp); await fast(fp); await openGame(fp);
++    await fp.click('#btn-start'); await fp.waitForSelector('#screen-play.active');
++    await fp.evaluate(setup);
++    await fp.locator('#choices button', { hasText: '끈질기게 문을 두드린다' }).click();
++    const screen1 = await fp.evaluate(() => ({ labels: [...document.querySelectorAll('#choices button')].map(b => b.dataset.followup + ':' + b.textContent), prompt: document.getElementById('log').innerText.includes('앞으로 어떻게 지낼까?'), phase: S.pendingFollowup && S.pendingFollowup.phase, rejectLine: /의 심사에서 탈락했다\./.test(document.getElementById('log').innerText) }));
++    check('F-1 후속 화면 표시(실제 클릭): 안내·C25 선택지 2개·다음 해 버튼 없음', screen1.prompt && screen1.phase === 'awaiting_choice' && screen1.rejectLine && JSON.stringify(screen1.labels) === JSON.stringify(['supporter:현재 고용처를 그만두고 서포터로 전직한다', 'stay:지금 생활을 이어간다']), JSON.stringify(screen1));
++    await fp.locator('#choices button[data-followup="supporter"]').click();
++    const after = await fp.evaluate(() => ({ job: S.job, employer: S.employer, pending: S.pendingFollowup, next: [...document.querySelectorAll('#choices button')].map(b => b.textContent), quit: S.logHistory.filter(x => x.kind === 'employer_quit').map(x => x.text), sev: S.logHistory.filter(x => x.kind === 'severance').length, status: document.getElementById('familia').textContent }));
++    check("F-1 서포터 전직(실제 클릭): job supporter·고용처 해제·L-1 1건·퇴직금 0(액수 미결)·'다음 해로'", after.job === 'supporter' && after.employer === null && after.pending === null && JSON.stringify(after.next) === JSON.stringify(['다음 해로']) && JSON.stringify(after.quit) === JSON.stringify(['길드을(를) 그만두었다.']) && after.sev === 0 && !after.status.includes('고용처'), JSON.stringify(after));
++    // 자동 진행: 후속 화면에서 stay 고정 선택 후 계속 진행
++    const ap = await browser.newPage({ viewport: { width: 1100, height: 800 } });
++    watch(ap); await fast(ap); await openGame(ap);
++    await ap.click('#btn-start'); await ap.waitForSelector('#screen-play.active');
++    await ap.evaluate(setup + " globalThis.__f1 = { stayChosen: 0 }; { const o = chooseFollowup; chooseFollowup = function (id) { if (id === 'stay') globalThis.__f1.stayChosen++; else globalThis.__f1.other = id; return o.apply(this, arguments); }; }");
++    await ap.check('#auto'); await ap.locator('#choices button', { hasText: '끈질기게 문을 두드린다' }).click();
++    const autoDone = await ap.waitForSelector('#screen-result.active', { timeout: 60000 }).then(() => true).catch(() => false);
++    const af = await ap.evaluate(() => ({ f1: globalThis.__f1, pending: S.pendingFollowup }));
++    check('F-1 자동 진행: 후속 화면에서 stay 고정 선택 → 결과 화면 도달', autoDone && af.f1.stayChosen === 1 && !af.f1.other && af.pending === null, JSON.stringify(af));
++  }
++
+   check('페이지 오류/콘솔 오류 없음', errors.length === 0, errors.slice(0, 3).join(' || '));
+   await browser.close();
+   const failed = results.filter(r => !r.ok);
+diff -ruN -x logs base/tests/f1_joinhard_test.js impl/tests/f1_joinhard_test.js
+--- base/tests/f1_joinhard_test.js	1970-01-01 00:00:00.000000000 +0000
++++ impl/tests/f1_joinhard_test.js	2026-11-10 10:59:37.268760041 +0000
+@@ -0,0 +1,138 @@
++// F-1 join_hard 연결 테스트 — 결정 r9 F1-T1·T2·T2b·T3·T7·T9·T10·T11·T13·T14, 설계 r7(V-1, LC-1·2·7·9, CD-1·4, C24·C25·S-1).
++// 사용: node tests/f1_joinhard_test.js   (실패 1건 이상이면 종료 코드 1)
++// [합성 상태 주입] 표기 사례는 S 를 직접 구성하거나 심사 결과를 고정한다. F1-T1 은 실제 심사 함수로 거절이 나오는 시드를 찾아 쓴다.
++const fs = require('fs'), path = require('path');
++const { makeReporter, snap, GAME_ROOT } = require('./lib_f1_ctx');
++const { prep, forceOutcome, injectBlock, knock, openFollowup, pick, diagCount, appJson } = require('./lib_f1_fixture');
++const { check, test, finish } = makeReporter();
++const EXC = ['pendingFollowup', 'currentEventId'];
++const core = s => JSON.stringify({ job: s.job, jobSince: s.jobSince, employer: s.employer, flags: s.flags, valis: s.valis, familia: s.familia, falnaState: s.falnaState, falnaHolder: s.falnaHolder, falnaHistory: s.falnaHistory, familiaHistory: s.familiaHistory });
++const labels = T => T.buttons().map(b => b.dataset.followup + ':' + b.textContent);
++
++test('F1-T13 fallback 제거(C23)', () => {
++  const root = GAME_ROOT, ev = fs.readFileSync(path.join(root, 'events.js'), 'utf8'), sc = fs.readFileSync(path.join(root, 'script.js'), 'utf8');
++  check('F1-T13a events.js 에 fallback 속성 0', !/fallback\s*:/.test(ev));
++  const body = sc.slice(sc.indexOf('function applyRecruit('), sc.indexOf('// ── F-1 후속 선택(일반 지원 거절·차단 뒤)'));
++  check('F1-T13b applyRecruit 에 fallback 분기 0', body.length > 200 && !/fallback/.test(body));
++  const { T } = prep(); const specs = T.G("EVENTS.flatMap(e => e.choices.map(c => ({ id: e.id, r: c.fx && c.fx.recruit })).filter(x => x.r))");
++  check('F1-T13c 후속 선택 지정은 join_hard(persistence) 하나뿐', JSON.stringify(specs.filter(x => x.r.followup).map(x => [x.id, x.r.route, x.r.followup])) === JSON.stringify([['join_hard', 'persistence', 'recruit_after_fail']]), specs);
++  check('F1-T13d 다른 recruit spec 불변(join·career_choice self_apply, latejoin scout)', JSON.stringify(specs.filter(x => !x.r.followup).map(x => [x.id, x.r.route])) === JSON.stringify([['join', 'self_apply'], ['latejoin', 'scout'], ['career_choice', 'self_apply']]), specs.map(x => [x.id, x.r.route]));
++});
++
++test('F1-T1 거절 직후(실제 심사): 지원 직전 대비 상태 불변·application 정상 기록만', () => {
++  let found = null;
++  for (let seed = 1; seed <= 200 && !found; seed++) {
++    const { T, s } = prep({ ctx: { seed }, job: 'healer', tenure: 5, age: 20 }); const c0 = core(s), a0 = JSON.parse(appJson(s)), calls0 = T.calls();
++    knock(T); const h = s.application.history.slice(-1)[0];
++    if (h && h.outcome === 'rejected') found = { T, s, c0, a0, h, seed, delta: T.calls() - calls0 };
++  }
++  if (!check('F1-T1 0 실제 심사 거절 시드 존재', !!found)) return;
++  const { T, s, c0, a0, h } = found;
++  check('F1-T1a 직업·고용처·flags·valis·팔나·소속 동일', core(s) === c0);
++  check('F1-T1b application: attemptSeq +1·history rejected 1건 추가·blocked 불변·current null', (s.application.attemptSeq || 0) === (a0.attemptSeq || 0) + 1 && s.application.history.length === a0.history.length + 1 && h.route === 'persistence' && JSON.stringify(s.application.blocked) === JSON.stringify(a0.blocked) && s.application.current === null, s.application);
++  check('F1-T1c 후속 화면 표시(awaiting_choice)·다음 해 버튼 없음', s.pendingFollowup && s.pendingFollowup.phase === 'awaiting_choice' && !T.buttons().some(b => b.textContent === '다음 해로'), labels(T));
++  check('F1-T1d 주 RNG = 후보 선택 1회', found.delta === 1, found.delta);
++});
++
++const blockedCase = (id, reason) => test(id, () => {
++  const { T, s } = prep({ job: 'merchant', tenure: 3, age: 20 }); injectBlock(T, s, reason);
++  const c0 = core(s), a0 = JSON.parse(appJson(s)), calls0 = T.calls(), p0 = appJson(s);
++  knock(T); const a1 = s.application, b = a1.blocked.slice(-1)[0], p1 = appJson(s);
++  check(id + ' a 차단 사유 ' + reason, b && b.reason === reason && b.route === 'persistence' && b.at === s.age, b);
++  check(id + ' b 직업·고용처·flags·valis·팔나·소속 동일(자동 대체 효과 0)', core(s) === c0);
++  check(id + ' c application: blocked +1 만, history·attemptSeq 불변', a1.blocked.length === (a0.blocked || []).length + 1 && JSON.stringify(a1.history) === JSON.stringify(a0.history) && a1.attemptSeq === a0.attemptSeq && a1.current === null);
++  check(id + ' d 주 RNG 0', T.calls() === calls0);
++  check(id + ' e 후속 화면 표시·reason 보존', s.pendingFollowup && s.pendingFollowup.phase === 'awaiting_choice' && s.pendingFollowup.context.reason === reason && s.pendingFollowup.context.route === 'persistence' && s.pendingFollowup.sourceEventId === 'join_hard', s.pendingFollowup);
++  // V-1: P1 → P2(stay) application 바이트 동일, stay 는 전체 상태 불변
++  const st1 = snap(s, EXC), c1 = T.calls(); pick(T, 'stay');
++  check(id + ' f(V-1) stay 후 application 바이트 동일', appJson(s) === p1 && p1 !== p0);
++  check(id + ' g(F1-T3) stay: 후속 선택 직전 대비 S 전체 불변·주 RNG 0', snap(s, EXC) === st1 && T.calls() === c1);
++  check(id + " h '다음 해로' 1개·보류 정리", T.buttons().length === 1 && T.buttons()[0].textContent === '다음 해로' && s.pendingFollowup === null && s.currentEventId === null);
++});
++blockedCase('F1-T2 / CD-1·CD-4 cooldown 차단 [합성 상태 주입]', 'cooldown');
++blockedCase('F1-T2b / LC-1·LC-2 lifetime_cap 차단 [합성 상태 주입]', 'lifetime_cap');
++
++test('V-1 거절 경로 P0→P1→P2(stay) application [합성: 심사 결과 고정]', () => {
++  const { T, s } = prep({ job: 'child', age: 15 }); forceOutcome(T, 'rejected'); const p0 = JSON.parse(appJson(s)); knock(T); const p1 = appJson(s), a1 = s.application;
++  check('V-1a P0→P1 허용 변경: history +1·attemptSeq +1·blocked 그대로·current null', a1.history.length === p0.history.length + 1 && a1.attemptSeq === (p0.attemptSeq || 0) + 1 && JSON.stringify(a1.blocked) === JSON.stringify(p0.blocked) && a1.current === null);
++  pick(T, 'stay');
++  check('V-1b P1→P2 바이트 동일', appJson(s) === p1);
++});
++
++test('F1-T3 stay(거절 경로): 전체 불변 [합성: 심사 결과 고정]', () => {
++  const { T, s } = openFollowup({ job: 'guild_staff', tenure: 6, age: 21, employer: 'guild' });
++  const st = snap(s, EXC), c0 = T.calls(), js = s.jobSince; pick(T, 'stay');
++  check('F1-T3a S 전체 불변', snap(s, EXC) === st);
++  check('F1-T3b(F1-T4e) 근속 6년이어도 지급 0·jobSince 불변·고용처 유지', s.jobSince === js && s.employer && s.employer.id === 'guild');
++  check('F1-T3c(C24) 주 RNG 0', T.calls() === c0);
++});
++
++test('C25·S-1 선택지 문구와 노출(C20) [합성 상태 주입]', () => {
++  const cases = [
++    ['child', { job: 'child', age: 15 }, '서포터 일을 시작한다'],
++    ['고용처 없는 기존 직업', { job: 'merchant', tenure: 2, age: 20 }, '현재 직업을 그만두고 서포터로 전직한다'],
++    ['고용 중', { job: 'guild_staff', tenure: 4, age: 20, employer: 'guild' }, '현재 고용처를 그만두고 서포터로 전직한다'],
++    ['retired', { job: 'retired', tenure: 1, age: 21 }, '은퇴 생활을 접고 서포터 일을 시작한다'],
++    ['retired + 고용처(고용처 문구 우선)', { job: 'retired', tenure: 1, age: 21, employer: 'hostess' }, '현재 고용처를 그만두고 서포터로 전직한다']];
++  for (const [name, o, label] of cases) {
++    const { T } = openFollowup(o); const l = labels(T);
++    check('C25 ' + name, JSON.stringify(l) === JSON.stringify(['supporter:' + label, 'stay:지금 생활을 이어간다']), l);
++  }
++  const { T, s } = openFollowup({ job: 'supporter', tenure: 2, age: 20 });
++  check('F1-T7 / LC-7 이미 서포터: 서포터 선택지 비노출', JSON.stringify(labels(T)) === JSON.stringify(['stay:지금 생활을 이어간다']));
++  let threw = false; try { T.G("chooseFollowup('supporter')"); } catch (e) { threw = true; }
++  check('F1-T7b 비노출 선택지 직접 호출 거부(상태 불변)', !threw && s.job === 'supporter' && s.pendingFollowup && s.pendingFollowup.phase === 'awaiting_choice' && diagCount(T, 'followup_invalid') === 1);
++  const all = cases.map(c => c[2]).concat(['지금 생활을 이어간다']);
++  check('Q-P 선택지에 마침표 없음', all.every(x => !/[.。]$/.test(x)));
++  check('안내 문구(화면 전용)', (() => { const f = openFollowup({ job: 'child', age: 15 }); return f.T.el('log').kids.some(k => k.html === '앞으로 어떻게 지낼까?') && !f.s.logHistory.some(x => x.text === '앞으로 어떻게 지낼까?'); })());
++});
++
++test('F1-T9 기존 명시 선택지 "길드 주변에서 서포터 일을 구한다" 유지', () => {
++  const { T, s } = prep({ job: 'child', age: 15, valis: 1000 }); T.G("globalThis.__jh = EVENTS.find(e => e.id === 'join_hard'); showEvent(globalThis.__jh); choose(globalThis.__jh.choices[1]);");
++  check('F1-T9a child: supporter 플래그·직업 supporter·+600', s.flags.includes('supporter') && s.job === 'supporter' && s.valis === 1600);
++  check('F1-T9b 후속 선택 없음', s.pendingFollowup === null && T.buttons().length === 1 && T.buttons()[0].textContent === '다음 해로');
++  const f = prep({ job: 'healer', tenure: 5, age: 20, valis: 1000 }); f.T.G("globalThis.__jh = EVENTS.find(e => e.id === 'join_hard'); showEvent(globalThis.__jh); choose(globalThis.__jh.choices[1]);");
++  check('F1-T9c 기존 직업 보유자: 플래그만 추가·직업 유지·+600(기존 동작 그대로)', f.s.flags.includes('supporter') && f.s.job === 'healer' && f.s.valis === 1600);
++});
++
++test('F1-T10 / LC-9 화면 표시 전 사망: 후속 화면 없음 [합성 상태 주입: hp 0]', () => {
++  const { T, s } = prep({ job: 'child', age: 15 }); forceOutcome(T, 'rejected'); s.hp = 0; s.items = []; knock(T);
++  check('F1-T10a 사망 처리·보류 정리', !!s.cause && s.pendingFollowup === null && diagCount(T, 'followup_discarded_on_death') === 1);
++  check('F1-T10b 후속 화면 미표시', !T.buttons().some(b => b.dataset.followup));
++  const f = prep({ job: 'child', age: 15 });
++  check('F1-T10c 생애 시작 시 초기화', (() => { f.T.G('startLife()'); return f.T.S().pendingFollowup === null && f.T.S().followupSeq === 0; })());
++});
++
++test('F1-T11 T-1 거절 문구: 치환자·접미사 규칙', () => {
++  const { T, s } = openFollowup({ job: 'child', age: 15 }); const h = s.application.history.slice(-1)[0], name = T.G(`gachaData.familias.find(f => f.id === ${JSON.stringify(h.familiaId)}).label`);
++  const line = s.logHistory.map(x => x.text).find(x => x.includes('심사에서 탈락했다'));
++  check('F1-T11a join_hard 거절 문구 = {familia}의 심사에서 탈락했다.', line === name + '의 심사에서 탈락했다.', line);
++  check('F1-T11b 접미사 생략·이름 1회·서포터 서술 없음', !!line && !line.includes('심사 탈락)') && line.split(name).length === 2 && !s.logHistory.some(x => x.text.includes('서포터 일부터 시작했다')));
++  const g = prep({ job: 'child', age: 15 }); forceOutcome(g.T, 'rejected'); g.T.G("apply({ recruit: { route: 'persistence', failText: '합성 문구' } })");
++  const l2 = g.s.logHistory.map(x => x.text).find(x => x.startsWith('합성 문구'));
++  check('F1-T11c 치환자 없는 failText(합성): 접미사 유지', /^합성 문구 \(.+ 심사 탈락\)$/.test(l2 || ''), l2);
++  check('F1-T11d followup 미지정 spec 은 보류를 만들지 않음', g.s.pendingFollowup === null);
++  const j = prep({ job: 'child', age: 15 }); forceOutcome(j.T, 'rejected'); j.T.G("globalThis.__j = EVENTS.find(e => e.id === 'join'); showEvent(globalThis.__j); choose(globalThis.__j.choices[0]);");
++  const l3 = j.s.logHistory.map(x => x.text).find(x => x.includes('심사 탈락)'));
++  check('F1-T11e join(self_apply) 거절: 기존 문구·접미사 그대로, 후속 선택 없음(범위 고정)', /^끝내 받아 주는 신을 찾지 못했다\. \(.+ 심사 탈락\)$/.test(l3 || '') && j.s.pendingFollowup === null && j.T.buttons()[0].textContent === '다음 해로', l3);
++});
++
++test('합격 경로: 후속 선택 없음 [합성: 심사 결과 고정]', () => {
++  const { T, s } = prep({ job: 'child', age: 15 }); forceOutcome(T, 'accepted'); knock(T);
++  check('합격 → 입단·보류 없음·다음 해 버튼', !!s.familia && s.pendingFollowup === null && s.followupSeq === 0 && T.buttons().length === 1 && T.buttons()[0].textContent === '다음 해로');
++});
++
++test('F1-T14 공통 수명주기: 문맥 복원·차단·정리', () => {
++  const { T, s } = openFollowup({ job: 'merchant', tenure: 2, age: 20 }, 'cooldown');
++  T.G("{ const k = FOLLOWUP_KINDS.recruit_after_fail, o = k.resolve; k.resolve = function (S, id, p) { globalThis.__seen = { ev: S.currentEventId, src: p.sourceEventId, ctx: JSON.stringify(p.context), phase: p.phase }; return o.apply(this, arguments); }; }");
++  const age = s.age; T.G('nextYear()'); T.G('endLife()');
++  check('F1-T14a 선택 전 nextYear·endLife 진입 불가', s.age === age && !s.cause && diagCount(T, 'nextyear_blocked') === 1 && diagCount(T, 'endlife_blocked') === 1);
++  T.G("chooseFollowup('nope')");
++  check('F1-T14b 유효하지 않은 선택 거부', s.pendingFollowup && s.pendingFollowup.phase === 'awaiting_choice');
++  pick(T, 'stay'); const seen = T.G('globalThis.__seen');
++  check('F1-T14c sourceEventId·route·reason·currentEventId 복원', seen.ev === 'join_hard' && seen.src === 'join_hard' && seen.ctx === '{"route":"persistence","reason":"cooldown"}' && seen.phase === 'resolving_choice', seen);
++  check('F1-T14d 처리 후 정리·다음 해 버튼', s.pendingFollowup === null && s.currentEventId === null && T.buttons().length === 1);
++  check('F1-T14e 등록된 kind 는 recruit_after_fail 하나(U-2b-9 선택지 미추가)', JSON.stringify(T.G('Object.keys(FOLLOWUP_KINDS)')) === '["recruit_after_fail"]');
++});
++
++finish('f1_joinhard_test');
+diff -ruN -x logs base/tests/f1_mutation.js impl/tests/f1_mutation.js
+--- base/tests/f1_mutation.js	1970-01-01 00:00:00.000000000 +0000
++++ impl/tests/f1_mutation.js	2026-11-10 11:03:49.770980414 +0000
+@@ -0,0 +1,71 @@
++// T1-F/F-1 변이 시험: 결함을 넣은 임시 사본(F1_GAME_ROOT)에서 지정 테스트가 실패(exit 1)하는지 확인한다.
++// 사용: node tests/f1_mutation.js   — 원본 통과 + 변이 전부 검출일 때만 exit 0. 원본 파일은 바꾸지 않는다(임시 폴더 사본만 변경).
++// 범위: SV-M1~M4·SV-M2b(지급), RB-M1~M8·M10a~c(롤백 필드), F1-M(r9 §3.8), PF/HT 핵심(가드·세대 토큰). RB-M9·RT-M·RT-MI 는 f1_transition_test 안에서 실행한다.
++const fs = require('fs'), path = require('path'), os = require('os'), { spawnSync } = require('child_process');
++const HERE = path.resolve(__dirname, '..');
++const GAME = ['data.js', 'events.js', 'script.js', 'core'];
++const T = n => path.join(__dirname, n + '.js');
++const TR = 'f1_transition_test', JH = 'f1_joinhard_test', PF = 'followup_pf_test', HT = 'followup_halt_test';
++const SNAP_BLOCK = `        const tenureYears = S.age - S.jobSince;
++        const sev = Object.freeze({ job: S.job, jobSince: S.jobSince, age: S.age, tenureYears,
++            eligible: S.job !== 'child' && S.job !== 'supporter' && S.job !== 'retired' && Number.isFinite(tenureYears) && tenureYears >= 5,
++            employerId: S.employer ? S.employer.id : null, amount: SEVERANCE_AMOUNT });
++        followupDiag('severance_snapshot', { sev });
++`;
++const MUTANTS = [
++  // [이름, 테스트, [[파일, 원문, 대체문], ...]]
++  ['SV-M1 ④에서 J-4 를 S 기준으로 재계산', TR, [['script.js', '        if (sev.eligible) {\n            if (Number.isFinite(sev.amount)', "        if (S.job !== 'child' && S.job !== 'supporter' && S.job !== 'retired' && S.age - S.jobSince >= 5) {\n            if (Number.isFinite(sev.amount)"]]],
++  ['SV-M2 스냅숏 생성을 E-1 해제 이후로 이동(지급액은 같음 → employerId assert 로 검출)', TR, [['script.js', SNAP_BLOCK, ''], ['script.js', '        // ③ 주 직업 전환(C28)', SNAP_BLOCK + '        // ③ 주 직업 전환(C28)']]],
++  ['SV-M2b 스냅숏 생성을 setJob 이후로 이동', TR, [['script.js', SNAP_BLOCK, ''], ['script.js', '        // ④ 퇴직금(C11·C13', SNAP_BLOCK + '        // ④ 퇴직금(C11·C13']]],
++  ['SV-M3 ③ 확인 실패에도 계속 진행(지급)', TR, [['script.js', "throw new Error('recruit_after_fail: 서포터 전직 확인 실패');", 'void 0;']]],
++  ['SV-M4 대상 아님에도 apply({valis:0}) 호출', TR, [['script.js', "                followupDiag('severance_amount_undecided', { tenureYears: sev.tenureYears, job: sev.job });\n            }\n        }", "                followupDiag('severance_amount_undecided', { tenureYears: sev.tenureYears, job: sev.job });\n            }\n        } else apply({ valis: 0 });"]]],
++  ['SV-M5 액수 미결(null)인데 기본값 400 지급', TR, [['script.js', 'if (Number.isFinite(sev.amount) && sev.amount > 0) {\n                apply({ valis: sev.amount });', 'if (true) {\n                apply({ valis: sev.amount ?? 400 });']]],
++  ['RB-M1 job·jobSince·flags 복원 제외', TR, [['script.js', "const ROLLBACK_VALUE_FIELDS = ['job', 'jobSince', ", 'const ROLLBACK_VALUE_FIELDS = ['], ['script.js', "['flags', 'employer', 'abil'].forEach", "['employer', 'abil'].forEach"]]],
++  ['RB-M2 employer 복원 제외', TR, [['script.js', "['flags', 'employer', 'abil'].forEach", "['flags', 'abil'].forEach"]]],
++  ['RB-M3 valis 복원 제외', TR, [['script.js', "'jobSince', 'valis', 'hp',", "'jobSince', 'hp',"]]],
++  ['RB-M4 hp 복원 제외', TR, [['script.js', "'valis', 'hp', 'bond',", "'valis', 'bond',"]]],
++  ['RB-M5 bond·feat·potential 복원 제외', TR, [['script.js', "'hp', 'bond', 'feat', 'potential', 'excelia',", "'hp', 'excelia',"]]],
++  ['RB-M6 abil 복원 제외', TR, [['script.js', "['flags', 'employer', 'abil'].forEach", "['flags', 'employer'].forEach"]]],
++  ['RB-M7 level·hidden·maxLevel·alias 복원 제외', TR, [['script.js', "'excelia', 'level', 'hidden', 'maxLevel', 'power', 'alias',", "'excelia', 'power',"]]],
++  ['RB-M8 power 복원 제외', TR, [['script.js', "'maxLevel', 'power', 'alias',", "'maxLevel', 'alias',"]]],
++  ['RB-M10a logHistory 절단 누락', TR, [['script.js', 'if (rb.logLen != null && Array.isArray(S.logHistory) && S.logHistory.length > rb.logLen) S.logHistory.length = rb.logLen;', '']]],
++  ['RB-M10b logHistory 절단 1 과다(원래 마지막 항목 삭제)', TR, [['script.js', 'S.logHistory.length > rb.logLen) S.logHistory.length = rb.logLen;', 'S.logHistory.length > rb.logLen) S.logHistory.length = rb.logLen - 1;']]],
++  ['RB-M10c levelHistory 원래 없음 → [] 로 남김', TR, [['script.js', '    if (!lh.has) delete S.levelHistory;', '    if (!lh.has) S.levelHistory = [];']]],
++  ['RB-X catch 첫 문장 정지 누락(롤백 실패 시 정지 안 됨)', HT, [['script.js', '        progressHalted = true;                                      // X0', '        // X0 제거']]],
++  ['RB-X2 원래 예외 대신 정리 오류를 던짐', HT, [['script.js', "        throw err;                                                  // X6", "        throw cleanupErrors.length ? new Error('cleanup') : err;"]]],
++  ['F1-M1 fallback 재삽입(자동 서포터·400)', JH, [['events.js', "failText: '{familia}의 심사에서 탈락했다.', followup: 'recruit_after_fail' }", "failText: '{familia}의 심사에서 탈락했다.', followup: 'recruit_after_fail', fallback: { flags: ['supporter'], valis: 400 } }"]]],
++  ['F1-M2 stay 선택 시 상태 변경', JH, [['script.js', "        if (optionId === 'stay') return;", "        if (optionId === 'stay') { S.valis += 1; return; }"]]],
++  ['F1-M3 stay 선택 시 기존 직업 덮어쓰기', JH, [['script.js', "        if (optionId === 'stay') return;", "        if (optionId === 'stay') { setJob('supporter'); return; }"]]],
++  ['F1-M4 서포터 선택 시 팔나 부여', TR, [['script.js', "        setJob('supporter');\n        if (!(S.job", "        setJob('supporter'); if (!S.flags.includes('falna')) S.flags.push('falna');\n        if (!(S.job"]]],
++  ['F1-M5 서포터 선택 시 소속 부여', TR, [['script.js', "        setJob('supporter');\n        if (!(S.job", "        setJob('supporter'); if (!S.familia) S.familia = gachaData.familias.find(f => f.id === 'loki');\n        if (!(S.job"]]],
++  ['F1-M6 후속 선택 시 application 추가 기록', JH, [['script.js', "        if (optionId === 'stay') return;", "        (S.application.blocked ||= []).push({ route: 'followup', at: S.age, reason: 'x' }); if (optionId === 'stay') return;"]]],
++  ['F1-M7 거절 경로 후속 선택 누락', JH, [['script.js', "    if (spec.followup) createFollowup(spec.followup, { route, reason: 'rejected' });", '']]],
++  ['F1-M8 치환자 있어도 접미사 부착', JH, [['script.js', "failText.split('{familia}').join(cand.label) : failText", "failText.split('{familia}').join(cand.label) + ` (${cand.label} 심사 탈락)` : failText"]]],
++  ['F1-M9 사망 판정 전 후속 화면(C27 위반)', JH, [['script.js', "    if (r.fx && r.fx.die) {\n        if (typeof r.fx.die === 'string') {", "    if (S.pendingFollowup) { S.pendingFollowup.phase = 'awaiting_choice'; renderFollowup(); return; }\n    if (r.fx && r.fx.die) {\n        if (typeof r.fx.die === 'string') {"]]],
++  ['F1-M10 이미 서포터인데 서포터 선택지 노출', JH, [['script.js', "        if (S.job !== 'supporter') {\n            const label", "        if (true) {\n            const label"]]],
++  ['PF-M1 nextYear 보류 가드 제거', PF, [['script.js', "    if (S && S.pendingFollowup) { followupDiag('nextyear_blocked'); return; }", '']]],
++  ['PF-M2 endLife 대기 중 차단 제거', PF, [['script.js', "      if (p && p.phase !== 'resolving_event') { followupDiag('endlife_blocked'); return; }", '']]],
++  ['PF-M3 중복 클릭 방지(phase 확정) 제거', PF, [['script.js', "    p.phase = 'resolving_choice'; $('choices').innerHTML = '';     // b. 확정", "    $('choices').innerHTML = '';"]]],
++  ['HT-M1 생애 세대 토큰 검사 제거', HT, [['script.js', 'if (progressHalted || gen !== lifeGen) {', 'if (progressHalted) {']]],
++  ['HT-M2 H1 가드(nextYear) 제거', HT, [['script.js', "    if (haltedEntry('nextYear')) return;   // H1 정지 가드\n", '']]],
++  ['UI-M1 전직 후 상태창 갱신 누락(브라우저 검증에서 발견된 결함 재현)', TR, [['script.js', '    renderStats();                                                  // 상태창 갱신', '    // 상태창 갱신 제거']]],
++  ['HT-M3 R-E 대신 일반 렌더', TR, [['script.js', "step('render', renderStatsFromClone);", "step('render', renderStats);"]]],
++];
++const copy = dst => { fs.mkdirSync(dst, { recursive: true }); for (const n of GAME) fs.cpSync(path.join(HERE, n), path.join(dst, n), { recursive: true }); };
++const run = (dir, test) => spawnSync(process.execPath, [T(test)], { encoding: 'utf8', env: { ...process.env, F1_GAME_ROOT: dir, FORCE_COLOR: '0', NO_COLOR: '1' }, maxBuffer: 1 << 26 });
++const lines = []; let bad = 0;
++for (const t of [TR, JH, PF, HT]) { const r = run(HERE, t); const ok = r.status === 0; if (!ok) bad++; lines.push(`${ok ? 'PASS' : 'FAIL'} M0 원본 ${t} exit=${r.status} — ${(r.stdout.trim().split('\n').pop() || '')}`); }
++for (const [name, test, edits] of MUTANTS) {
++  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'f1-mut-')); copy(dir);
++  let okEdit = true;
++  for (const [file, from, to] of edits) { const f = path.join(dir, file), src = fs.readFileSync(f, 'utf8'); if (src.split(from).length !== 2) { okEdit = false; break; } fs.writeFileSync(f, src.replace(from, () => to)); }
++  if (!okEdit) { bad++; lines.push(`FAIL ${name} — 변이 대상 문자열 1회 아님`); fs.rmSync(dir, { recursive: true, force: true }); continue; }
++  const r = run(dir, test); const fails = (r.stdout.match(/^FAIL .*/mg) || []);
++  const caught = r.status === 1 && fails.length > 0;
++  if (!caught) bad++;
++  lines.push(`${caught ? 'PASS' : 'FAIL'} ${name} [${test}] — exit=${r.status}, 검출 ${fails.length}건${fails.length ? ': ' + fails.slice(0, 2).map(x => x.slice(5, 70)).join(' / ') : ''}`);
++  fs.rmSync(dir, { recursive: true, force: true });
++}
++console.log(lines.join('\n'));
++console.log(`RESULT: ${bad ? 'FAIL' : 'PASS'} ${lines.length - bad}/${lines.length}`);
++process.exitCode = bad ? 1 : 0;
+diff -ruN -x logs base/tests/f1_transition_test.js impl/tests/f1_transition_test.js
+--- base/tests/f1_transition_test.js	1970-01-01 00:00:00.000000000 +0000
++++ impl/tests/f1_transition_test.js	2026-11-10 11:03:28.333823482 +0000
+@@ -0,0 +1,293 @@
++// F-1 서포터 전직 resolve 테스트 — 결정 r9 F1-T4~T6·T4b~T4g, 설계 r5~r7(SV·SV-U1·RB-T1~T6·RB-M9a~d·RT-1~10), 사용자 결정 N6-5·N6-6.
++// 사용: node tests/f1_transition_test.js   (실패 1건 이상이면 종료 코드 1)
++// 모든 사례는 [합성 상태 주입]. 양수 퇴직금은 격리 vm 사본 소스의 `const SEVERANCE_AMOUNT = null;` 을 치환해 주입한다(시험용 값, 실제 확정 액수 아님).
++const { makeReporter, snap, setAge } = require('./lib_f1_ctx');
++const { openFollowup, pick, diagCount, appJson } = require('./lib_f1_fixture');
++const { check, test, finish } = makeReporter();
++const TEST_AMOUNT = 1234;   // 시험용 값(실제 액수 아님)
++const AMT = { patch: [['script.js', 'const SEVERANCE_AMOUNT = null;', `const SEVERANCE_AMOUNT = ${TEST_AMOUNT};`]] };
++const EXC = ['pendingFollowup', 'currentEventId', 'followupSeq'];
++const spyApply = T => T.G("globalThis.__applyCalls = []; { const o = apply; apply = function (fx) { globalThis.__applyCalls.push(JSON.stringify(fx)); return o.apply(this, arguments); }; }");
++const sevSnap = T => { const e = T.G('followupDiagLog').filter(x => x.event === 'severance_snapshot').pop(); return e && e.sev; };
++const logKinds = s => s.logHistory.map(x => x.kind || x.type);
++
++test('F1-T4 child → 서포터: 지급 0·팔나·소속·application 불변', () => {
++  const { T, s } = openFollowup({ job: 'child', age: 15, ctx: AMT }); spyApply(T);
++  const a0 = appJson(s), v0 = s.valis, f0 = JSON.stringify([s.familia, s.falnaState, s.falnaHistory, s.familiaHistory]);
++  pick(T, 'supporter');
++  check('F1-T4a job supporter·플래그·jobSince = 나이', s.job === 'supporter' && s.flags.includes('supporter') && s.jobSince === s.age);
++  check('F1-T4b 발리스 변화 0·apply 0(J-6)', s.valis === v0 && T.G('globalThis.__applyCalls').length === 0);
++  check('F1-T4c 팔나·소속 불변, application 추가 변경 0', JSON.stringify([s.familia, s.falnaState, s.falnaHistory, s.familiaHistory]) === f0 && appJson(s) === a0);
++  check("F1-T4d '다음 해로' 1개·보류 정리", T.buttons().length === 1 && T.buttons()[0].textContent === '다음 해로' && s.pendingFollowup === null);
++});
++
++test('F1-T4b / SV 근속 5년(경계) healer → 서포터: 퇴직금 1회 [시험용 액수 주입]', () => {
++  const { T, s } = openFollowup({ job: 'healer', tenure: 5, age: 20, ctx: AMT }); spyApply(T); const v0 = s.valis, c0 = T.calls(), a0 = appJson(s);
++  const pre = JSON.stringify([s.abil, s.level, s.hidden, s.feat, s.excelia, s.falnaState, s.falnaTransitions, s.familia, s.relations]);
++  pick(T, 'supporter'); const sev = sevSnap(T);
++  check('F1-T4b a 스냅숏 = 전직 전 값(job healer·근속 5·eligible)', sev && sev.job === 'healer' && sev.tenureYears === 5 && sev.eligible === true && sev.employerId === null && sev.amount === TEST_AMOUNT, sev);
++  check('F1-T4b b 지급 = 시험 금액 1회(apply 1회, valis delta)', s.valis === v0 + TEST_AMOUNT && JSON.stringify(T.G('globalThis.__applyCalls')) === JSON.stringify([JSON.stringify({ valis: TEST_AMOUNT })]));
++  check('F1-T4b c jobSince = 전직 나이', s.job === 'supporter' && s.jobSince === s.age);
++  const L2 = s.logHistory.filter(x => x.kind === 'severance');
++  check('F1-T4b d L-2 연표 1건·문구', L2.length === 1 && L2[0].type === 'job' && L2[0].text === `치유사(으)로 5년 일한 끝에 퇴직금 ${TEST_AMOUNT}발리스를 받았다.`, L2);
++  check('SV RNG 0', T.calls() === c0);
++  check('SV 팔나·능력치·레벨·소속·관계·application 불변', JSON.stringify([s.abil, s.level, s.hidden, s.feat, s.excelia, s.falnaState, s.falnaTransitions, s.familia, s.relations]) === pre && appJson(s) === a0);
++  check('SV syncDepth 0·동기화 로그 추가 0', T.G('syncDepth') === 0 && T.G('syncInvariantLog.length') === 0);
++});
++
++test('SV-U1 액수 미결(null): 지급·apply·L-2 모두 0, 전직은 정상', () => {
++  const { T, s } = openFollowup({ job: 'healer', tenure: 7, age: 21, employer: 'guild' }); spyApply(T); const v0 = s.valis;
++  pick(T, 'supporter'); const sev = sevSnap(T);
++  check('SV-U1a 실제 소스의 SEVERANCE_AMOUNT === null', T.G('SEVERANCE_AMOUNT') === null && sev.amount === null && sev.eligible === true);
++  check('SV-U1b 지급 0·apply 0·L-2 0', s.valis === v0 && T.G('globalThis.__applyCalls').length === 0 && !s.logHistory.some(x => x.kind === 'severance'));
++  check('SV-U1c 진단 severance_amount_undecided 1건', diagCount(T, 'severance_amount_undecided') === 1);
++  check('SV-U1d E-1·전직 정상 완료', s.job === 'supporter' && s.employer === null && s.logHistory.filter(x => x.kind === 'employer_quit').length === 1);
++  const st = T.el('familia').textContent;
++  check('SV-U1e 상태창 갱신(직업 서포터·고용처 표시 없음)', st.includes('직업: 서포터') && !st.includes('고용처'), st);
++});
++
++test('F1-T4c 근속 4년: 지급 0 [시험용 액수 주입]', () => {
++  const { T, s } = openFollowup({ job: 'blacksmith', tenure: 4, age: 20, ctx: AMT }); spyApply(T); const v0 = s.valis;
++  pick(T, 'supporter');
++  check('F1-T4c 4년 → eligible false·지급 0·apply 0·crafter 제거', sevSnap(T).eligible === false && s.valis === v0 && T.G('globalThis.__applyCalls').length === 0 && !s.flags.includes('crafter') && s.flags.includes('supporter'));
++});
++
++test('F1-T4d 직업 변경 직후 재계산(C15) [시험용 액수 주입]', () => {
++  const { T, s } = openFollowup({ job: 'farmer', tenure: 10, age: 20, ctx: AMT, before: (T, s) => { setAge(s, 18); T.G("setJob('merchant')"); setAge(s, 20); } });
++  const v0 = s.valis; pick(T, 'supporter');
++  check('F1-T4d farmer 10년 → merchant 2년: 지급 0', sevSnap(T).job === 'merchant' && sevSnap(T).tenureYears === 2 && s.valis === v0);
++});
++
++test('F1-T4g retired: 근속 5년 이상이어도 지급 0 [시험용 액수 주입]', () => {
++  const { T, s } = openFollowup({ job: 'retired', tenure: 6, age: 22, ctx: AMT }); spyApply(T); const v0 = s.valis;
++  pick(T, 'supporter');
++  check('F1-T4g retired 6년 → eligible false·지급 0·apply 0', sevSnap(T).eligible === false && s.valis === v0 && T.G('globalThis.__applyCalls').length === 0 && s.job === 'supporter');
++});
++
++test('F1-T5 고용처 없는 기존 직업 → 전직', () => {
++  const { T, s } = openFollowup({ job: 'blacksmith', tenure: 2, age: 20 });
++  pick(T, 'supporter');
++  check('F1-T5 플래그 재설정(crafter 제거·supporter 추가)·jobSince·직업 변경 연표', s.job === 'supporter' && !s.flags.includes('crafter') && s.flags.includes('supporter') && s.jobSince === s.age && s.logHistory.some(x => x.type === 'job' && x.text === '직업이 서포터(으)로 바뀌었다.') && !s.logHistory.some(x => x.kind === 'employer_quit'));
++});
++
++test('F1-T6 고용 중 → 전직(E-1) [시험용 액수 주입]', () => {
++  const { T, s } = openFollowup({ job: 'guild_staff', tenure: 6, age: 21, employer: 'guild', ctx: AMT }); const a0 = appJson(s), v0 = s.valis, n0 = s.logHistory.length;
++  pick(T, 'supporter'); const sev = sevSnap(T), added = s.logHistory.slice(n0);
++  check('F1-T6a 스냅숏 employerId = guild(SV-M2 검출 지점)', sev.employerId === 'guild', sev);
++  check('F1-T6b employer null·employerHistory 미생성', s.employer === null && !('employerHistory' in s));
++  check('F1-T6c 연표 순서: L-1 → 직업 변경 → L-2', JSON.stringify(added.map(x => x.kind || 'job_change')) === JSON.stringify(['employer_quit', 'job_change', 'severance']) && added[0].text === '길드을(를) 그만두었다.', added);
++  check('F1-T6d 지급 1회·application 불변', s.valis === v0 + TEST_AMOUNT && appJson(s) === a0);
++});
++
++// ── RB-T: 예외 주입 롤백 ──
++const injectAt = (T, where) => {
++  const map = {
++    a: "{ const o = setJob; setJob = function () { if (globalThis.__inj && S.employer === null) { globalThis.__inj = false; throw new Error('inj-a'); } return o.apply(this, arguments); }; }",
++    b: "{ const o = setJob; setJob = function () { const r = o.apply(this, arguments); if (globalThis.__inj) { globalThis.__inj = false; throw new Error('inj-b'); } return r; }; }",
++    c: "{ const o = setJob; setJob = function () { const r = o.apply(this, arguments); if (globalThis.__inj) { globalThis.__inj = false; S.flags = S.flags.filter(f => f !== 'supporter'); } return r; }; }",
++    d: "{ const o = convertExp; convertExp = function () { const r = o.apply(this, arguments); if (globalThis.__inj) { globalThis.__inj = false; throw new Error('inj-d'); } return r; }; }",
++    e: "{ const o = sayDomOnly; sayDomOnly = function (t) { const r = o.apply(this, arguments); if (globalThis.__inj && /퇴직금/.test(t)) { globalThis.__inj = false; throw new Error('inj-e'); } return r; }; }" };
++  T.G('globalThis.__inj = true; ' + map[where]);
++};
++const RB_EXC = ['pendingFollowup', 'currentEventId', 'syncBaseline'];
++const rbRun = (opts, where, afterOpen) => {
++  const f = openFollowup(opts); if (afterOpen) afterOpen(f.T, f.s); injectAt(f.T, where);
++  const pre = snap(f.s, RB_EXC), log0 = JSON.stringify(f.s.logHistory), lh0 = JSON.stringify(f.s.levelHistory), items0 = JSON.stringify([f.s.items, f.s.itemUses, f.s.itemsConsumed]);
++  const tr0 = JSON.stringify([f.s.falnaState, f.s.falnaHolder, f.s.falnaTransitions, f.s.conversionPending]);
++  let err = null; try { f.T.G("chooseFollowup('supporter')"); } catch (e) { err = e; }
++  return { ...f, pre, log0, lh0, items0, tr0, err };
++};
++for (const [where, name] of [['a', 'E-1 직후'], ['b', 'setJob 직후'], ['c', 'setJob 확인 실패'], ['d', 'apply 내부'], ['e', 'L-2 연표 직후']]) {
++  test('RB-T1/T2 예외 지점 (' + where + ') ' + name + ' [예외 주입·시험용 액수]', () => {
++    const r = rbRun({ job: 'guild_staff', tenure: 6, age: 21, employer: 'guild', ctx: AMT }, where);
++    check('RB-T1 ' + where + ' 예외 발생·정지', !!r.err && r.T.G('progressHalted') === true, String(r.err));
++    check('RB-T2 ' + where + ' S 전체 = 스냅숏(제외: pending·currentEventId·syncBaseline)', snap(r.s, RB_EXC) === r.pre);
++    check('RB-T5 ' + where + ' logHistory·levelHistory 내용 동일', JSON.stringify(r.s.logHistory) === r.log0 && JSON.stringify(r.s.levelHistory) === r.lh0);
++    check('RB-T6 ' + where + ' 아이템 컨테이너 내용 동일', JSON.stringify([r.s.items, r.s.itemUses, r.s.itemsConsumed]) === r.items0);
++    check('RB-T3 ' + where + ' 2-i 상태 불변·syncDepth 0·기준값 pending_after_exception', JSON.stringify([r.s.falnaState, r.s.falnaHolder, r.s.falnaTransitions, r.s.conversionPending]) === r.tr0 && r.T.G('syncDepth') === 0 && r.s.syncBaseline && r.s.syncBaseline.status === 'pending_after_exception');
++    const stats = r.T.el('stats').html;
++    check('RB-T4 ' + where + ' 렌더된 발리스 = 원복된 S.valis', stats.includes('발리스<b>' + r.s.valis + '</b>'), stats);
++  });
++}
++test('RB-T3b 예외 후 새 생애: 2-i 기준값 복구 전이 0', () => {
++  const r = rbRun({ job: 'guild_staff', tenure: 6, age: 21, employer: 'guild', ctx: AMT }, 'b');
++  r.T.G('startLife()'); const s2 = r.T.S();
++  check('RB-T3b 새 생애 정상 시작·recovered 전이 0', r.T.G('progressHalted') === false && !s2.falnaTransitions.some(t => /^recovered_/.test(t.cause)) && r.T.G('syncDepth') === 0);
++});
++
++// ── RB-M1~M8·M10c: 롤백 필드별 fixture. 각 필드가 resolve 안에서 **실제로 바뀌는** 합성 상태를 만든다(정상 실행으로 변화 확인 → 예외 시 원복 확인).
++const unbound = "S.flags.push('falna'); S.falnaState = 'unbound'; S.falnaHistory = [{ familiaId: 'loki', at: 15, membershipIndex: 0 }]; ";
++const RBF = {
++  M1: ['job·jobSince·flags', 'b', '', s => ['job', 'jobSince', 'flags']],
++  M2: ['employer', 'a', '', s => ['employer'], { employer: 'guild', job: 'guild_staff', tenure: 6, age: 21 }],
++  M3: ['valis', 'e', '', s => ['valis']],
++  M4: ['hp(상한 보정)', 'e', 'S.items = []; S.hp = 150;', s => ['hp']],
++  M5: ['bond·feat·potential·excelia(하한·정규화)', 'e', 'S.bond = -5; S.feat = -1; S.potential = NaN; S.excelia = -1;', s => ['bond', 'feat', 'potential', 'excelia']],
++  M6: ['abil·excelia(convertExcelia)', 'e', unbound + 'S.excelia = 10; S.feat = 0; S.abil = { str: 0, vit: 0, dex: 0, agi: 0, mag: 0 };', s => ['abil', 'excelia']],
++  M7: ['level·hidden·maxLevel·alias·levelHistory·feat(tryLevelUp)', 'e', unbound + "S.level = 1; S.maxLevel = 1; S.feat = 1; S.excelia = 0; S.hidden = 0; S.abil = { str: 600, vit: 0, dex: 0, agi: 0, mag: 0 }; S.alias = gachaData.aliases.find(a => a.id === 'none'); S.levelHistory = [{ age: 15, kind: 'falna', from: 0, to: 1 }]; S.items = []; recompute();", s => ['level', 'hidden', 'maxLevel', 'alias', 'levelHistory', 'feat']],
++  M8: ['power·logHistory 길이', 'e', unbound + "S.level = 1; S.maxLevel = 1; S.feat = 1; S.excelia = 0; S.hidden = 0; S.abil = { str: 600, vit: 0, dex: 0, agi: 0, mag: 0 }; S.alias = gachaData.aliases.find(a => a.id === 'none'); S.levelHistory = [{ age: 15, kind: 'falna', from: 0, to: 1 }]; S.items = []; recompute();", s => ['power']],
++  M10c: ['levelHistory 원래 없음', 'e', unbound + "S.level = 1; S.maxLevel = 1; S.feat = 1; S.excelia = 0; S.hidden = 0; S.abil = { str: 600, vit: 0, dex: 0, agi: 0, mag: 0 }; S.alias = gachaData.aliases.find(a => a.id === 'none'); delete S.levelHistory; S.items = []; recompute();", s => ['levelHistory']] };
++for (const [id, [name, where, inject, fields, o]] of Object.entries(RBF)) {
++  test('RB-' + id + ' fixture: ' + name + ' [합성 상태 주입·시험용 액수]', () => {
++    const opts = { job: 'healer', tenure: 5, age: 20, ctx: AMT, ...(o || {}) };
++    const n = openFollowup(opts); if (inject) n.T.G(inject); const before = JSON.parse(JSON.stringify(n.s, (k, v) => (typeof v === 'number' && !Number.isFinite(v)) ? String(v) : v)), log0 = n.s.logHistory.length;
++    n.T.G("chooseFollowup('supporter')");
++    const changed = fields(n.s).filter(k => JSON.stringify(n.s[k], (kk, v) => (typeof v === 'number' && !Number.isFinite(v)) ? String(v) : v) !== JSON.stringify(before[k]));
++    check('RB-' + id + ' a 정상 실행에서 대상 필드가 실제로 바뀜(' + fields(n.s).join(',') + ')', changed.length === fields(n.s).length, { changed });
++    if (id === 'M7' || id === 'M8') {
++      check('RB-' + id + ' b 실측: level 1→2, maxLevel 1→2, hidden 0→60, alias none→rookie, power 15→28, logHistory +2(레벨업·이명) + 전직 1 + L-2 1',
++        before.level === 1 && n.s.level === 2 && before.maxLevel === 1 && n.s.maxLevel === 2 && before.hidden === 0 && n.s.hidden === 60 && before.alias.id === 'none' && n.s.alias.id === 'rookie' && before.power === 15 && n.s.power === 28 && n.s.logHistory.length - log0 === 4,
++        { level: [before.level, n.s.level], maxLevel: [before.maxLevel, n.s.maxLevel], hidden: [before.hidden, n.s.hidden], alias: [before.alias && before.alias.id, n.s.alias && n.s.alias.id], power: [before.power, n.s.power], log: n.s.logHistory.length - log0, kinds: n.s.logHistory.slice(log0).map(x => x.type + ':' + x.text.slice(0, 20)) });
++    }
++    const r = rbRun(opts, where, (T) => { if (inject) T.G(inject); });
++    check('RB-' + id + ' c 예외(' + where + ') 후 S 전체 = 스냅숏', !!r.err && snap(r.s, RB_EXC) === r.pre);
++    check('RB-' + id + ' d 예외 후 logHistory·levelHistory 내용·존재 동일', JSON.stringify(r.s.logHistory) === r.log0 && JSON.stringify(r.s.levelHistory) === r.lh0 && ('levelHistory' in r.s) === (id !== 'M10c'));
++  });
++}
++
++// ── RB-M9: 컨테이너 존재 여부 복구(렌더·apply 경유 ensure) ──
++const M9 = {
++  a: ['itemUses 없음 + 실제 아이템 보유', s => { s.items = ['pyonkichi']; s.itemsConsumed = []; delete s.itemUses; }, s => !('itemUses' in s)],
++  b1: ['items 없음', s => { delete s.items; }, s => !('items' in s)],
++  b2: ['itemsConsumed 없음 + 아이템 보유', s => { s.items = ['pyonkichi']; delete s.itemsConsumed; delete s.itemUses; }, s => !('itemsConsumed' in s) && !('itemUses' in s)],
++  c: ['relations·nextRelationId 없음', s => { delete s.relations; delete s.nextRelationId; }, s => !('relations' in s) && !('nextRelationId' in s)],
++  d: ['nextRelationId = 0', s => { s.nextRelationId = 0; }, s => s.nextRelationId === 0],
++  e: ['relations = null(존재하지만 배열 아님)', s => { s.relations = null; }, s => 'relations' in s && s.relations === null] };
++const m9run = (key, extraPatch = []) => {
++  const [name, mut, ok] = M9[key];
++  // 후속 화면이 열린 뒤(선택 직전)에 주입한다 — 사건 처리 단계의 렌더가 만든 컨테이너와 섞이지 않게 하기 위함.
++  const r = rbRun({ job: 'healer', tenure: 5, age: 20, ctx: { patch: AMT.patch.concat(extraPatch) } }, 'e', (T, s) => mut(s));
++  return { name, r, ok: ok(r.s) && snap(r.s, RB_EXC) === r.pre };
++};
++test('RB-M9 컨테이너 복구 [합성 상태 주입·예외 주입·시험용 액수]', () => {
++  for (const key of Object.keys(M9)) { const { name, r, ok } = m9run(key); check('RB-M9' + key + ' ' + name + ': 최종적으로도 원래 상태·S 전체 = 스냅숏', ok && !!r.err); }
++});
++// 변이(검출 확인): 원본은 위 테스트가 통과, 변이 사본에서는 해당 사례가 실패해야 한다.
++test('RB-M9-mut 변이 검출', () => {
++  const MUT = {
++    mut1: [['script.js', "step('render', renderStatsFromClone);", "step('render', renderStats);"]],
++    mut2: [['script.js', "const ROLLBACK_CONTAINER_FIELDS = ['items', 'itemUses', 'itemsConsumed', 'relations'];", "const ROLLBACK_CONTAINER_FIELDS = ['items', 'itemUses', 'itemsConsumed'];"],
++           ['script.js', "'maxLevel', 'power', 'alias', 'nextRelationId'];", "'maxLevel', 'power', 'alias'];"]],
++    mut3: [['script.js', "const ROLLBACK_CONTAINER_FIELDS = ['items', 'itemUses', 'itemsConsumed', 'relations'];", "const ROLLBACK_CONTAINER_FIELDS = ['items', 'itemsConsumed', 'relations'];"]],
++    mut4: [['script.js', "const ROLLBACK_CONTAINER_FIELDS = ['items', 'itemUses', 'itemsConsumed', 'relations'];", "const ROLLBACK_CONTAINER_FIELDS = ['itemUses', 'itemsConsumed', 'relations'];"]],
++    mut5: [['script.js', "const ROLLBACK_CONTAINER_FIELDS = ['items', 'itemUses', 'itemsConsumed', 'relations'];", "const ROLLBACK_CONTAINER_FIELDS = ['items', 'itemUses', 'relations'];"]] };
++  // 예상 목록(2026-11-10 정정): 첫 실행에서 mut1·mut3 예상이 실제와 달랐다. 원인 분석 결과 예상 쪽 오류였다.
++  //  - mut1(일반 renderStats): b2 는 아이템 보유 상태라 Items.label → usesLeft → ensure 가 itemUses·itemsConsumed 를 만들고, e 는 ensureRelations 가 null 을 [] 로 바꾼다.
++  //    b1(items 없음)은 renderStats 가 (S.items || []) 로 읽어 ensure 를 부르지 않으므로 렌더로는 재생성되지 않는다(QA 지적과 일치).
++  //  - mut3(itemUses 복구 제외): b2 fixture 도 itemUses 를 지우므로 함께 실패한다.
++  const expect = { mut1: ['a', 'b2', 'c', 'd', 'e'], mut2: ['c', 'd', 'e'], mut3: ['a', 'b2'], mut4: ['b1'], mut5: ['b2'] };
++  for (const [m, patch] of Object.entries(MUT)) {
++    const failed = Object.keys(M9).filter(k => !m9run(k, patch).ok);
++    check(`RB-M9-${m} 변이 실패 사례 = 예상(${expect[m].join(',')})`, JSON.stringify(failed) === JSON.stringify(expect[m]), failed);
++  }
++});
++
++// ── RT: 은퇴자 → 서포터(A안, 상태 독립) ──
++const retiredFixture = (T, s, falna) => {   // falna: 'sealed' | 'unbound' | 'none' | 'active'
++  T.G(`S.abil = { str: 320, vit: 210, dex: 180, agi: 150, mag: 90 }; S.level = 3; S.maxLevel = 3; S.hidden = 40; S.feat = 2; S.excelia = 5; S.alias = gachaData.aliases.find(a => a.id === 'chuuni');
++       S.milestones = [{ id: 'm1', label: '시험 위업', age: 18 }]; S.levelHistory = [{ age: 15, kind: 'falna', from: 0, to: 1 }, { age: 17, kind: 'levelup', from: 1, to: 2 }, { age: 19, kind: 'levelup', from: 2, to: 3 }];
++       S.aspiration = { kind: 'adventurer', since: 12, source: 't', fulfilledAt: 15 }; S.aspirationHistory = [{ ...S.aspiration }];
++       S.falnaHistory = [{ familiaId: 'loki', at: 15, membershipIndex: 0 }]; S.familiaHistory = [{ id: 1, familiaId: 'loki', label: '로키 파밀리아', joinedAt: 14, leftAt: 19, leftReason: 'god_returned', falnaAt: 15, role: 'member' }];
++       S.falnaTransitions = [{ from: 'none', to: 'active', cause: 'grant', at: 15 }]; S.parentFamilia = { id: 'hermes', label: '헤르메스 파밀리아' };`);
++  if (falna === 'sealed') T.G("S.falnaState = 'sealed'; S.conversionPending = { since: 19, fromFamiliaId: 'loki', reason: 'god_returned' }; S.falnaTransitions.push({ from: 'active', to: 'sealed', cause: 'god_returned', at: 19 });");
++  if (falna === 'unbound') T.G("S.flags.push('falna'); S.falnaState = 'unbound'; S.familiaHistory[0].leftReason = 'left'; S.conversionPending = { since: 19, fromFamiliaId: 'loki', reason: 'left' };");
++  if (falna === 'none') T.G("S.falnaHistory = []; S.familiaHistory = []; S.falnaTransitions = []; S.levelHistory = []; S.level = 0; S.maxLevel = 0; S.alias = null;");
++  if (falna === 'active') T.G("S.flags.push('falna'); S.familia = gachaData.familias.find(f => f.id === 'loki'); S.familiaHistory[0].leftAt = null; S.familiaHistory[0].leftReason = null; S.falnaState = 'active'; S.falnaHolder = 'loki';");
++  T.G('recompute()');
++};
++const KEEP = ['flags-falna', 'falnaState', 'falnaHolder', 'conversionPending', 'familia', 'familiaAt', 'abil', 'level', 'maxLevel', 'hidden', 'feat', 'excelia', 'power', 'relations', 'parentFamilia', 'partnerId', 'nextRelationId', 'falnaHistory', 'familiaHistory', 'falnaTransitions', 'levelHistory', 'milestones', 'aspiration', 'aspirationHistory', 'alias', 'application', 'valis'];
++const pickKeep = s => JSON.stringify(KEEP.map(k => k === 'flags-falna' ? s.flags.includes('falna') : s[k]));
++const rtTransition = (falna, extra = {}) => {
++  const f = openFollowup({ job: 'retired', tenure: 2, age: 21, ctx: AMT, ...extra, before: (T, s) => { retiredFixture(T, s, falna); if (extra.before) extra.before(T, s); } });
++  spyApply(f.T); const keep0 = pickKeep(f.s), log0 = JSON.stringify(f.s.logHistory), n0 = f.s.logHistory.length;
++  const allowedBefore = snap(f.s, EXC.concat(['job', 'jobSince', 'flags', 'logHistory', 'employer']));
++  pick(f.T, 'supporter');
++  return { ...f, keep0, log0, n0, allowedBefore };
++};
++const rtCommon = (id, r) => {
++  check(id + ' 전직·jobSince·지급 0·apply 0', r.s.job === 'supporter' && r.s.jobSince === r.s.age && r.T.G('globalThis.__applyCalls').length === 0 && sevSnap(r.T).eligible === false);
++  check(id + ' 팔나·소속·능력치·레벨·관계·이력 전부 불변', pickKeep(r.s) === r.keep0, JSON.parse(pickKeep(r.s)).map((v, i) => JSON.stringify(v) === JSON.stringify(JSON.parse(r.keep0)[i]) ? null : KEEP[i]).filter(Boolean));
++  check(id + ' 그 밖의 S 전체 불변(전체 비교)', snap(r.s, EXC.concat(['job', 'jobSince', 'flags', 'logHistory', 'employer'])) === r.allowedBefore);
++  check(id + ' 기존 연표 항목 내용 동일', JSON.stringify(r.s.logHistory.slice(0, r.n0)) === r.log0);
++};
++test('RT-1 retired·sealed → 서포터 [합성 상태 주입]', () => { const r = rtTransition('sealed'); rtCommon('RT-1', r); check('RT-1 sealed 유지·falna 플래그 없음 유지(자동 복구 없음)', r.s.falnaState === 'sealed' && !r.s.flags.includes('falna')); });
++test('RT-2 retired·unbound → 서포터 [합성 상태 주입]', () => { const r = rtTransition('unbound'); rtCommon('RT-2', r); check('RT-2 falna 플래그·unbound 유지', r.s.falnaState === 'unbound' && r.s.flags.includes('falna')); });
++test('RT-3 retired·팔나 none → 서포터 [합성 상태 주입]', () => { const r = rtTransition('none'); rtCommon('RT-3', r); check('RT-3 falnaHistory 0 유지', r.s.falnaHistory.length === 0 && r.s.falnaState === 'none'); });
++test('RT-4 retired + 고용처 → 서포터(E-1) [합성 상태 주입]', () => {
++  const r = rtTransition('sealed', { employer: 'hostess' });
++  check('RT-4 E-1 연표 1건·employer null·지급 0·고용처 문구 노출', r.s.employer === null && r.s.logHistory.filter(x => x.kind === 'employer_quit').length === 1 && r.T.G('globalThis.__applyCalls').length === 0);
++  rtCommon('RT-4', r);
++});
++// RT-5: 소속·active 팔나 유지 retired. join_hard(hasFamilia:false)로는 도달 불가 → 공통 resolve 를 합성 pending 으로 직접 호출(방어 검증).
++const rt5 = (patch = []) => {
++  const { prep } = require('./lib_f1_fixture');
++  const f = prep({ job: 'retired', tenure: 3, age: 30, ctx: { patch: AMT.patch.concat(patch) } }); retiredFixture(f.T, f.s, 'active');
++  f.T.G("S.relations = [{ id: 1, type: 'family', subType: 'parent', isFamily: true, alive: true, age: 60 }, { id: 2, type: 'family', subType: 'sibling', isFamily: true, alive: true, age: 28 }]; S.nextRelationId = 3;");
++  f.T.G("S.currentEventId = 'join_hard'; createFollowup('recruit_after_fail', { route: 'persistence', reason: 'rejected' }); S.currentEventId = null; S.pendingFollowup.phase = 'awaiting_choice';");
++  const before = JSON.parse(JSON.stringify(f.s)), n0 = f.s.logHistory.length;
++  f.T.G("chooseFollowup('supporter')");
++  return { ...f, before, n0 };
++};
++const F = {
++  F1: (s, b) => s.flags.includes('falna') && s.falnaState === 'active' && s.falnaHolder === 'loki' && JSON.stringify(s.conversionPending) === JSON.stringify(b.conversionPending),
++  F2: (s, b) => s.familia && s.familia.id === 'loki' && JSON.stringify(s.familia) === JSON.stringify(b.familia) && s.familiaAt === b.familiaAt,
++  F3: (s, b) => ['abil', 'level', 'maxLevel', 'hidden', 'feat', 'excelia', 'power'].every(k => JSON.stringify(s[k]) === JSON.stringify(b[k])),
++  F4: (s, b) => ['relations', 'parentFamilia', 'partnerId', 'nextRelationId'].every(k => JSON.stringify(s[k]) === JSON.stringify(b[k])),
++  F5: (s, b, n0) => ['falnaHistory', 'familiaHistory', 'falnaTransitions', 'levelHistory', 'milestones', 'aspirationHistory', 'alias'].every(k => JSON.stringify(s[k]) === JSON.stringify(b[k])) && JSON.stringify(s.logHistory.slice(0, n0)) === JSON.stringify(b.logHistory) };
++const RT5F = (s, b, n0) => { const a = JSON.parse(JSON.stringify(s)); const x = JSON.parse(JSON.stringify(b));
++  ['pendingFollowup', 'currentEventId', 'syncBaseline', 'followupSeq'].forEach(k => { delete a[k]; delete x[k]; });
++  const okAllowed = a.job === 'supporter' && a.jobSince === s.age && JSON.stringify(a.flags) === JSON.stringify(x.flags.concat(['supporter'])) && a.logHistory.length === n0 + 1;
++  ['job', 'jobSince', 'flags', 'logHistory'].forEach(k => { delete a[k]; delete x[k]; });
++  return okAllowed && JSON.stringify(a) === JSON.stringify(x); };
++const rtEval = r => Object.fromEntries(Object.entries(F).map(([k, fn]) => [k, !!fn(r.s, r.before, r.n0)]).concat([['RT5F', RT5F(r.s, r.before, r.n0)]]));
++test('RT-5 소속·active 팔나 retired → 서포터: 금지 5항목 독립 검사 + 전체 비교 [합성 상태 주입, join_hard 도달 불가 경로의 방어 검증]', () => {
++  const r = rt5(), e = rtEval(r);
++  Object.keys(e).forEach(k => check('RT-5 ' + k, e[k] === true));
++  check('RT-5 지급 0(retired)', sevSnap(r.T).eligible === false && r.s.valis === r.before.valis);
++});
++test('RT-M 단일 필드 변이(scope 종료 후 삽입) — 해당 assert 와 RT5F 만 실패', () => {
++  const at = "        S.pendingFollowup = null; S.currentEventId = null;         // f. 정리(단순 대입만)";
++  const M = { 'RT-M1': "S.flags = S.flags.filter(f => f !== 'falna');", 'RT-M2': 'S.familia = null;', 'RT-M3': 'S.abil.str = 0;', 'RT-M4': 'S.relations.pop();', 'RT-M5': 'S.milestones.pop();' };
++  const want = { 'RT-M1': 'F1', 'RT-M2': 'F2', 'RT-M3': 'F3', 'RT-M4': 'F4', 'RT-M5': 'F5' };
++  for (const [id, code] of Object.entries(M)) {
++    const e = rtEval(rt5([['script.js', at, at + "\n        if (S.job === 'supporter' && S.familia !== undefined && globalThis.__rtm !== 1) { globalThis.__rtm = 1; " + code + ' }']]));
++    const failed = Object.keys(e).filter(k => !e[k]);
++    check(id + ' 실패 = [' + want[id] + ', RT5F]', JSON.stringify(failed) === JSON.stringify([want[id], 'RT5F']), failed);
++  }
++});
++test('RT-MI 통합 변이(범위 안 실제 함수 호출) — 예상 실패 목록', () => {
++  const at = "        setJob('supporter');\n        if (!(S.job === 'supporter'";
++  const M = { 'RT-MI1 sealByGodReturn': ['sealByGodReturn();', ['F1', 'F2', 'F5', 'RT5F']], 'RT-MI2 leaveFamilia': ['leaveFamilia();', ['F1', 'F2', 'F5', 'RT5F']], 'RT-MI3 apply 오호출': ['apply({ valis: 1 });', ['F3', 'RT5F']] };
++  for (const [id, [code, want]] of Object.entries(M)) {
++    const e = rtEval(rt5([['script.js', at, '        ' + code + '\n' + at]]));
++    const failed = Object.keys(e).filter(k => !e[k]);
++    check(id + ' 실패 = [' + want.join(', ') + ']', JSON.stringify(failed) === JSON.stringify(want), failed);
++  }
++});
++// RT-6~8: free_supporter_route 기존 조건 그대로(N6-5)
++const fsr = (T) => T.G("match(EVENTS.find(e => e.id === 'free_supporter_route').cond)");
++test('RT-6~8 free_supporter_route 노출 판정(조건 무변경) [합성 상태 주입]', () => {
++  { const r = rtTransition('sealed', { before: (T, s) => { s.valis = 2000; } }); check('RT-6 sealed·무소속·valis≤3000 → true', fsr(r.T) === true && r.s.falnaState === 'sealed' && !r.s.flags.includes('falna'));
++    r.s.valis = 3001; check('RT-6b valis 3001 → false', fsr(r.T) === false);
++    r.s.valis = 2000; r.s.done.push('free_supporter_route'); check('RT-6c once 발생 후 사건 풀 제외', r.s.done.includes('free_supporter_route')); }
++  { const r = rtTransition('unbound', { before: (T, s) => { s.valis = 2000; } }); check('RT-7 unbound(falna 플래그) → false', fsr(r.T) === false); }
++  { const r = rt5(); r.s.valis = 2000; check('RT-8 소속 유지 → false', fsr(r.T) === false); }
++  const T = rtTransition('sealed').T; check('조건 원문 무변경', JSON.stringify(T.G("EVENTS.find(e => e.id === 'free_supporter_route').cond")) === JSON.stringify({ age: [16, 50], job: ['supporter'], noFlags: ['falna'], hasFamilia: false, max: { valis: 3000 } }));
++});
++test('RT-9 retired 선택지 문구(S-1)', () => {
++  const f = openFollowup({ job: 'retired', tenure: 1, age: 21 });
++  check('RT-9', f.T.buttons()[0].textContent === '은퇴 생활을 접고 서포터 일을 시작한다');
++});
++test('RT-10 전직 후 연간 활동: 기존 supporter 규칙(N6-6) [합성 상태 주입]', () => {
++  for (const falna of ['active', 'unbound', 'sealed', 'none']) {
++    const r = falna === 'active' ? rt5() : rtTransition(falna);
++    r.T.G('S.excelia = 0; S.potential = 0;'); const c0 = r.T.calls(), st0 = r.s.falnaState, fh0 = JSON.stringify(r.s.falnaHistory), fl0 = r.s.flags.includes('falna');
++    r.T.G('yearlyActivity()');
++    const grewAbil = JSON.stringify(r.s.abil) !== JSON.stringify(r.before ? r.before.abil : null);
++    if (falna === 'active' || falna === 'unbound') check('RT-10 ' + falna + ': excelia→능력치 경로(potential 0 유지)', r.s.potential === 0 && (r.s.excelia === 0) && (falna === 'active' ? grewAbil : true));
++    else check('RT-10 ' + falna + ': potential 증가·excelia 0', r.s.potential > 0 && r.s.excelia === 0);
++    check('RT-10 ' + falna + ': Math.random 1회·팔나 상태·이력·플래그 불변', r.T.calls() === c0 + 1 && r.s.falnaState === st0 && JSON.stringify(r.s.falnaHistory) === fh0 && r.s.flags.includes('falna') === fl0);
++  }
++});
++
++finish('f1_transition_test');
+diff -ruN -x logs base/tests/followup_halt_test.js impl/tests/followup_halt_test.js
+--- base/tests/followup_halt_test.js	1970-01-01 00:00:00.000000000 +0000
++++ impl/tests/followup_halt_test.js	2026-11-10 10:42:18.847257663 +0000
+@@ -0,0 +1,178 @@
++// T1-F 예외 처리·진행 정지·생애 세대 토큰 테스트 — 설계 r7 §1(RB-T10)·§5(HT-7), r6 §3~§5(HT-1~6, CT-7), PF-9·PF-14.
++// 사용: node tests/followup_halt_test.js   (실패 1건 이상이면 종료 코드 1)
++// 모든 사례는 [합성 상태 주입·예외 주입]: 시험용 kind·사건을 격리 vm 컨텍스트에 등록하고 예외를 강제로 낸다. 실제 생애 결과가 아니다.
++// 정지 플래그는 컨텍스트마다 격리된다(T-A). 게임 코드에는 해제 API 가 없으며, 해제는 startLife 뿐이다.
++const { makeCtx, makeReporter, snap } = require('./lib_f1_ctx');
++const { check, test, finish } = makeReporter();
++const EXC = ['pendingFollowup', 'currentEventId', 'syncBaseline'];
++
++function setup(opts) {
++  const T = makeCtx(opts); T.G('startLife()');
++  T.G(`document.getElementById('choices').innerHTML = ''; S.currentEventId = null;
++    globalThis.__res = 0; globalThis.__hook = null;
++    FOLLOWUP_KINDS.t_kind = { prompt: '시험 안내',
++      options: () => [{ id: 'go', label: '간다' }, { id: 'stay', label: '머문다', stay: true }],
++      resolve: (S, id, p) => { globalThis.__res += 1; if (id === 'go') { S.bond += 3; S.valis += 100; setJob('merchant'); } if (globalThis.__hook) globalThis.__hook(); } };
++    globalThis.__applyOrig = apply;
++    apply = function (fx) { const r = globalThis.__applyOrig(fx); if (fx && fx.__followup) createFollowup(fx.__followup, { tag: 'x' }); return r; };
++    globalThis.__ev = { id: 't_ev', text: '시험 사건', choices: [{ label: 'a', text: '결과', fx: { bond: 0, __followup: 't_kind' } }, { label: 'b', text: '평범한 결과', fx: { bond: 1 } }] };
++    globalThis.__err = new Error('boom');
++    globalThis.__spy = { clearTimers: 0, rollback: 0, render: 0, notice: 0, diag: 0 }; globalThis.__fail = {};
++    { const o = clearAutoTimers; clearAutoTimers = function () { __spy.clearTimers++; if (__fail.clearTimers) throw new Error('f-clearTimers'); return o.apply(this, arguments); }; }
++    { const o = restoreRollbackSnapshot; restoreRollbackSnapshot = function () { __spy.rollback++; if (__fail.rollback) throw new Error('f-rollback'); return o.apply(this, arguments); }; }
++    { const o = renderStatsFromClone; renderStatsFromClone = function () { __spy.render++; if (__fail.render) throw new Error('f-render'); return o.apply(this, arguments); }; }
++    { const o = showHaltNotice; showHaltNotice = function () { __spy.notice++; if (__fail.notice) throw new Error('f-notice'); return o.apply(this, arguments); }; }
++    { const o = followupDiag; followupDiag = function (ev) { if (ev === 'followup_resolve_exception') { __spy.diag++; if (__fail.diag) throw new Error('f-diag'); } return o.apply(this, arguments); }; }
++    globalThis.__spy.clearTimers = 0;`);
++  return T;
++}
++const open = (T, i = 0) => { T.G('showEvent(globalThis.__ev)'); T.G(`choose(globalThis.__ev.choices[${i}])`); };
++const diag = (T, ev) => T.G('followupDiagLog').filter(x => x.event === ev).length;
++const throwingGo = (T, fails = [], thrown = 'globalThis.__err') => {
++  T.G(`globalThis.__hook = () => { throw ${thrown}; }; globalThis.__fail = ${JSON.stringify(Object.fromEntries(fails.map(f => [f, true])))};`);
++  let caught; try { T.G("chooseFollowup('go')"); } catch (e) { caught = e; } return caught;
++};
++
++// ── RB-T10: catch 구조 — 정지 플래그 우선·단계별 격리·원래 예외 보존 ──
++const STEPS = ['clearTimers', 'rollback', 'render', 'notice', 'diag'];
++const rbCase = (id, fails, expectState) => test(id, () => {
++  const T = setup(); open(T); const s = T.S(); const b0 = snap(s, EXC), nBtn = T.buttons().length;
++  const caught = throwingGo(T, fails), spy = T.G('globalThis.__spy'), ce = caught && caught.followupCleanupErrors;
++  check(id + ' a 원래 예외 객체 그대로 전파', caught === T.G('globalThis.__err'), String(caught));
++  check(id + ' b progressHalted true', T.G('progressHalted') === true);
++  check(id + ' c 다섯 정리 단계 모두 실행(각 1회)', STEPS.every(k => spy[k] === 1), spy);
++  check(id + ' d cleanupErrors = 실패 단계(순서 고정)', fails.length ? JSON.stringify((ce || []).map(x => x.step)) === JSON.stringify(STEPS.filter(k => fails.includes(k))) : ce === undefined, ce);
++  check(id + ' e pending·currentEventId 정리', s.pendingFollowup === null && s.currentEventId === null);
++  check(id + ' f 상태 ' + (expectState ? '원복(S 전체 = 스냅숏)' : '롤백 실패로 불일치(정지로 진행 차단)'), (snap(s, EXC) === b0) === expectState);
++  check(id + " g '다음 해로' 0개·resolve 1회", T.buttons().filter(b => b.textContent === '다음 해로').length === 0 && T.G('globalThis.__res') === 1, { n: T.buttons().length, nBtn });
++  const b1 = snap(s), c1 = T.calls(); T.G('nextYear()');
++  check(id + ' h 정지 후 nextYear 진행 0', snap(s) === b1 && T.calls() === c1);
++});
++rbCase('RB-T10-0 resolve 단독 예외', [], true);
++rbCase('RB-T10-1 + clearAutoTimers 실패', ['clearTimers'], true);
++rbCase('RB-T10-2 + 롤백 실패', ['rollback'], false);
++rbCase('RB-T10-3 + 렌더 실패', ['render'], true);
++rbCase('RB-T10-4 + 안내 실패', ['notice'], true);
++rbCase('RB-T10-5 + 진단 실패', ['diag'], true);
++rbCase('RB-T10-6 + 다섯 단계 모두 실패', STEPS, false);
++test('RB-T10-7 원시값 예외', () => {
++  const T = setup(); open(T); const s = T.S(); const b0 = snap(s, EXC);
++  const caught = throwingGo(T, ['render'], "'x'");
++  check('RB-T10-7 a 원시값 그대로 전파', caught === 'x', String(caught));
++  check('RB-T10-7 b 정지·정리·원복', T.G('progressHalted') === true && s.pendingFollowup === null && s.currentEventId === null && snap(s, EXC) === b0);
++});
++
++test('PF-9 예외 시 R1 복원 내용(기록 길이·내용·2-i)', () => {
++  const T = setup(); open(T); const s = T.S();
++  const log0 = JSON.stringify(s.logHistory), job0 = s.job, js0 = s.jobSince, flags0 = JSON.stringify(s.flags), st0 = s.falnaState, tr0 = JSON.stringify(s.falnaTransitions), cp0 = JSON.stringify(s.conversionPending), n0 = T.G('syncInvariantLog.length');
++  throwingGo(T);
++  check('PF-9a job·jobSince·flags·bond·valis 원복', s.job === job0 && s.jobSince === js0 && JSON.stringify(s.flags) === flags0);
++  check('PF-9b logHistory 길이·기존 항목 내용 동일', JSON.stringify(s.logHistory) === log0);
++  check('PF-9c 2-i: falnaState·전이·conversionPending 불변, syncDepth 0', s.falnaState === st0 && JSON.stringify(s.falnaTransitions) === tr0 && JSON.stringify(s.conversionPending) === cp0 && T.G('syncDepth') === 0);
++  check('PF-9d 2-i 기준값은 pending_after_exception 으로 남고(초기화하지 않음) 새 생애에서 정리', s.syncBaseline && s.syncBaseline.status === 'pending_after_exception', s.syncBaseline);
++  check('PF-9e 화면에 오류 안내 1건(logHistory 미기록)', T.el('log').kids.filter(k => /오류가 발생해 진행을 멈췄다/.test(k.html)).length === 1 && !s.logHistory.some(x => /오류가 발생해/.test(x.text)));
++  check('PF-9f syncInvariantLog 추가 0', T.G('syncInvariantLog.length') === n0);
++});
++
++test('PF-14 예외 뒤 자동 진행 금지', () => {
++  const T = setup({ timers: 'queue', clearRemoves: false }); T.el('auto').checked = true; T.G('showEvent(globalThis.__ev)'); T.timers.length = 0; T.G('choose(globalThis.__ev.choices[0])');
++  const nTimers = T.timers.length; throwingGo(T);
++  check("PF-14a '다음 해로' 버튼 0·새 타이머 예약 0", T.buttons().length === 0 && T.timers.length === nTimers, { btn: T.buttons().length, timers: T.timers.length });
++  check('PF-14b 남은 자동 타이머 취소 시도(G1+)', T.cleared.length >= 1);
++  const s = T.S(), b0 = snap(s), c0 = T.calls(), k0 = T.counter.clicks; T.timers.slice().forEach(t => t.fn());
++  check('PF-14c 남은 타이머가 실행돼도 진행 0', snap(s) === b0 && T.calls() === c0 && T.counter.clicks === k0);
++});
++
++// ── HT-1~6: 진행 정지 가드 ──
++const H1 = [['nextYear', 'nextYear()'], ['choose', 'choose(globalThis.__ev.choices[1])'], ['chooseBody', 'chooseBody(globalThis.__ev.choices[1])'], ['showEvent', 'showEvent(globalThis.__ev)'], ['endLife', 'endLife()'], ['chooseFollowup', "chooseFollowup('stay')"], ['renderFollowup', 'renderFollowup()']];
++const H3 = [['setAspiration', "setAspiration('adventurer', 't')"], ['setJob', "setJob('merchant')"], ['leaveFamilia', 'leaveFamilia()'], ['sealByGodReturn', 'sealByGodReturn()'], ['applyGodReturn', "applyGodReturn('seal')"],
++  ['applyRecruit', "applyRecruit({ route: 'self_apply' })"], ['completeConversion', 'completeConversion()'], ['recompute', 'S.potential = 500; recompute()'], ['recordLevel', "recordLevel('levelup', 1, 2)"], ['tryLevelUp', 'tryLevelUp()'],
++  ['convertExp', 'convertExp()'], ['apply', 'globalThis.__applyOrig({ valis: 100, hp: -5, bond: 2 })'], ['ensureHistory', 'ensureHistory()'], ['openMembership', 'openMembership()'], ['closeMembership', "closeMembership('left')"],
++  ['joinOrganization', "joinOrganization('guild')"], ['rollFamilia', 'rollFamilia()'], ['checkFalna', 'checkFalna()'], ['moveResidence', "moveResidence('orario', 't')"], ['recordService', 'recordService({ a: 1 })'],
++  ['yearlyActivity', 'S.age = 20; yearlyActivity()'], ['recoverYearly', 'recoverYearly(1)'], ['tryRescue', 'tryRescue()'], ['handleRelationEvents', "handleRelationEvents([{ kind: 'birth', relation: {} }])"], ['createFollowup', "createFollowup('t_kind', {})"]];
++test('HT-1 정지 상태에서 H1 진입점 호출: 상태·난수·화면 불변', () => {
++  for (const [name, code] of H1) {
++    const T = setup(); open(T); const s = T.S(); T.G('progressHalted = true');
++    const b0 = snap(s), c0 = T.calls(), d0 = T.dom(), h0 = diag(T, 'halted_entry');
++    let threw = null; try { T.G(code); } catch (e) { threw = e; }
++    check('HT-1 ' + name, !threw && snap(s) === b0 && T.calls() === c0 && T.dom() === d0 && diag(T, 'halted_entry') === h0 + 1, { threw: String(threw), halted: diag(T, 'halted_entry') - h0 });
++  }
++});
++test('HT-4 정지 상태에서 H3 내부 상태 변경 함수 호출: 상태·난수 불변', () => {
++  for (const [name, code] of H3) {
++    const T = setup(); const s = T.S(); T.G('S.age = 20; S.chronologicalAge = 20; S.phase = 20; S.physicalAge = 20;');
++    const pre = code.includes(';') ? code.slice(0, code.lastIndexOf(';') + 1) : '', call = code.slice(pre.length);
++    if (pre) T.G(pre);
++    T.G('progressHalted = true'); const b0 = snap(s), c0 = T.calls(), h0 = diag(T, 'halted_entry');
++    let threw = null; try { T.G(call); } catch (e) { threw = e; }
++    check('HT-4 ' + name, !threw && snap(s) === b0 && T.calls() === c0 && diag(T, 'halted_entry') >= h0 + 1, { threw: String(threw) });
++  }
++});
++test('HT-2 정지 직전에 만든 선택 버튼을 정지 후 클릭', () => {
++  const T = setup(); T.G('showEvent(globalThis.__ev)'); const stale = T.buttons(); const s = T.S();
++  T.G('progressHalted = true'); const b0 = snap(s), c0 = T.calls(), d0 = T.dom();
++  stale.forEach(b => b.click());
++  check('HT-2 사건 선택 버튼', snap(s) === b0 && T.calls() === c0 && T.dom() === d0);
++  const T2 = setup(); open(T2, 1); const next = T2.buttons()[0], s2 = T2.S(); T2.G('progressHalted = true'); const b2 = snap(s2), c2 = T2.calls();
++  next.click();
++  check("HT-2b '다음 해로' 버튼", next.textContent === '다음 해로' && snap(s2) === b2 && T2.calls() === c2);
++});
++test('HT-3 정지 직전에 예약된 자동 타이머 3종을 정지 후 실행', () => {
++  const mk = () => { const T = setup({ timers: 'queue', clearRemoves: false }); T.el('auto').checked = true; return T; };
++  const run = (id, T) => { const t = T.timers[T.timers.length - 1], s = T.S(); T.G('progressHalted = true'); const b0 = snap(s), c0 = T.calls(), d0 = T.dom(), k0 = T.counter.clicks; t.fn();
++    check(id, snap(s) === b0 && T.calls() === c0 && T.dom() === d0 && T.counter.clicks === k0, { calls: T.calls() - c0, clicks: T.counter.clicks - k0 }); };
++  { const T = mk(); T.G('showEvent(globalThis.__ev)'); run('HT-3 T1 사건 자동 선택(Math.random 호출 전 차단)', T); }
++  { const T = mk(); T.G('showEvent(globalThis.__ev)'); T.G('choose(globalThis.__ev.choices[1])'); run("HT-3 T2 자동 '다음 해로'", T); }
++  { const T = mk(); T.G('showEvent(globalThis.__ev)'); T.G('choose(globalThis.__ev.choices[0])'); run('HT-3 T3 후속 화면 stay 자동 클릭', T); }
++});
++test('HT-5 정지 해제는 startLife 뿐', () => {
++  const T = setup(); open(T); throwingGo(T);
++  check('HT-5a 예외 후 정지', T.G('progressHalted') === true);
++  T.G('nextYear()'); T.G("chooseFollowup('stay')"); T.G('showEvent(globalThis.__ev)');
++  check('HT-5b 진행 함수 호출로는 해제되지 않음', T.G('progressHalted') === true);
++  const old = T.S(), g0 = T.G('lifeGen'), h0 = diag(T, 'halted_entry'); T.G('startLife()');
++  check('HT-5c startLife 로 해제·세대 +1·새 생애 정상 시작', T.G('progressHalted') === false && T.G('lifeGen') === g0 + 1 && T.S() !== old && T.S().pendingFollowup === null && (T.buttons().length > 0 || !!T.S().cause));
++  check('HT-5d(CT-7) 새 생애 시작 과정에서 halted_entry 진단 0', diag(T, 'halted_entry') === h0);
++});
++test('HT-6 예외 직후 화면에 진행 수단 없음', () => {
++  const T = setup(); open(T); throwingGo(T); const s = T.S(), b0 = snap(s), c0 = T.calls();
++  T.buttons().forEach(b => b.click());
++  check("HT-6 '다음 해로' 0개·남은 버튼 클릭해도 진행 0", T.buttons().filter(b => b.textContent === '다음 해로').length === 0 && snap(s) === b0 && T.calls() === c0);
++});
++
++// ── HT-7: 새 생애 시작 후 이전 생애 콜백(T1·T2·T3 × 예외 있음/없음) ──
++// clearRemoves:false = 타이머 취소(G1+)가 누락됐다고 가정하고 세대 토큰(G1)만으로 막히는지 본다. 진단은 followupDiagLog 에 stale_timer 1건만 추가되어야 한다.
++const ht7 = (id, arm, withException) => test(id, () => {
++  const T = setup({ timers: 'queue', clearRemoves: false }); T.el('auto').checked = true;
++  arm(T); const target = T.timers[T.timers.length - 1];           // 생애 A 에서 예약만 되고 실행되지 않은 대상 타이머
++  if (withException) { T.G('showEvent(globalThis.__ev)'); T.G('choose(globalThis.__ev.choices[0])'); throwingGo(T); }
++  if (withException) check(id + ' 0 생애 A 예외로 정지', T.G('progressHalted') === true);
++  T.G('startLife()'); const s = T.S();                             // 생애 B
++  const b0 = snap(s), r0 = JSON.stringify(T.rng()), d0 = T.dom(), k0 = T.counter.clicks, ev0 = JSON.stringify([s.eventCounts, s.done, s.recentEvents, s.lastEventPhase]), n0 = T.G('followupDiagLog.length'), q0 = T.timers.length;
++  target.fn();                                                     // 생애 A 의 콜백 실행
++  const added = T.G('followupDiagLog').slice(n0);
++  check(id + ' a S 변경 0', snap(s) === b0 && T.S() === s);
++  check(id + ' b RNG 소비 0', JSON.stringify(T.rng()) === r0);
++  check(id + ' c 버튼 클릭 0', T.counter.clicks === k0);
++  check(id + ' d 사건 기록 변경 0', JSON.stringify([s.eventCounts, s.done, s.recentEvents, s.lastEventPhase]) === ev0);
++  check(id + ' e DOM 변경 0·새 타이머 0', T.dom() === d0 && T.timers.length === q0);
++  check(id + ' f 진단 = stale_timer 1건뿐(followupDiagLog)', added.length === 1 && added[0].event === 'stale_timer' && added[0].halted === false, added);
++  check(id + ' g 생애 B 는 정지 아님', T.G('progressHalted') === false);
++});
++const armT1 = T => { T.G('showEvent(globalThis.__ev)'); };
++const armT2 = T => { T.G('showEvent(globalThis.__ev)'); T.G('choose(globalThis.__ev.choices[1])'); };
++const armT3 = T => { T.G('showEvent(globalThis.__ev)'); T.G('choose(globalThis.__ev.choices[0])'); };
++ht7('HT-7-T1 사건 자동 선택 / 예외 있음', armT1, true);
++ht7('HT-7-T1b 사건 자동 선택 / 예외 없음', armT1, false);
++ht7("HT-7-T2 자동 '다음 해로' / 예외 있음", T => { armT2(T); }, true);
++ht7("HT-7-T2b 자동 '다음 해로' / 예외 없음", armT2, false);
++ht7('HT-7-T3 후속 화면 stay / 예외 있음', T => { armT3(T); T.G("chooseFollowup('stay')"); const t = T.timers.find(x => x.ms === 800 && x !== T.timers[0]); if (t) { T.timers.push(T.timers.splice(T.timers.indexOf(t), 1)[0]); } }, true);
++ht7('HT-7-T3b 후속 화면 stay / 예외 없음', armT3, false);
++
++test('HT-8 G1+ 타이머 취소: startLife·예외에서 clearTimeout 호출', () => {
++  const T = setup({ timers: 'queue' }); T.el('auto').checked = true; T.G('showEvent(globalThis.__ev)'); const id = T.timers[T.timers.length - 1].id;
++  T.G('startLife()');
++  check('HT-8 startLife 가 이전 타이머를 취소', T.cleared.includes(id) && !T.timers.some(t => t.id === id));
++});
++
++finish('followup_halt_test');
+diff -ruN -x logs base/tests/followup_pf_test.js impl/tests/followup_pf_test.js
+--- base/tests/followup_pf_test.js	1970-01-01 00:00:00.000000000 +0000
++++ impl/tests/followup_pf_test.js	2026-11-10 10:39:18.433106774 +0000
+@@ -0,0 +1,146 @@
++// T1-F 공통 후속 선택 수명주기(PF) 단위 테스트 — 설계 r7 N-1(r9 C26·C27·C29, F1-T10·T14).
++// 사용: node tests/followup_pf_test.js   (실패 1건 이상이면 종료 코드 1)
++// 모든 사례는 [합성 상태 주입]: 시험용 kind 와 시험용 사건을 격리 vm 컨텍스트에 직접 등록한다. 실제 생애 결과가 아니다.
++const { makeCtx, makeReporter, snap } = require('./lib_f1_ctx');
++const { check, test, finish } = makeReporter();
++const EXC = ['pendingFollowup', 'currentEventId'];
++
++function setup(opts) {
++  const T = makeCtx(opts); T.G('startLife()');
++  T.G(`document.getElementById('choices').innerHTML = ''; S.currentEventId = null;
++    globalThis.__res = 0; globalThis.__seen = []; globalThis.__hook = null; globalThis.__opts = null;
++    FOLLOWUP_KINDS.t_kind = { prompt: '시험 안내',
++      options: (S, p) => globalThis.__opts ? globalThis.__opts(S, p) : [{ id: 'go', label: '간다' }, { id: 'stay', label: '머문다', stay: true }],
++      resolve: (S, id, p) => { globalThis.__res += 1; globalThis.__seen.push({ id, ev: S.currentEventId, phase: p.phase, kind: p.kind, ctx: JSON.stringify(p.context), src: p.sourceEventId });
++        if (globalThis.__hook) globalThis.__hook(); if (id === 'go') S.bond += 3; } };
++    globalThis.__applyOrig = apply;
++    apply = function (fx) { const r = globalThis.__applyOrig(fx); if (fx && fx.__followup) globalThis.__created = createFollowup(fx.__followup, { tag: 'x' }); return r; };
++    globalThis.__ev = { id: 't_ev', text: '시험 사건', choices: [{ label: 'a', text: '결과', fx: { bond: 0, __followup: 't_kind' } }, { label: 'die', text: '쓰러졌다', fx: { hp: -999, __followup: 't_kind' } }] };`);
++  return T;
++}
++const open = (T, i = 0) => { T.G('showEvent(globalThis.__ev)'); T.G(`choose(globalThis.__ev.choices[${i}])`); };
++const diag = (T, ev) => T.G('followupDiagLog').filter(x => x.event === ev).length;
++
++test('PF-1 생애 시작 시 초기화', () => {
++  const T = makeCtx(); T.G('startLife()'); const s = T.S();
++  check('PF-1a pendingFollowup === null', s.pendingFollowup === null);
++  check('PF-1b followupSeq === 0', s.followupSeq === 0);
++});
++
++test('PF-2 보류 생성: resolving_event·문맥·데이터만 저장', () => {
++  const T = setup(); const s = T.S(); const before = snap(s, ['pendingFollowup', 'followupSeq', 'currentEventId']), c0 = T.calls();
++  T.G("S.currentEventId = 't_ev'"); const ok = T.G("createFollowup('t_kind', { route: 'r', reason: 'x' })"); const p = s.pendingFollowup;
++  check('PF-2a 생성 성공·phase resolving_event', ok === true && p && p.phase === 'resolving_event', p);
++  check('PF-2b seq 1·kind·sourceEventId·context·createdAt', p.seq === 1 && s.followupSeq === 1 && p.kind === 't_kind' && p.sourceEventId === 't_ev' && p.context.route === 'r' && p.context.reason === 'x' && p.createdAt === s.age, p);
++  check('PF-2c 함수 저장 없음(데이터만)', JSON.stringify(p) === JSON.stringify(JSON.parse(JSON.stringify(p))) && !Object.values(p).some(v => typeof v === 'function') && !Object.values(p.context).some(v => typeof v === 'function'));
++  check('PF-2d 생성으로 다른 게임 상태 변경 0·난수 0', snap(s, ['pendingFollowup', 'followupSeq', 'currentEventId']) === before && T.calls() === c0);
++  check('PF-2e 알 수 없는 kind 거부', (() => { const T2 = setup(); return T2.G("createFollowup('nope', {})") === false && T2.S().pendingFollowup === null && T2.S().followupSeq === 0 && diag(T2, 'followup_unknown_kind') === 1; })());
++});
++
++test('PF-3 생존 시 awaiting_choice·후속 화면', () => {
++  const T = setup(); open(T); const s = T.S(), bs = T.buttons();
++  check('PF-3a phase awaiting_choice', s.pendingFollowup && s.pendingFollowup.phase === 'awaiting_choice', s.pendingFollowup);
++  check('PF-3b 버튼 = options 2개, 표식 go·stay', bs.length === 2 && bs[0].dataset.followup === 'go' && bs[1].dataset.followup === 'stay', bs.map(b => [b.textContent, b.dataset]));
++  check("PF-3c '다음 해로' 없음", !bs.some(b => b.textContent === '다음 해로'));
++  check('PF-3d 선택 전 currentEventId null(choose finally)·sourceEventId 보존', s.currentEventId === null && s.pendingFollowup.sourceEventId === 't_ev');
++  check('PF-3e 안내는 화면 전용(logHistory 미기록)', !s.logHistory.some(x => x.text === '시험 안내') && T.el('log').kids.some(k => k.html === '시험 안내'));
++});
++
++test('PF-4 화면 표시 전 사망: 정상 종료·보류 정리', () => {
++  const T = setup(); open(T, 1); const s = T.S();
++  check('PF-4a 사망 처리 완료', !!s.cause && s.hp === 0, { cause: s.cause, hp: s.hp });
++  check('PF-4b 보류 정리', s.pendingFollowup === null);
++  check('PF-4c 후속 화면 미표시·resolve 0', T.G('globalThis.__res') === 0 && T.buttons().length === 0);
++  check('PF-4d 진단 1건', diag(T, 'followup_discarded_on_death') === 1 && diag(T, 'endlife_blocked') === 0);
++});
++
++test('PF-5 선택 대기 중 nextYear·endLife 차단(DOM·상태·난수 변경 0)', () => {
++  const T = setup(); open(T); const s = T.S();
++  const b0 = snap(s), d0 = T.dom(), c0 = T.calls(), sync0 = JSON.stringify(s.syncBaseline);
++  T.G('nextYear()');
++  check('PF-5a nextYear 차단', snap(s) === b0 && T.dom() === d0 && T.calls() === c0 && diag(T, 'nextyear_blocked') === 1);
++  T.G('endLife()');
++  check('PF-5b endLife 차단', snap(s) === b0 && T.dom() === d0 && T.calls() === c0 && !s.cause && JSON.stringify(s.syncBaseline) === sync0 && diag(T, 'endlife_blocked') === 1);
++  // 선택 처리 중(resolving_choice)에도 차단
++  T.G(`globalThis.__hook = () => { const a = S.age; nextYear(); endLife(); globalThis.__mid = { age: S.age === a, cause: S.cause, phase: S.pendingFollowup && S.pendingFollowup.phase }; }`);
++  T.buttons()[1].click(); const mid = T.G('globalThis.__mid');
++  check('PF-5c resolving_choice 중 nextYear·endLife 차단', mid.age === true && !mid.cause && mid.phase === 'resolving_choice' && diag(T, 'nextyear_blocked') === 2 && diag(T, 'endlife_blocked') === 2, mid);
++});
++
++test('PF-6 무효 선택: 상태·보류·화면 불변', () => {
++  const T = setup(); open(T); const s = T.S(); const b0 = snap(s), d0 = T.dom();
++  T.G("chooseFollowup('zzz')");
++  check('PF-6a 목록에 없는 id 거부', snap(s) === b0 && T.dom() === d0 && s.pendingFollowup.phase === 'awaiting_choice' && T.G('globalThis.__res') === 0 && diag(T, 'followup_invalid') === 1);
++  T.G('globalThis.__opts = () => [{ id: "stay", label: "머문다", stay: true }]');   // 노출 조건이 바뀌어 go 가 더는 유효하지 않은 경우
++  T.G("chooseFollowup('go')");
++  check('PF-6b 현재 노출되지 않는 선택 거부', s.pendingFollowup && s.pendingFollowup.phase === 'awaiting_choice' && T.G('globalThis.__res') === 0 && diag(T, 'followup_invalid') === 2);
++  T.G("chooseFollowup('stay')");
++  check('PF-6c 이후 유효 선택은 정상 처리', s.pendingFollowup === null && T.G('globalThis.__res') === 1);
++  const T2 = setup(); T2.G("chooseFollowup('stay')");
++  check('PF-6d 보류 없음 상태의 선택 거부', T2.G('globalThis.__res') === 0 && diag(T2, 'followup_invalid') === 1);
++});
++
++test('PF-7 중복 클릭: 효과 1회', () => {
++  const T = setup(); open(T); const s = T.S(); const bond0 = s.bond, go = T.buttons()[0];
++  go.click(); go.click(); T.G("chooseFollowup('go')");
++  check('PF-7a resolve 1회·효과 1회', T.G('globalThis.__res') === 1 && s.bond === bond0 + 3, { res: T.G('globalThis.__res'), bond: s.bond - bond0 });
++  check('PF-7b 이후 입력은 검증에서 거부', diag(T, 'followup_invalid') === 2);
++  check("PF-7c '다음 해로' 정확히 1개", T.buttons().filter(b => b.textContent === '다음 해로').length === 1 && T.buttons().length === 1);
++});
++
++test('PF-10 중첩 생성 금지', () => {
++  const T = setup(); open(T); const s = T.S();
++  const r = T.G("createFollowup('t_kind', {})");
++  check('PF-10 이미 보류가 있으면 거부·seq 불변', r === false && s.followupSeq === 1 && s.pendingFollowup.seq === 1 && diag(T, 'followup_already_pending') === 1);
++});
++
++test('PF-11 문맥 복원과 정리', () => {
++  const T = setup(); open(T); const s = T.S(); T.buttons()[1].click(); const seen = T.G('globalThis.__seen')[0];
++  check('PF-11a resolve 중 currentEventId = sourceEventId', seen.ev === 't_ev' && seen.src === 't_ev' && seen.phase === 'resolving_choice' && seen.kind === 't_kind' && seen.ctx === '{"tag":"x"}', seen);
++  check('PF-11b 처리 후 pending·currentEventId null', s.pendingFollowup === null && s.currentEventId === null);
++  check("PF-11c '다음 해로' 생성", T.buttons().length === 1 && T.buttons()[0].textContent === '다음 해로');
++  const age = s.age; T.buttons()[0].click();
++  check('PF-11d 이후 다음 해 진행 가능', s.age > age || !!s.cause, { age: s.age });
++});
++
++test('PF-12 followup 범위: syncDepth·동기화 기록·팔나 전이 불변', () => {
++  const T = setup(); open(T); const s = T.S(); const n0 = T.G('syncInvariantLog.length'), t0 = JSON.stringify(s.falnaTransitions), st0 = s.falnaState;
++  T.buttons()[0].click();
++  check('PF-12a syncDepth 0', T.G('syncDepth') === 0);
++  check('PF-12b syncInvariantLog 추가 0', T.G('syncInvariantLog.length') === n0);
++  check('PF-12c 팔나 전이 0·상태 불변·기준값 정리', JSON.stringify(s.falnaTransitions) === t0 && s.falnaState === st0 && s.syncBaseline === null);
++});
++
++test('PF-13 followupSeq 규칙', () => {
++  const T = setup(); open(T); const s = T.S(); T.buttons()[1].click();
++  T.G("document.getElementById('choices').innerHTML = ''"); open(T);
++  check('PF-13a 생성마다 +1', s.followupSeq === 2 && s.pendingFollowup.seq === 2);
++  T.G("createFollowup('t_kind', {})");
++  check('PF-13b 거부 시 불변', s.followupSeq === 2);
++  T.buttons()[1].click(); T.G('startLife()');
++  check('PF-13c 새 생애에서 0', T.S().followupSeq === 0 && T.S().pendingFollowup === null && T.S() !== s);
++});
++
++test('PF-15 stay 선택: 선택 직전 상태 대비 전체 불변(C29)', () => {
++  const T = setup(); open(T); const s = T.S(); const b0 = snap(s, EXC), c0 = T.calls();
++  T.buttons()[1].click();
++  check('PF-15a S 전체 불변(pending·currentEventId 제외)', snap(s, EXC) === b0);
++  check('PF-15b 주 RNG 0', T.calls() === c0);
++});
++
++test('PF-16 자동 진행: stay 고정 클릭·난수 0', () => {
++  // 사건 표시가 예약한 자동 선택 타이머(T1)는 이 사례의 대상이 아니므로 비우고, 선택은 직접 호출한다(후속 화면 타이머만 남긴다).
++  const T = setup({ timers: 'queue' }); T.el('auto').checked = true; T.G('showEvent(globalThis.__ev)'); T.timers.length = 0; T.G('choose(globalThis.__ev.choices[0])');
++  check('PF-16a 후속 화면 타이머 1개 예약', T.timers.length === 1);
++  const c0 = T.calls(); T.runTimer(0);
++  const seen = T.G('globalThis.__seen');
++  check('PF-16b stay 선택 1회·Math.random 0', seen.length === 1 && seen[0].id === 'stay' && T.calls() === c0, seen);
++  check("PF-16c 이어서 '다음 해로' 자동 클릭 타이머 1개", T.timers.length === 1 && T.buttons().length === 1 && T.buttons()[0].textContent === '다음 해로');
++});
++
++test('PF-17 선택지 0개: 정지 없이 다음 해 버튼', () => {
++  const T = setup(); T.G('globalThis.__opts = () => []'); open(T); const s = T.S();
++  check('PF-17 보류 정리·다음 해 버튼·진단', s.pendingFollowup === null && T.buttons().length === 1 && T.buttons()[0].textContent === '다음 해로' && diag(T, 'followup_render_failed') === 1);
++});
++
++finish('followup_pf_test');
+diff -ruN -x logs base/tests/lib_f1_ctx.js impl/tests/lib_f1_ctx.js
+--- base/tests/lib_f1_ctx.js	1970-01-01 00:00:00.000000000 +0000
++++ impl/tests/lib_f1_ctx.js	2026-11-10 10:59:37.268146684 +0000
+@@ -0,0 +1,59 @@
++// T1-F/F-1 테스트 공용 격리 컨텍스트. 각 테스트는 새 vm 컨텍스트에서 게임 소스를 그대로 읽어 실행한다(게임 코드에 테스트 훅 없음).
++// opts.patch = [[파일, 원문, 대체문], ...]  — 격리된 사본 소스에만 적용하는 치환(변이 시험·시험용 값 주입). 디스크의 게임 파일은 바꾸지 않는다.
++// opts.timers = 'drop'(기본, 예약만 무시) | 'queue'(예약을 큐에 쌓고 runTimer 로 수동 실행) | 'sync'(즉시 실행)
++const fs = require('fs'), vm = require('vm'), path = require('path');
++// 게임 폴더: opts.root > 환경 변수 F1_GAME_ROOT(변이 시험이 임시 사본을 가리킬 때) > 이 저장소.
++const GAME_ROOT = path.resolve(process.env.F1_GAME_ROOT || path.join(__dirname, '..'));
++const FILES = ['data.js', 'events.js', 'core/aging.js', 'core/growth.js', 'core/relations.js', 'core/items.js', 'core/recruit.js', 'core/lineage.js', 'script.js'];
++
++function makeElement(counter) {
++  const e = { style: {}, kids: [], html: '', className: '', textContent: '', innerText: '', checked: false, isConnected: false, onclick: null, dataset: {},
++    classList: { _s: new Set(), add(...n) { n.forEach(x => this._s.add(x)); }, remove(...n) { n.forEach(x => this._s.delete(x)); }, contains(x) { return this._s.has(x); } },
++    addEventListener(type, fn) { (this.listeners ||= {})[type] = fn; }, scrollIntoView() {},
++    appendChild(c) { this.kids.push(c); c.isConnected = true; counter.dom++; return c; },
++    querySelectorAll() { return this.kids; },
++    click() { counter.clicks++; if (typeof this.onclick === 'function') return this.onclick(); if (this.listeners && this.listeners.click) return this.listeners.click(); } };
++  Object.defineProperty(e, 'innerHTML', { get() { return e.html; }, set(v) { e.kids.forEach(k => { k.isConnected = false; }); e.kids = []; e.html = String(v); counter.dom++; } });
++  return e;
++}
++
++function makeCtx(opts = {}) {
++  const seed = opts.seed === undefined ? 20261104 : opts.seed, root = path.resolve(opts.root || GAME_ROOT);
++  const counter = { dom: 0, clicks: 0 }, els = {};
++  const document = { getElementById: id => (els[id] ||= makeElement(counter)), createElement: () => makeElement(counter), querySelectorAll: () => [] };
++  let state = seed >>> 0, calls = 0; const M = Object.create(Math);
++  M.random = () => { calls++; state += 0x6D2B79F5; let v = state; v = Math.imul(v ^ (v >>> 15), v | 1); v ^= v + Math.imul(v ^ (v >>> 7), v | 61); return ((v ^ (v >>> 14)) >>> 0) / 4294967296; };
++  const timers = [], cleared = []; let timerId = 0; const mode = opts.timers || 'drop';
++  const setTimeoutMock = (fn, ms) => { const id = ++timerId; if (mode === 'sync') { if (typeof fn === 'function') fn(); } else if (mode === 'queue') timers.push({ id, fn, ms }); return id; };
++  const clearTimeoutMock = id => { cleared.push(id); if (opts.clearRemoves !== false) { const i = timers.findIndex(t => t.id === id); if (i >= 0) timers.splice(i, 1); } };
++  const sandbox = { document, window: { scrollTo() {} }, setTimeout: setTimeoutMock, clearTimeout: clearTimeoutMock, console, Math: M };
++  const ctx = vm.createContext(sandbox);
++  const patches = opts.patch || [], applied = [];
++  const src = FILES.map(f => { let s = fs.readFileSync(path.join(root, f), 'utf8');
++    patches.forEach(([file, from, to], i) => { if (file !== f) return; const n = s.split(from).length - 1; if (n !== 1) throw new Error(`patch #${i} (${file}) 일치 ${n}회: ${String(from).slice(0, 60)}`); s = s.replace(from, () => to); applied.push(i); });
++    return s; }).join('\n;\n');
++  if (applied.length !== patches.length) throw new Error('적용되지 않은 patch 가 있음');
++  vm.runInContext(src, ctx, { filename: 'game.js' });
++  const G = code => vm.runInContext(code, ctx);
++  return { ctx, G, S: () => G('S'), calls: () => calls, rng: () => ({ state, calls }), counter, els, el: id => document.getElementById(id), timers, cleared,
++    runTimer: i => { const t = timers.splice(i === undefined ? 0 : i, 1)[0]; if (!t) throw new Error('타이머 없음'); return t.fn(); },
++    buttons: () => document.getElementById('choices').kids.slice(),
++    dom: () => JSON.stringify(['choices', 'log', 'stats', 'abil', 'familia', 'inventory', 'relations'].map(id => { const e = document.getElementById(id); return [id, e.html, e.textContent, e.kids.map(k => [k.textContent, k.html, k.className])]; })) };
++}
++
++function makeReporter() {
++  const out = []; let failed = 0, total = 0;
++  const check = (id, c, d) => { total++; if (!c) failed++; out.push((c ? 'PASS ' : 'FAIL ') + id + (!c && d !== undefined ? ' — ' + JSON.stringify(d) : '')); return !!c; };
++  const test = (id, fn) => { try { fn(); } catch (e) { total++; failed++; out.push('FAIL ' + id + ' — 예외 ' + String(e && e.stack || e).split('\n').slice(0, 4).join(' | ')); } };
++  const finish = name => { console.log(out.join('\n')); console.log(`RESULT: ${failed ? 'FAIL' : 'PASS'} ${total - failed}/${total}` + (name ? ' (' + name + ')' : '')); process.exitCode = failed ? 1 : 0; };
++  return { check, test, finish, stats: () => ({ failed, total }) };
++}
++const setAge = (s, a) => { s.age = a; s.chronologicalAge = a; s.phase = a; s.physicalAge = a; };
++// S 전체 비교용 직렬화. exclude 의 최상위 필드는 뺀다. 키 순서는 고정(정렬)해서 필드 존재 여부·값을 모두 비교한다.
++function snap(s, exclude = []) {
++  const norm = v => v === undefined ? '__undefined__' : (typeof v === 'number' && !Number.isFinite(v)) ? '__' + String(v) + '__' : v;
++  const walk = v => Array.isArray(v) ? v.map(walk) : (v && typeof v === 'object') ? Object.keys(v).sort().reduce((o, k) => { o[k] = walk(v[k]); return o; }, {}) : norm(v);
++  const top = {}; Object.keys(s).sort().forEach(k => { if (!exclude.includes(k)) top[k] = walk(s[k]); });
++  return JSON.stringify(top);
++}
++module.exports = { makeCtx, makeReporter, setAge, snap, FILES, GAME_ROOT };
+diff -ruN -x logs base/tests/lib_f1_fixture.js impl/tests/lib_f1_fixture.js
+--- base/tests/lib_f1_fixture.js	1970-01-01 00:00:00.000000000 +0000
++++ impl/tests/lib_f1_fixture.js	2026-11-10 10:45:38.523264804 +0000
+@@ -0,0 +1,43 @@
++// T1-F/F-1 테스트 공용 fixture. 모두 [합성 상태 주입]: 실제 생애를 재현하지 않고, 격리 vm 컨텍스트의 S 를 직접 구성한다.
++const { makeCtx, setAge } = require('./lib_f1_ctx');
++
++// join_hard 를 받을 수 있는 기본 상태: 인간·무소속·팔나 없음, 지정 나이. job 은 setJob 으로 지정해 jobSince 를 실제 규칙대로 만든다.
++function prep(opts = {}) {
++  const T = makeCtx(opts.ctx || {}); T.G('startLife()');
++  T.G(`document.getElementById('choices').innerHTML = ''; S.currentEventId = null; S.cause = '';
++       S.race = gachaData.races.find(r => r.id === 'human'); S.raceSubtype = null;
++       S.familia = null; S.falnaAt = null; S.familiaAt = null; S.familiaHistory = []; S.falnaHistory = []; S.parentFamilia = null;
++       S.flags = S.flags.filter(f => !['falna', 'adventurer', 'supporter', 'crafter', 'soldier', 'parents_in_familia', 'born_in_familia'].includes(f));
++       S.falnaState = 'none'; S.falnaHolder = null; S.conversionPending = null; S.falnaTransitions = []; S.syncBaseline = null;
++       S.employer = null; S.hp = 70; S.valis = 1000; S.done = []; S.eventCounts = {}; S.lastEventPhase = {}; S.recentEvents = [];
++       S.application = GameCore.Recruit.newApplicationState(); S.pendingFollowup = null; S.followupSeq = 0; S.job = 'child'; S.jobSince = 0;`);
++  const s = T.S(); const age = opts.age === undefined ? 20 : opts.age;
++  if (opts.job && opts.job !== 'child') { setAge(s, age - (opts.tenure === undefined ? 5 : opts.tenure)); T.G(`setJob(${JSON.stringify(opts.job)})`); }
++  setAge(s, age);
++  if (opts.employer) { const org = T.G(`gachaData.organizations.find(o => o.id === ${JSON.stringify(opts.employer)})`); s.employer = { id: org.id, label: org.label, kind: org.kind, since: s.jobSince }; }
++  if (opts.valis !== undefined) s.valis = opts.valis;
++  T.G('recompute(); followupDiagLog.length = 0;');
++  return { T, s };
++}
++// 심사 결과를 고정한다(합성). 실제 심사 함수 대신 지정 결과를 돌려준다 — 후보 선택(주 RNG 1회)·기록 경로는 실제 코드 그대로.
++const forceOutcome = (T, outcome) => T.G(`GameCore.Recruit.evaluateApplication = () => ({ outcome: ${JSON.stringify(outcome)}, p: ${outcome === 'accepted' ? 1 : 0} })`);
++// 차단 상태 주입: cooldown = 직전 해 일반 지원 거절 1건 / lifetime_cap = 일반 지원 이력 4건(상한)
++function injectBlock(T, s, reason) {
++  if (reason === 'cooldown') s.application.history.push({ route: 'self_apply', at: s.age - 1, attempt: 1, familiaId: 'loki', outcome: 'rejected', p: 0.1 }), s.application.attemptSeq = 1;
++  else if (reason === 'lifetime_cap') { const n = T.G('GameCore.Recruit.RECRUIT_TUNING.lifetimeApplicationCap'); s.application.history = Array.from({ length: n }, (_, i) => ({ route: 'self_apply', at: s.age - 12 + i, attempt: i + 1, familiaId: 'loki', outcome: 'accepted', p: 1 })); s.application.attemptSeq = n; }
++  else throw new Error('unknown reason ' + reason);
++}
++// join_hard 의 "끈질기게 문을 두드린다" 선택을 실제 사건 경로(showEvent → choose)로 실행한다.
++function knock(T) { T.G("globalThis.__jh = EVENTS.find(e => e.id === 'join_hard'); showEvent(globalThis.__jh);"); T.G('choose(globalThis.__jh.choices[0])'); }
++// 거절·차단 뒤 후속 화면까지 연다. how = 'rejected'(심사 결과 고정) | 'cooldown' | 'lifetime_cap'
++function openFollowup(opts = {}, how = 'rejected') {
++  const f = prep(opts);
++  if (how === 'rejected') forceOutcome(f.T, 'rejected'); else injectBlock(f.T, f.s, how);
++  if (opts.before) opts.before(f.T, f.s);
++  knock(f.T);
++  return f;
++}
++const pick = (T, id) => { const b = T.buttons().find(x => x.dataset.followup === id); if (!b) throw new Error('선택지 없음: ' + id + ' / ' + T.buttons().map(x => x.dataset.followup + ':' + x.textContent).join(', ')); return b.click(); };
++const diagCount = (T, ev) => T.G('followupDiagLog').filter(x => x.event === ev).length;
++const appJson = s => JSON.stringify(s.application);
++module.exports = { prep, forceOutcome, injectBlock, knock, openFollowup, pick, diagCount, appJson };
+diff -ruN -x logs base/tests/recruit_2bb_test.js impl/tests/recruit_2bb_test.js
+--- base/tests/recruit_2bb_test.js	2026-11-08 18:04:52.000000000 +0000
++++ impl/tests/recruit_2bb_test.js	2026-11-10 10:44:38.859098778 +0000
+@@ -68,7 +68,8 @@
+   check('RB-2c career_choice → self_apply', E('career_choice').choices.some(c => c.fx && c.fx.recruit && c.fx.recruit.route === 'self_apply'));
+   check('RB-2d latejoin → scout(DIRECT_ROUTES)', E('latejoin').choices[0].fx.recruit.route === 'scout' && T.G('GameCore.Recruit.DIRECT_ROUTES').includes('scout'));
+   check('RB-2e 네 이벤트에 fx.familia:"roll" 남지 않음', ['join', 'join_hard', 'latejoin', 'career_choice'].every(id => E(id).choices.every(c => !(c.fx && c.fx.familia === 'roll'))));
+-  check('RB-2f join_hard 거절 대체 fx = 기존 실패 fx(서포터·400)', JSON.stringify(jh.choices[0].fx.recruit.fallback) === JSON.stringify({ flags: ['supporter'], valis: 400 }));
++  // F-1(C23): 거절 대체 fx(fallback)는 삭제되고 후속 선택(followup)으로 대체되었다. 명시 선택지(서포터 일 구하기 +600)는 그대로.
++  check('RB-2f join_hard: fallback 없음·후속 선택 지정·거절 문구 치환자', jh.choices[0].fx.recruit.fallback === undefined && jh.choices[0].fx.recruit.followup === 'recruit_after_fail' && jh.choices[0].fx.recruit.failText === '{familia}의 심사에서 탈락했다.' && JSON.stringify(jh.choices[1].fx) === JSON.stringify({ flags: ['supporter'], valis: 600 }));
+ });
+ 
+ test('RB-3 합격 경로: 주 RNG 소비·결과가 기존 fx.familia:"roll" 과 같음', () => {
+@@ -146,11 +147,11 @@
+   check('RB-8c attemptSeq 증가 없음(일반 지원과 분리)', !s.application.attemptSeq);
+ });
+ 
+-test('RB-9 join_hard: 거절 시 서포터 대체 fx, 합격 시 없음', () => {
+-  const fx = '{ recruit: { route: "persistence", fallback: { flags: ["supporter"], valis: 400 } } }';
++test('RB-9 join_hard(F-1): 거절 시 자동 대체 효과 없음·후속 선택 보류, 합격 시 보류 없음', () => {
++  const fx = '{ recruit: { route: "persistence", followup: "recruit_after_fail" } }';
+   const r = findOutcome('rejected', fx, 'child'), a = findOutcome('accepted', fx, 'child');
+-  check('RB-9a 거절 → supporter 플래그·직업 supporter·valis +400', !!r && r.s.flags.includes('supporter') && r.s.job === 'supporter' && !r.s.familia, r && { job: r.s.job, flags: r.s.flags });
+-  check('RB-9b 합격 → supporter 대체 fx 미적용', !!a && !a.s.flags.includes('supporter') && !!a.s.familia, a && { job: a.s.job, flags: a.s.flags });
++  check('RB-9a 거절 → supporter 플래그·직업·발리스 자동 변경 없음, 후속 선택 보류 1건', !!r && !r.s.flags.includes('supporter') && r.s.job === 'child' && !r.s.familia && !!r.s.pendingFollowup && r.s.pendingFollowup.kind === 'recruit_after_fail' && r.s.pendingFollowup.context.reason === 'rejected', r && { job: r.s.job, flags: r.s.flags, p: r.s.pendingFollowup });
++  check('RB-9b 합격 → 보류 없음·입단', !!a && !a.s.flags.includes('supporter') && !!a.s.familia && a.s.pendingFollowup === null, a && { job: a.s.job, flags: a.s.flags });
+ });
+ 
+ test('RB-10 2-i 가드: 입단 불가 상태면 기존 거부 기록·지원 기록 없음·난수 0', () => {
+diff -ruN -x logs base/tests/sync_2i_test.js impl/tests/sync_2i_test.js
+--- base/tests/sync_2i_test.js	2026-11-09 13:52:00.000000000 +0000
++++ impl/tests/sync_2i_test.js	2026-11-10 10:44:38.858843338 +0000
+@@ -9,7 +9,8 @@
+ // v1.7.8-ri: R-i 기록 전용 최상위 필드(r1·2-i 에 없음). 최상위에서만 제외한다(같은 이름의 하위 키는 비교 유지).
+ const RI_TOP_FIELDS = ['residence', 'residenceHistory', 'service'];
+ // T1-F F1-d4b(2026-11-09): 근속 기록 전용 최상위 필드 jobSince(r1·2-i 에 없음, lifeDigest·RNG 무관). 최상위에서만 제외.
+-const JOB_TOP_FIELDS = ['jobSince'];
++// T1-F(2026-11-10): 후속 선택 수명주기용 최상위 필드 pendingFollowup·followupSeq(r1·2-i 에 없음, lifeDigest·RNG 무관). 최상위에서만 제외.
++const JOB_TOP_FIELDS = ['jobSince', 'pendingFollowup', 'followupSeq'];
+ const stripNew = s => JSON.stringify(s, function (k, v) { if (NEW_FIELDS.includes(k)) return undefined; if (this === s && (RI_TOP_FIELDS.includes(k) || JOB_TOP_FIELDS.includes(k))) return undefined; return v; });
+ 
+ function el() {

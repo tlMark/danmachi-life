@@ -1,0 +1,70 @@
+PASS GG-1a active 모험자 → match true
+PASS GG-1b 팔나 없는 소속 모험자(none) → match false
+PASS GG-1c sealed → match false
+PASS GG-2a seed 1 전이 = god_returned → regrant(2건, 이중 기록 없음) — ["god_returned","regrant"]
+PASS GG-2b seed 1 상태 active·새 holder ≠ loki — {"st":"active","h":"astraea"}
+PASS GG-2c seed 1 소속 이력: loki 종료(god_returned) + 새 소속(viaConversion) — [{"id":1,"familiaId":"loki","label":"로키 파밀리아","joinedAt":15,"leftAt":30,"leftReason":"god_returned","role":"member","falnaAt":15},{"id":2,"familiaId":"astraea","label":"아스트레아 파밀리아","joinedAt":30,"leftAt":null,"leftReason":null,"falnaAt":30,"falnaAlreadyHeld":true,"viaParent":false,"viaConversion":true,"role":"member"}]
+PASS GG-2d seed 1 직업 adventurer 유지(Q7)·레벨·능력치 보존
+PASS GG-2e seed 1 falnaHistory regrant 1건 추가·conversionPending null·statusResumeAge = 31
+PASS GG-2f seed 1 동기화 불변식 기록 0 — []
+PASS GG-2h seed 1 레벨 이력 falna_again 1건(Lv 불변)·비 levelup 항목 수 = falnaHistory 수 — [{"age":30,"kind":"falna_again","from":2,"to":2}]
+PASS GG-2g seed 1 난수: ok 분기 직접 적용(chance 판정 생략) → 후보 선택 정확히 1회 — 1
+PASS GG-2a seed 11 전이 = god_returned → regrant(2건, 이중 기록 없음) — ["god_returned","regrant"]
+PASS GG-2b seed 11 상태 active·새 holder ≠ loki — {"st":"active","h":"kali"}
+PASS GG-2c seed 11 소속 이력: loki 종료(god_returned) + 새 소속(viaConversion) — [{"id":1,"familiaId":"loki","label":"로키 파밀리아","joinedAt":15,"leftAt":30,"leftReason":"god_returned","role":"member","falnaAt":15},{"id":2,"familiaId":"kali","label":"칼리 파밀리아","joinedAt":30,"leftAt":null,"leftReason":null,"falnaAt":30,"falnaAlreadyHeld":true,"viaParent":false,"viaConversion":true,"role":"member"}]
+PASS GG-2d seed 11 직업 adventurer 유지(Q7)·레벨·능력치 보존
+PASS GG-2e seed 11 falnaHistory regrant 1건 추가·conversionPending null·statusResumeAge = 31
+PASS GG-2f seed 11 동기화 불변식 기록 0 — []
+PASS GG-2h seed 11 레벨 이력 falna_again 1건(Lv 불변)·비 levelup 항목 수 = falnaHistory 수 — [{"age":30,"kind":"falna_again","from":2,"to":2}]
+PASS GG-2g seed 11 난수: ok 분기 직접 적용(chance 판정 생략) → 후보 선택 정확히 1회 — 1
+PASS GG-2a seed 777 전이 = god_returned → regrant(2건, 이중 기록 없음) — ["god_returned","regrant"]
+PASS GG-2b seed 777 상태 active·새 holder ≠ loki — {"st":"active","h":"ares"}
+PASS GG-2c seed 777 소속 이력: loki 종료(god_returned) + 새 소속(viaConversion) — [{"id":1,"familiaId":"loki","label":"로키 파밀리아","joinedAt":15,"leftAt":30,"leftReason":"god_returned","role":"member","falnaAt":15},{"id":2,"familiaId":"ares","label":"아레스 파밀리아","joinedAt":30,"leftAt":null,"leftReason":null,"falnaAt":30,"falnaAlreadyHeld":true,"viaParent":false,"viaConversion":true,"role":"member"}]
+PASS GG-2d seed 777 직업 adventurer 유지(Q7)·레벨·능력치 보존
+PASS GG-2e seed 777 falnaHistory regrant 1건 추가·conversionPending null·statusResumeAge = 31
+PASS GG-2f seed 777 동기화 불변식 기록 0 — []
+PASS GG-2h seed 777 레벨 이력 falna_again 1건(Lv 불변)·비 levelup 항목 수 = falnaHistory 수 — [{"age":30,"kind":"falna_again","from":2,"to":2}]
+PASS GG-2g seed 777 난수: ok 분기 직접 적용(chance 판정 생략) → 후보 선택 정확히 1회 — 1
+PASS GG-2a seed 20261104 전이 = god_returned → regrant(2건, 이중 기록 없음) — ["god_returned","regrant"]
+PASS GG-2b seed 20261104 상태 active·새 holder ≠ loki — {"st":"active","h":"demeter"}
+PASS GG-2c seed 20261104 소속 이력: loki 종료(god_returned) + 새 소속(viaConversion) — [{"id":1,"familiaId":"loki","label":"로키 파밀리아","joinedAt":15,"leftAt":30,"leftReason":"god_returned","role":"member","falnaAt":15},{"id":2,"familiaId":"demeter","label":"데메테르 파밀리아","joinedAt":30,"leftAt":null,"leftReason":null,"falnaAt":30,"falnaAlreadyHeld":true,"viaParent":false,"viaConversion":true,"role":"member"}]
+PASS GG-2d seed 20261104 직업 adventurer 유지(Q7)·레벨·능력치 보존
+PASS GG-2e seed 20261104 falnaHistory regrant 1건 추가·conversionPending null·statusResumeAge = 31
+PASS GG-2f seed 20261104 동기화 불변식 기록 0 — []
+PASS GG-2h seed 20261104 레벨 이력 falna_again 1건(Lv 불변)·비 levelup 항목 수 = falnaHistory 수 — [{"age":30,"kind":"falna_again","from":2,"to":2}]
+PASS GG-2g seed 20261104 난수: ok 분기 직접 적용(chance 판정 생략) → 후보 선택 정확히 1회 — 1
+PASS GG-2a seed 5 전이 = god_returned → regrant(2건, 이중 기록 없음) — ["god_returned","regrant"]
+PASS GG-2b seed 5 상태 active·새 holder ≠ loki — {"st":"active","h":"astraea"}
+PASS GG-2c seed 5 소속 이력: loki 종료(god_returned) + 새 소속(viaConversion) — [{"id":1,"familiaId":"loki","label":"로키 파밀리아","joinedAt":15,"leftAt":30,"leftReason":"god_returned","role":"member","falnaAt":15},{"id":2,"familiaId":"astraea","label":"아스트레아 파밀리아","joinedAt":30,"leftAt":null,"leftReason":null,"falnaAt":30,"falnaAlreadyHeld":true,"viaParent":false,"viaConversion":true,"role":"member"}]
+PASS GG-2d seed 5 직업 adventurer 유지(Q7)·레벨·능력치 보존
+PASS GG-2e seed 5 falnaHistory regrant 1건 추가·conversionPending null·statusResumeAge = 31
+PASS GG-2f seed 5 동기화 불변식 기록 0 — []
+PASS GG-2h seed 5 레벨 이력 falna_again 1건(Lv 불변)·비 levelup 항목 수 = falnaHistory 수 — [{"age":30,"kind":"falna_again","from":2,"to":2}]
+PASS GG-2g seed 5 난수: ok 분기 직접 적용(chance 판정 생략) → 후보 선택 정확히 1회 — 1
+PASS GG-3a fail 전이 god_returned 1건 — ["god_returned"]
+PASS GG-3b fail sealed·소속 없음·팔나 플래그 없음
+PASS GG-3c fail 소속 이력 종료 1회(god_returned), left 없음
+PASS GG-3d fail conversionPending god_returned·ganesha
+PASS GG-3e fail 직업 retired(선택지에 명시된 clearFlags adventurer)·레벨 보존
+PASS GG-3f fail 난수 0(봉인 경로) — 0
+PASS GG-3g fail 동기화 불변식 기록 0 — []
+PASS GG-3a giveup 전이 god_returned 1건 — ["god_returned"]
+PASS GG-3b giveup sealed·소속 없음·팔나 플래그 없음
+PASS GG-3c giveup 소속 이력 종료 1회(god_returned), left 없음
+PASS GG-3d giveup conversionPending god_returned·ganesha
+PASS GG-3e giveup 직업 retired(선택지에 명시된 clearFlags adventurer)·레벨 보존
+PASS GG-3f giveup 난수 0(봉인 경로) — 0
+PASS GG-3g giveup 동기화 불변식 기록 0 — []
+PASS GG-4a 400시드 재수여 결과에 ares 0건 — {"hits":0,"n":400}
+PASS GG-4b exclude 적용 후 남은 후보만(hestia) — "hestia"
+PASS GG-4c 인자 없는 기존 호출은 동작·난수 동일
+PASS GG-7a chance 성공(난수 0.0) → god_returned·regrant, 난수 = 판정 1 + 후보 1 — {"tr":["god_returned","regrant"],"d":2,"fam":"ares"}
+PASS GG-7b chance 실패(난수 0.999) → god_returned 만·sealed·retired, 난수 = 판정 1 — {"tr":["god_returned"],"d":1}
+PASS GG-8 fail dropFamilia 없음·godReturn seal·clearFlags=[adventurer] — {"godReturn":"seal","clearFlags":["adventurer"],"bond":-3}
+PASS GG-8 giveup dropFamilia 없음·godReturn seal·clearFlags=[adventurer] — {"godReturn":"seal","clearFlags":["adventurer"],"hp":5}
+PASS GG-8 ok fx = { godReturn: regrant } 만 — {"godReturn":"regrant"}
+PASS GG-8 cond.falnaState = [active] — {"age":[20,60],"job":["adventurer"],"falnaState":["active"]}
+PASS GG-5
+PASS GG-6 — ["god_return_seal_rejected"]
+RESULT: PASS 68/68
+exit=0

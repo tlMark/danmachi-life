@@ -1,0 +1,4 @@
+DIFF  calendar/20261104: baseline=127410497 now=2617292688 exit=0
+DIFF  newborn_parent_familia/20261104: baseline=3932767934 now=2325388316 exit=0
+FAIL: 2/2 불일치
+exit=1

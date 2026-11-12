@@ -1,0 +1,6 @@
+SAME  physical/777: baseline=2529723506 now=2529723506 exit=0
+SAME  physical/314159: baseline=559088383 now=559088383 exit=0
+SAME  physical/8675309: baseline=1718625649 now=1718625649 exit=0
+SAME  physical/20261104: baseline=1438657387 now=1438657387 exit=0
+PASS: 4개 구성 모두 기준과 동일 (필터: physical, 전체 10개 중)
+exit=0

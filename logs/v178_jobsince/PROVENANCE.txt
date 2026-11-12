@@ -1,0 +1,7 @@
+기준 ZIP: Danmachi_v1.7.8-2bb_integrated.zip  5e2d5073f14cb7678ba53ecf8456a167bb13c4748965d90da70ed6c9c82b178e
+r1 폴더(sync_2i_test r1 대조): Danmachi_v1.7.7r1_integrated.zip 압축 해제본, script.js 53bdfbb1b69e439f…
+실행 환경: Node v22.23.4, Playwright 1.63.0, Chromium 153.0.8010.12, 실행자 Claude(2026-11-09). ChatGPT 독립 재실행 아님.
+sync_2i_r1_before_testfix.log = 테스트 제외 목록 수정 전 실행(24/136, 실패 원인: r1 대조가 새 최상위 필드 jobSince 를 비교) — 기록 보존
+sync_2i_r1_fixedtest_on_base.log = 수정한 sync_2i_test.js 를 v1.7.8-2bb(jobSince 없음)에 적용한 결과(136/136, 판정 완화 없음 확인)
+reg_*.log 의 DIFF 는 v1.7.4 기준 JSON 대비(2bb 이후 결과 변경 단계라 정상). 2bb 값과의 비교는 보고서 표.
+browser_file.log = Playwright 기본 headless(headless shell), browser_file_fullchrome.log = 전체 Chrome(CHROMIUM_PATH), browser_inline.log = inline(file:// 검증 아님). 이 환경에는 URL 차단 정책 없음.

@@ -6,6 +6,80 @@ const rankOf = v => v >= 1200 ? 'SSS' : v >= 1000 ? 'SS' : RANKS[Math.min(9, Mat
 const rnd = ([a, b]) => a + Math.floor(Math.random() * (b - a + 1));
 const LEVELUP_ABIL = 500;    // 레벨업 조건: 능력치 하나가 D(500) 이상
 let S;
+// ── T1-F/F-1 공통 후속 선택 수명주기(결정 r9 C26·C27, 설계 r7 §N-1) ─────────────────────────────
+// 보류 상태 = S.pendingFollowup(데이터만, 함수 저장 없음). 사건별 선택지·효과는 FOLLOWUP_KINDS[kind] 에 둔다.
+const followupDiagLog = [];        // 진단 전용(S 밖). lifeDigest·RNG 에 관여하지 않는다.
+function followupDiag(event, data) {
+    const p = S && S.pendingFollowup ? S.pendingFollowup : null;
+    followupDiagLog.push({ event, at: S ? S.age : null, seq: p ? p.seq : null, phase: p ? p.phase : null, ...(data || {}) });
+}
+const FOLLOWUP_KINDS = {};
+// ── 예외 후 진행 정지(N1-6b)·생애 세대 토큰(N1-6c G1+G1+). 모두 S 밖의 모듈 변수 — lifeDigest·RNG 에 관여하지 않는다. ──
+let progressHalted = false;        // 후속 선택 처리 중 예외가 나면 true. 해제는 startLife(새 게임)에서만 한다.
+let lifeGen = 0;                   // startLife 마다 +1. 이전 생애에 예약된 자동 진행 타이머를 무효로 만든다.
+const autoTimers = [];             // 예약된 자동 진행 타이머 id(취소용 보조 수단, G1+)
+function haltedEntry(name) {       // 함수 진입 가드. 정지 중이면 진단만 남기고 true(호출자는 즉시 반환).
+    if (!progressHalted) return false;
+    followupDiag('halted_entry', { fn: name });
+    return true;
+}
+// 자동 진행 타이머는 이 래퍼로만 예약한다. 콜백 첫 줄에서 정지·세대를 검사한 뒤에만 본문(난수·클릭)을 실행한다.
+function scheduleAuto(fn, ms) {
+    const gen = lifeGen; let id = null, fired = false;
+    id = setTimeout(() => {
+        fired = true;
+        const i = autoTimers.indexOf(id); if (i >= 0) autoTimers.splice(i, 1);
+        if (progressHalted || gen !== lifeGen) { followupDiag('stale_timer', { gen, lifeGen, halted: progressHalted }); return; }
+        fn();
+    }, ms);
+    if (!fired) autoTimers.push(id);
+    return id;
+}
+function clearAutoTimers() { while (autoTimers.length) clearTimeout(autoTimers.pop()); }
+// R1 롤백(N1-6): 후속 선택 효과가 바꿀 수 있는 필드만 저장한다. 복사본은 원본 참조와 독립이다.
+// 2-i 기록(falnaState·falnaHolder·falnaTransitions·conversionPending·syncBaseline)과 application·소속·관계 내용은 복원 대상이 아니다(효과가 건드리지 않으며 테스트로 직접 확인).
+const ROLLBACK_VALUE_FIELDS = ['job', 'jobSince', 'valis', 'hp', 'bond', 'feat', 'potential', 'excelia', 'level', 'hidden', 'maxLevel', 'power', 'alias', 'nextRelationId'];
+const ROLLBACK_CONTAINER_FIELDS = ['items', 'itemUses', 'itemsConsumed', 'relations'];   // 존재 여부·교체 여부만 되돌린다(내용은 효과가 바꾸지 않음)
+function takeRollbackSnapshot() {
+    const has = k => Object.prototype.hasOwnProperty.call(S, k);
+    const copy = v => Array.isArray(v) ? v.slice() : (v && typeof v === 'object') ? { ...v } : v;
+    const rb = { values: {}, copies: {}, containers: {}, logLen: Array.isArray(S.logHistory) ? S.logHistory.length : null,
+        levelHistory: { has: has('levelHistory'), ref: S.levelHistory, len: Array.isArray(S.levelHistory) ? S.levelHistory.length : null } };
+    ROLLBACK_VALUE_FIELDS.forEach(k => { rb.values[k] = { has: has(k), value: S[k] }; });
+    ['flags', 'employer', 'abil'].forEach(k => { rb.copies[k] = { has: has(k), value: copy(S[k]) }; });
+    ROLLBACK_CONTAINER_FIELDS.forEach(k => { rb.containers[k] = { has: has(k), ref: S[k] }; });
+    return rb;
+}
+function restoreRollbackSnapshot(rb) {
+    const put = (k, r) => { if (r.has) S[k] = r.value; else delete S[k]; };
+    Object.keys(rb.values).forEach(k => put(k, rb.values[k]));
+    Object.keys(rb.copies).forEach(k => put(k, rb.copies[k]));
+    // 컨테이너: 원래 없던 필드는 지우고, 다른 객체로 교체된 필드(예: null → [])는 원래 값으로 되돌린다.
+    Object.keys(rb.containers).forEach(k => { const r = rb.containers[k]; if (!r.has) delete S[k]; else if (S[k] !== r.ref) S[k] = r.ref; });
+    if (rb.logLen != null && Array.isArray(S.logHistory) && S.logHistory.length > rb.logLen) S.logHistory.length = rb.logLen;
+    const lh = rb.levelHistory;
+    if (!lh.has) delete S.levelHistory;
+    else if (S.levelHistory !== lh.ref) S.levelHistory = lh.ref;
+    if (lh.has && lh.len != null && Array.isArray(S.levelHistory) && S.levelHistory.length > lh.len) S.levelHistory.length = lh.len;
+}
+// R-E: 예외 경로 전용 렌더. renderStats 가 조회 중 만들 수 있는 컨테이너(관계·아이템)가 실제 S 에 생기지 않도록 복제본으로 그린다.
+function cloneStateForRender(v) {
+    if (Array.isArray(v)) return v.map(cloneStateForRender);
+    if (v && typeof v === 'object') { const o = {}; Object.keys(v).forEach(k => { o[k] = cloneStateForRender(v[k]); }); return o; }
+    return v;
+}
+function renderStatsFromClone() {
+    const real = S;
+    try { S = cloneStateForRender(real); renderStats(); }
+    finally { S = real; }
+}
+function showHaltNotice() {        // 화면 전용(logHistory 미기록)
+    const d = document.createElement('div');
+    d.className = 'entry result bad';
+    d.innerHTML = '선택을 처리하는 중 오류가 발생해 진행을 멈췄다. 처음부터 다시 시작해 주세요.';
+    $('log').appendChild(d);
+    d.scrollIntoView({ block: 'nearest' });
+}         // kind → { prompt, options(S, pending) → [{ id, label, stay }], resolve(S, optionId, pending) }
 // v1.7.8-2i: 팔나 상태 기록(설계 r2k-4 §2.8). 기록 전용 — 난수·판정·성장 경로를 바꾸지 않는다.
 let syncDepth = 0;                 // 동기화 범위 깊이. 모듈 로드 시 1회만 0 으로 둔다(startLife 는 대입하지 않음, U3).
 const syncInvariantLog = [];       // 기록 전용 불변식 위반(테스트 러너가 읽어 간다). 값 자동 보정 없음.
@@ -21,6 +95,7 @@ const JOB_LABELS = { child:'유년기', adventurer:'모험자', supporter:'서�
 const JOB_ORG = { guild: 'guild_staff', hostess: 'waitstaff' };
 const JOB_FAMILIA = { hephaestus:'blacksmith', demeter:'farmer', miach:'healer', ares:'soldier', kali:'soldier' };
 function setAspiration(kind, source) {
+    if (haltedEntry('setAspiration')) return;   // H3 정지 가드
     S.aspirationHistory ||= [];
     if (S.aspiration && S.aspiration.kind === kind) return;
     S.aspiration = { kind, since: S.age, source, fulfilledAt: null };
@@ -28,8 +103,12 @@ function setAspiration(kind, source) {
 }
 
 function setJob(job) {
+    if (haltedEntry('setJob')) return;   // H3 정지 가드
     const previous = S.job;
     S.job = job;
+    // T1-F F1-d4b J-3(승인 2026-11-09): 실제 직업 변경 시에만 근속 시작 달력 나이 갱신. 같은 직업 재설정은 유지.
+    // S.employer.since(고용처 근무 시작)와 별개 의미. lifeDigest·RNG 에 관여하지 않음(기록 전용).
+    if (previous !== job) S.jobSince = S.age;
     S.flags = S.flags.filter(f => !['adventurer','supporter','crafter','soldier'].includes(f));
     if (job === 'adventurer') { S.flags.push('adventurer'); setAspiration('adventurer', 'job_assigned'); }
     if (job === 'supporter') S.flags.push('supporter');
@@ -210,7 +289,9 @@ const rollModeFor = fxFamilia => {
 // ── 전이 함수(설계 §2.3·§2.3.1). 2-i 에서는 정의·단위 테스트만 하고 게임 흐름에서 호출하지 않는다. ──
 function rejectFalnaTransition(to, why) { pushFalnaTransition({ from: S.falnaState, to, holderFrom: S.falnaHolder ?? null, holderTo: S.falnaHolder ?? null, cause: 'rejected', reason: why, eventId: S.currentEventId ?? null }); return false; }
 function falnaTransitionAllowed(from, to) { return !(FALNA_FORBIDDEN[from] || []).includes(to); }
-function leaveFamilia() {   // 명시적 탈퇴: active → unbound (2-ii 에서 연결)
+function leaveFamilia() {
+    if (haltedEntry('leaveFamilia')) return;   // H3 정지 가드
+     // 명시적 탈퇴: active → unbound (2-ii 에서 연결)
     if (!S.familia) return false;   // 무소속이면 무변화(T3b)
     const from = S.falnaState, fromFamiliaId = S.familia.id;
     if (from === 'active' && !falnaTransitionAllowed(from, 'unbound')) return rejectFalnaTransition('unbound', 'forbidden');
@@ -223,7 +304,9 @@ function leaveFamilia() {   // 명시적 탈퇴: active → unbound (2-ii 에서
     S.falnaState = to; S.falnaHolder = null;
     return true;
 }
-function sealByGodReturn() {   // 신의 송환: active → sealed, 레벨·능력치 보존, 직업 불변 (2-ii 에서 연결)
+function sealByGodReturn() {
+    if (haltedEntry('sealByGodReturn')) return;   // H3 정지 가드
+     // 신의 송환: active → sealed, 레벨·능력치 보존, 직업 불변 (2-ii 에서 연결)
     if (S.falnaState !== 'active' || !S.familia) return rejectFalnaTransition('sealed', 'not_active_member');
     const fromFamiliaId = S.familia.id, holderFrom = S.falnaHolder;
     closeMembership('god_returned'); S.familia = null; S.falnaAt = null; S.familiaAt = null;
@@ -261,6 +344,7 @@ function recruitBlockReason() {
     return null;
 }
 function applyRecruit(spec) {
+    if (haltedEntry('applyRecruit')) return;   // H3 정지 가드
     const R = GameCore.Recruit, route = spec && spec.route;
     if (!R.ROUTES.includes(route)) { syncInvariantLog.push({ kind: 'recruit_unknown_route', value: route, eventId: S.currentEventId ?? null }); return false; }
     S.application ||= R.newApplicationState();
@@ -278,7 +362,7 @@ function applyRecruit(spec) {
     if (blocked) {
         (S.application.blocked ||= []).push({ route, at: S.age, reason: blocked });
         say(blocked === 'cooldown' ? '얼마 전 거절당한 기억 때문에 이번에는 지원하지 못했다.' : '더는 파밀리아의 문을 두드릴 기력이 남지 않았다.', 'result');
-        if (spec.fallback) apply(spec.fallback);
+        if (spec.followup) createFollowup(spec.followup, { route, reason: blocked });   // F-1(C23·C27): 자동 대체 효과 없음. 생존 확인 뒤 후속 선택으로 이어진다
         return false;
     }
     const attempt = (S.application.attemptSeq || 0) + 1; S.application.attemptSeq = attempt;
@@ -294,10 +378,61 @@ function applyRecruit(spec) {
         rollFamilia(cand.id, mode);   // forcedId: 추가 후보 난수 없음 → falnaAt 주 RNG 는 기존과 같음
         return true;
     }
-    say((spec.failText || '받아 주는 신을 찾지 못했다.') + ` (${cand.label} 심사 탈락)`, 'result');
-    if (spec.fallback) apply(spec.fallback);
+    // T-1: 거절 문구에 {familia} 치환자가 있으면 파밀리아 이름으로 바꾸고 접미사를 붙이지 않는다(이름 1회). 치환자가 없으면 기존 접미사를 유지한다.
+    { const failText = spec.failText || '받아 주는 신을 찾지 못했다.';
+      say(failText.includes('{familia}') ? failText.split('{familia}').join(cand.label) : failText + ` (${cand.label} 심사 탈락)`, 'result'); }
+    if (spec.followup) createFollowup(spec.followup, { route, reason: 'rejected' });      // F-1(C23·C27)
     return false;
 }
+// F1-d4a 퇴직금 고정액(C31). **액수는 사용자 미결** — 숫자가 정해지기 전에는 null 로 두고 지급하지 않는다(임의 금액 금지).
+const SEVERANCE_AMOUNT = null;
+// ── F-1 후속 선택(일반 지원 거절·차단 뒤): 선택지 C25 + S-1. 자동 진행은 항상 stay(C21·C24). 선택지 노출은 C20(이미 서포터면 숨김). ──
+FOLLOWUP_KINDS.recruit_after_fail = {
+    prompt: '앞으로 어떻게 지낼까?',
+    options(S) {
+        const list = [];
+        if (S.job !== 'supporter') {
+            const label = S.employer ? '현재 고용처를 그만두고 서포터로 전직한다'
+                : S.job === 'retired' ? '은퇴 생활을 접고 서포터 일을 시작한다'
+                : S.job === 'child' ? '서포터 일을 시작한다'
+                : '현재 직업을 그만두고 서포터로 전직한다';
+            list.push({ id: 'supporter', label });
+        }
+        list.push({ id: 'stay', label: '지금 생활을 이어간다', stay: true });
+        return list;
+    },
+    resolve(S, optionId) {
+        if (optionId === 'stay') return;                 // C29: 아무 상태도 바꾸지 않는다
+        if (optionId !== 'supporter') throw new Error('recruit_after_fail: 알 수 없는 선택 ' + optionId);
+        // ① J-4 판정 스냅숏: 전직 전의 직업·근속으로 고정한다. 이후 단계에서 다시 계산하지 않는다(setJob 뒤에는 근속이 0 이 된다).
+        const tenureYears = S.age - S.jobSince;
+        const sev = Object.freeze({ job: S.job, jobSince: S.jobSince, age: S.age, tenureYears,
+            eligible: S.job !== 'child' && S.job !== 'supporter' && S.job !== 'retired' && Number.isFinite(tenureYears) && tenureYears >= 5,
+            employerId: S.employer ? S.employer.id : null, amount: SEVERANCE_AMOUNT });
+        followupDiag('severance_snapshot', { sev });
+        // ② 고용처 퇴직(C22 E-1): 연표 기록 1건 후 해제. setJob 은 고용처를 건드리지 않으므로 여기서만 처리한다.
+        if (S.employer) {
+            const text = `${S.employer.label}을(를) 그만두었다.`;
+            S.logHistory.push({ age: S.age, type: 'job', kind: 'employer_quit', text });
+            S.employer = null;
+            sayDomOnly(text, 'result');
+        }
+        // ③ 주 직업 전환(C28) 후 성공 확인. 팔나·소속·application 은 건드리지 않는다(C30).
+        setJob('supporter');
+        if (!(S.job === 'supporter' && S.jobSince === S.age && S.flags.includes('supporter'))) throw new Error('recruit_after_fail: 서포터 전직 확인 실패');
+        // ④ 퇴직금(C11·C13, 지급 방법 P2): 전직이 끝난 뒤, ①의 스냅숏으로만 판정한다. 자격이 없거나 액수가 0·미결이면 apply 를 부르지 않는다.
+        if (sev.eligible) {
+            if (Number.isFinite(sev.amount) && sev.amount > 0) {
+                apply({ valis: sev.amount });
+                const text = `${JOB_LABELS[sev.job] || sev.job}(으)로 ${sev.tenureYears}년 일한 끝에 퇴직금 ${sev.amount}발리스를 받았다.`;
+                S.logHistory.push({ age: S.age, type: 'job', kind: 'severance', text });
+                sayDomOnly(text, 'result');
+            } else {
+                followupDiag('severance_amount_undecided', { tenureYears: sev.tenureYears, job: sev.job });
+            }
+        }
+    }
+};
 // 2b-a: 전이 함수가 범위 안에서 스스로 전이를 기록한 뒤, 범위 끝 동기화가 같은 변화를 다시 기록하지 않도록 기준값을 현재 상태로 맞춘다.
 function rebaseSyncAfterTransition() {
     const b = S.syncBaseline;
@@ -306,6 +441,7 @@ function rebaseSyncAfterTransition() {
 }
 // 2b-a: god_gone 전용. mode = 'seal'(봉인만) | 'regrant'(봉인 후 재수여). 직업은 바꾸지 않는다(Q7). 난수: regrant 의 후보 선택 1회만.
 function applyGodReturn(mode) {
+    if (haltedEntry('applyGodReturn')) return;   // H3 정지 가드
     if (mode !== 'seal' && mode !== 'regrant') { syncInvariantLog.push({ kind: 'god_return_unknown_mode', value: mode, at: S.age }); return false; }
     if (!sealByGodReturn()) { syncInvariantLog.push({ kind: 'god_return_seal_rejected', at: S.age, eventId: S.currentEventId ?? null }); return false; }
     rebaseSyncAfterTransition();
@@ -320,7 +456,9 @@ function applyGodReturn(mode) {
     say(`<b class="lv">팔나 재취득 · Lv.${S.level}</b>`, 'levelup', S.age);
     return true;
 }
-function completeConversion(familiaId, reason) {   // 유일한 unbound/sealed → active 경로(2-ii 에서 연결)
+function completeConversion(familiaId, reason) {
+    if (haltedEntry('completeConversion')) return;   // H3 정지 가드
+     // 유일한 unbound/sealed → active 경로(2-ii 에서 연결)
     const from = S.falnaState;
     if (!(S.conversionPending != null && !S.familia && (from === 'unbound' || from === 'sealed'))) return rejectFalnaTransition('active', 'precondition');
     const fam = gachaData.familias.find(f => f.id === familiaId);
@@ -338,6 +476,7 @@ function completeConversion(familiaId, reason) {   // 유일한 unbound/sealed �
 
 // S.power는 이벤트 판정용 종합 전투력입니다. 성장 계산은 core/growth.js가 담당합니다.
 function recompute() {
+    if (haltedEntry('recompute')) return;   // H3 정지 가드
     // 장착 중인 무기·방어구만 전투력에 반영한다. 소모품은 사용될 때만 효과가 난다(core/items.js).
     const itemPower = GameCore.Items.equipmentPower(S);
 
@@ -361,6 +500,7 @@ function levelLabel() {
 }
 
 function recordLevel(kind, from, to) {
+    if (haltedEntry('recordLevel')) return;   // H3 정지 가드
     S.levelHistory ||= [];
     S.levelHistory.push({ age: S.age, kind, from, to });
     S.maxLevel = Math.max(S.maxLevel || 0, to);
@@ -398,6 +538,7 @@ function describeRelations() {
 }
 
 function convertExp() {
+    if (haltedEntry('convertExp')) return;   // H3 정지 가드
     if (!hasFalna()) return false;
     const converted = GameCore.Growth.convertExcelia(S, MODS);
     // A level-up can become available from a feat-only event after the D-rank
@@ -407,6 +548,7 @@ function convertExp() {
 }
 
 function tryLevelUp() {
+    if (haltedEntry('tryLevelUp')) return;   // H3 정지 가드
     const level = Number.isFinite(S.level) ? Math.max(1, S.level) : 1;
     const feat = Number.isFinite(S.feat) ? Math.max(0, S.feat) : 0;
     const validStats = ABIL.map(([k]) => Number.isFinite(S.abil[k]) ? Math.max(0, S.abil[k]) : 0);
@@ -425,6 +567,7 @@ function tryLevelUp() {
 }
 
 function apply(fx = {}) {
+    if (haltedEntry('apply')) return;   // H3 정지 가드
     if (!fx || typeof fx !== 'object') fx = {};
     return withScope('apply', fx, token => applyEffects(fx, token));   // v1.7.8-2i: 동기화 범위(기록 전용)
 }
@@ -498,13 +641,17 @@ function applyEffects(fx, token) {
 }
 
 // 파밀리아 소속 이력. 입단·탈퇴·변경을 항목별로 남기고, 팔나 취득은 falnaHistory 에 따로 기록한다.
-function ensureHistory() { S.familiaHistory ||= []; S.falnaHistory ||= []; }
+function ensureHistory() {
+    if (haltedEntry('ensureHistory')) return;   // H3 정지 가드
+    S.familiaHistory ||= []; S.falnaHistory ||= []; }
 function closeMembership(reason) {
+    if (haltedEntry('closeMembership')) return;   // H3 정지 가드
     ensureHistory();
     const open = S.familiaHistory.find(m => m.leftAt == null);
     if (open) { open.leftAt = S.age; open.leftReason = reason; }
 }
 function openMembership() {
+    if (haltedEntry('openMembership')) return;   // H3 정지 가드
     ensureHistory();
     closeMembership('changed');
     S.nextMembershipId = (S.nextMembershipId || 1);
@@ -514,6 +661,7 @@ function openMembership() {
 
 // 조직·고용처에 고용된다(팔나 없음). 파밀리아 추첨과 섞지 않으며, fx.organization 으로 명시된 이벤트 선택에서만 호출된다.
 function joinOrganization(orgId) {
+    if (haltedEntry('joinOrganization')) return;   // H3 정지 가드
     const org = (gachaData.organizations || []).find(o => o.id === orgId);
     if (!org) throw new Error('unknown organization: ' + orgId);
     S.employer = { id: org.id, label: org.label, kind: org.kind, since: S.age };
@@ -524,6 +672,7 @@ function joinOrganization(orgId) {
 
 // mode: v1.7.8-2i 입단 호출 모드(설계 §2.3.2). 가드는 난수 사용 전에 검사한다. mode 없이 부르면 기존 동작(가드 없음).
 function rollFamilia(forcedId, mode) {
+    if (haltedEntry('rollFamilia')) return;   // H3 정지 가드
     return withScope('rollFamilia', null, () => rollFamiliaBody(forcedId, mode));
 }
 function rollFamiliaBody(forcedId, mode) {
@@ -552,7 +701,9 @@ function rollFamiliaBody(forcedId, mode) {
     checkFalna();
 }
 
-function checkFalna() { return withScope('checkFalna', null, checkFalnaBody); }   // v1.7.8-2i: 동기화 범위(기록 전용)
+function checkFalna() {
+    if (haltedEntry('checkFalna')) return;   // H3 정지 가드
+    return withScope('checkFalna', null, checkFalnaBody); }   // v1.7.8-2i: 동기화 범위(기록 전용)
 function checkFalnaBody() {
     if (!S.familia || S.falnaAt == null || hasFalna() || S.age < S.falnaAt) return;
     const m = MODS.familias[S.familia.id] || {};
@@ -573,6 +724,7 @@ function checkFalnaBody() {
 // ── R-i(v1.7.8-ri): 거주지 기록 전용 ─────────────────────────────────────────────
 // 거주 필드·이력만 바꾼다. S.origin·직업·파밀리아·팔나·가족·연애·아이템·발리스·플래그·로그를 건드리지 않고 난수를 쓰지 않는다.
 function moveResidence(toRegionId, reason) {
+    if (haltedEntry('moveResidence')) return;   // H3 정지 가드
     if (!REGION_IDS.includes(toRegionId)) { syncInvariantLog.push({ kind: 'residence_unknown_region', value: toRegionId, eventId: S.currentEventId ?? null }); return false; }
     if (!S.residence || !Array.isArray(S.residenceHistory) || S.residenceHistory.length === 0) { syncInvariantLog.push({ kind: 'residence_missing_state', eventId: S.currentEventId ?? null }); return false; }
     if (S.residence.regionId === toRegionId) return false;   // 같은 지역 = 이력 무변화
@@ -584,6 +736,7 @@ function moveResidence(toRegionId, reason) {
 }
 // 복무 기록(RES-2 §3.4). S.flags 와 분리. R-i 에서는 생성만 하고 해제·조건 판정에 쓰지 않는다.
 function recordService(kind) {
+    if (haltedEntry('recordService')) return;   // H3 정지 가드
     if (kind !== 'conscripted' && kind !== 'deserter') { syncInvariantLog.push({ kind: 'service_unknown_kind', value: kind, eventId: S.currentEventId ?? null }); return false; }
     if (!S.service) S.service = {};
     if (S.service[kind]) return false;
@@ -594,6 +747,7 @@ function recordService(kind) {
 }
 
 function startLife() {
+    progressHalted = false; lifeGen += 1; clearAutoTimers();   // 새 게임: 정지 해제는 여기서만. 이전 생애의 자동 진행 타이머는 세대 불일치로 무효
     // v1.7.8-2i(U3): 깊이는 검사만 하고 바꾸지 않는다(모듈 로드 시 1회 0).
     if (syncDepth !== 0) syncInvariantLog.push({ kind: 'sync_depth_nonzero_at_life_start', value: syncDepth });
     const origin = getRandomItemByWeight(gachaData.origins);
@@ -602,7 +756,8 @@ function startLife() {
     S = { age: 0, chronologicalAge: 0, physicalAge: 0, phase: 0, hp: 70, power: 0,
           potential: 0, excelia: 0, feat: 0, level: 0, hidden: 0, bond: 0, valis: 0,
           abil: { str: 0, vit: 0, dex: 0, agi: 0, mag: 0 }, flags: [], done: [], familia: null, falnaAt: null, familiaAt: null, familiaHistory: [], falnaHistory: [], aspiration: null, aspirationHistory: [], employer: null, parentFamilia: null,
-          alias: null, origin, race, talent, cause: '', job: 'child',
+          alias: null, origin, race, talent, cause: '', job: 'child', jobSince: 0,
+          pendingFollowup: null, followupSeq: 0,   // T1-F: 후속 선택 보류 상태(생애 시작 시 초기화)·생애 내 일련번호
           eventCounts: {}, lastEventPhase: {}, recentEvents: [], milestones: [], logHistory: [],
           items: [], itemUses: {}, itemsConsumed: [], relations: [], partnerId: null, nextRelationId: 1,
           application: GameCore.Recruit.newApplicationState(), nextMembershipId: 1, minorFamilias: [],
@@ -648,6 +803,7 @@ function startLife() {
 
 // 직업별 연간 활동 엑세리아(팔나 전에는 잠재력). 수치는 events.js ANNUAL_ACTIVITY(임의 밸런스 값).
 function yearlyActivity() {
+    if (haltedEntry('yearlyActivity')) return;   // H3 정지 가드
     if (S.age < 6) return;
     const amount = GameCore.Growth.rollAnnualExcelia(S, ANNUAL_ACTIVITY);
     if (amount > 0) GameCore.Growth.addExperience(S, amount);
@@ -659,6 +815,7 @@ function yearlyActivity() {
 // (v1.7 은 달력 1년당 +1 이라 노화가 느린 엘프·고레벨이 과도하게 회복했다 — QA_AUDIT_v1.7 §3)
 // HP_REGEN_MODE: 'physical'(기본) | 'calendar'(v1.7 방식, A/B 비교용) | 'off'
 function recoverYearly(rate) {
+    if (haltedEntry('recoverYearly')) return;   // H3 정지 가드
     if (HP_REGEN_MODE === 'off') return;
     const step = HP_REGEN.find(r => S.phase <= r.untilPhase);
     if (!step) return;
@@ -668,6 +825,7 @@ function recoverYearly(rate) {
 
 // 구조 소모품 사용. 체력이 RESCUE_HP 이하일 때 1회, 그래도 0 이하면 남은 포션을 이어서 사용한다.
 function tryRescue() {
+    if (haltedEntry('tryRescue')) return;   // H3 정지 가드
     let used = false;
     for (let guard = 0; guard < 8; guard++) {
         if (used && S.hp > 0) break;
@@ -683,6 +841,7 @@ function tryRescue() {
 
 const RELATION_LABEL = { parent: '부모', sibling: '형제자매', child: '자녀' };
 function handleRelationEvents(events) {
+    if (haltedEntry('handleRelationEvents')) return;   // H3 정지 가드
     (events || []).forEach(ev => {
         const r = ev.relation;
         if (ev.kind === 'birth') { say('어머니가 새 아이를 낳았다. 동생이 생겼다.', 'result', S.age); return; }
@@ -698,6 +857,9 @@ function handleRelationEvents(events) {
 }
 
 function nextYear() {
+    if (haltedEntry('nextYear')) return;   // H1 정지 가드
+    // T1-F: 후속 선택이 남아 있으면 다음 해로 넘어가지 않는다(DOM·RNG·상태 변경보다 먼저 검사).
+    if (S && S.pendingFollowup) { followupDiag('nextyear_blocked'); return; }
     $('choices').innerHTML = '';
     let skipped = 0;
     while (true) {
@@ -731,6 +893,7 @@ function nextYear() {
 }
 
 function showEvent(e) {
+    if (haltedEntry('showEvent')) return;   // H1 정지 가드
     S.currentEventId = e.id;   // v1.7.8-2i: 기록 전용, choose() 의 finally 에서 null
     say(e.text, 'event', S.age);
     if (e.once) S.done.push(e.id);
@@ -744,17 +907,19 @@ function showEvent(e) {
         b.onclick = () => choose(ch);
         $('choices').appendChild(b);
     });
-    if ($('auto').checked) setTimeout(() => {
+    if ($('auto').checked) scheduleAuto(() => {
         const bs = $('choices').querySelectorAll('button');
         if (bs.length) bs[Math.floor(Math.random() * bs.length)].click();
     }, 800);
 }
 
 function choose(ch) {
+    if (haltedEntry('choose')) return;   // H1 정지 가드
     try { return chooseBody(ch); }
     finally { if (S) S.currentEventId = null; }   // v1.7.8-2i(d-2): 조기 반환·예외에서도 초기화
 }
 function chooseBody(ch) {
+    if (haltedEntry('chooseBody')) return;   // H1 정지 가드
     $('choices').innerHTML = '';
     let r = ch;
     if (ch.chance) {
@@ -789,10 +954,91 @@ function chooseBody(ch) {
         return endLife(); 
     }
     
+    // T1-F(C27): 사망·HP 0 판정을 지난 생존 경로에서만 후속 선택 화면을 띄운다. '다음 해로' 는 선택 처리 후에 만든다.
+    if (S.pendingFollowup) {
+        S.pendingFollowup.phase = 'awaiting_choice';
+        if (renderFollowup()) return;
+        followupDiag('followup_render_failed'); S.pendingFollowup = null;
+    }
+    renderNextYearButton();
+}
+function renderNextYearButton() {
     const b = document.createElement('button');
     b.textContent = '다음 해로'; b.onclick = nextYear;
     $('choices').appendChild(b);
-    if ($('auto').checked) setTimeout(() => b.isConnected && b.click(), 600);
+    if ($('auto').checked) scheduleAuto(() => b.isConnected && b.click(), 600);
+}
+
+// ── 후속 선택 공통부. 사건 id 를 하드코딩하지 않는다(문맥은 pending.sourceEventId 로 복원). ──
+// 보류 상태 생성: 난수 0, pending·followupSeq 외 게임 상태 변경 0. 이미 보류가 있으면 만들지 않는다(중첩 금지).
+function createFollowup(kind, context) {
+    if (haltedEntry('createFollowup')) return;   // H3 정지 가드
+    if (!FOLLOWUP_KINDS[kind]) { followupDiag('followup_unknown_kind', { kind }); return false; }
+    if (S.pendingFollowup) { followupDiag('followup_already_pending', { kind }); return false; }
+    S.followupSeq = (S.followupSeq || 0) + 1;
+    S.pendingFollowup = { seq: S.followupSeq, kind, phase: 'resolving_event', sourceEventId: S.currentEventId ?? null, context: { ...(context || {}) }, createdAt: S.age };
+    return true;
+}
+// 화면 전용 출력(logHistory 에 남기지 않는다 — 후속 화면 표시만으로 게임 상태가 바뀌지 않게 한다, C29).
+function sayDomOnly(text, cls = '') {
+    const d = document.createElement('div');
+    d.className = 'entry ' + cls;
+    d.innerHTML = text;
+    $('log').appendChild(d);
+    d.scrollIntoView({ block: 'nearest' });
+}
+function followupOptions(p) {
+    const kind = p && FOLLOWUP_KINDS[p.kind];
+    const list = kind ? kind.options(S, p) : [];
+    return Array.isArray(list) ? list.filter(o => o && typeof o.id === 'string') : [];
+}
+function renderFollowup() {
+    if (haltedEntry('renderFollowup')) return;   // H1 정지 가드
+    const p = S.pendingFollowup, kind = p && FOLLOWUP_KINDS[p.kind];
+    const options = followupOptions(p);
+    if (!kind || !options.length) return false;
+    $('choices').innerHTML = '';
+    sayDomOnly(kind.prompt, 'event');
+    let stayButton = null;
+    options.forEach(o => {
+        const b = document.createElement('button');
+        b.className = 'choice'; b.textContent = o.label;
+        (b.dataset || (b.dataset = {})).followup = o.id;      // 러너·자동 진행이 난수 없이 고를 수 있게 하는 표식
+        b.onclick = () => chooseFollowup(o.id);
+        $('choices').appendChild(b);
+        if (o.stay && !stayButton) stayButton = b;
+    });
+    // 자동 진행(C21·C24): 무작위 클릭 대신 '지금 생활을 이어간다' 를 고정 선택한다(난수 호출 없음).
+    if ($('auto').checked && stayButton) scheduleAuto(() => stayButton.isConnected && stayButton.click(), 800);
+    return true;
+}
+function chooseFollowup(optionId) {
+    if (haltedEntry('chooseFollowup')) return;   // H1 정지 가드
+    const p = S.pendingFollowup;
+    // a. 검증: 실패하면 상태·보류·화면을 바꾸지 않는다(중복 클릭·무효 선택 포함).
+    if (!p || p.phase !== 'awaiting_choice' || !followupOptions(p).some(o => o.id === optionId)) { followupDiag('followup_invalid', { optionId }); return; }
+    p.phase = 'resolving_choice'; $('choices').innerHTML = '';     // b. 확정
+    S.currentEventId = p.sourceEventId;                             // c. 원래 사건 문맥 복원
+    const rb = takeRollbackSnapshot();                              // d. 롤백 스냅숏
+    try {
+        withScope('followup', null, () => FOLLOWUP_KINDS[p.kind].resolve(S, optionId, p));   // e. 사건별 효과
+    } catch (err) {
+        progressHalted = true;                                      // X0 첫 문장: 이후 어떤 정리 단계가 실패해도 정지는 유지된다
+        const cleanupErrors = [];
+        const step = (name, fn) => { try { fn(); } catch (e) { try { cleanupErrors.push({ step: name, message: String(e && e.message) }); } catch (_) {} } };
+        step('clearTimers', clearAutoTimers);                       // X0b
+        step('rollback', () => restoreRollbackSnapshot(rb));        // X1
+        step('render', renderStatsFromClone);                       // X2 (R-E)
+        step('notice', showHaltNotice);                             // X5b
+        step('diag', () => followupDiag('followup_resolve_exception', { optionId, message: String(err && err.message), cleanupErrors: cleanupErrors.slice() }));   // X3
+        try { if (cleanupErrors.length) err.followupCleanupErrors = cleanupErrors; } catch (_) {}
+        throw err;                                                  // X6 원래 예외를 그대로 다시 던진다('다음 해로' 는 만들지 않는다)
+    } finally {
+        S.pendingFollowup = null; S.currentEventId = null;         // f. 정리(단순 대입만)
+    }
+    if (S.hp <= 0) { S.cause = '쌓인 피로와 세월 탓에 몸이 끝내 버티지 못했다.'; return endLife(); }   // g. 방어 판정(후속 효과는 HP 를 바꾸지 않는다)
+    renderStats();                                                  // 상태창 갱신(직업·고용처 표시). 지급이 없으면 apply 가 불리지 않아 갱신되지 않던 결함 수정(브라우저 검증에서 발견)
+    renderNextYearButton();                                         // h.
 }
 
 function pickAlias() {
@@ -805,6 +1051,12 @@ function pickAlias() {
 }
 
 function endLife() {
+    if (haltedEntry('endLife')) return;   // H1 정지 가드
+    // T1-F: 후속 선택 화면 표시 전(resolving_event)의 사망은 정상 처리하고 보류를 정리한다(C27).
+    //       화면 표시 후(awaiting_choice)·선택 처리 중(resolving_choice)에는 생애를 끝내지 않는다. 기존 정리 작업보다 먼저 검사한다.
+    { const p = S ? S.pendingFollowup : null;
+      if (p && p.phase !== 'resolving_event') { followupDiag('endlife_blocked'); return; }
+      if (p) { followupDiag('followup_discarded_on_death'); S.pendingFollowup = null; } }
     // v1.7.8-2i(⑤): 예외로 남은 기준값 정리. 정상 진행에서는 항상 null.
     if (S.syncBaseline) { recoverFromBaseline(S.syncBaseline, null, 'recovered_at_life_end'); S.syncBaseline = null; }
     S.currentEventId = null;

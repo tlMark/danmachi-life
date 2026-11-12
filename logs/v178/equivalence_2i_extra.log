@@ -1,0 +1,8 @@
+SAME newborn_parent_familia/777: digest r1=391171683 2i=391171683 base=null | rngCallDigest r1=2594088573 2i=2594088573 | calls 1612816/1612816 | godGoneShown 127
+SAME newborn_parent_familia/314159: digest r1=3074599113 2i=3074599113 base=null | rngCallDigest r1=819369716 2i=819369716 | calls 1609261/1609261 | godGoneShown 136
+SAME newborn_parent_familia/8675309: digest r1=2680183135 2i=2680183135 base=null | rngCallDigest r1=2528654879 2i=2528654879 | calls 1632156/1632156 | godGoneShown 126
+SAME calendar/777: digest r1=1014466273 2i=1014466273 base=null | rngCallDigest r1=4016006349 2i=4016006349 | calls 1609500/1609500 | godGoneShown 107
+SAME calendar/314159: digest r1=2653364233 2i=2653364233 base=null | rngCallDigest r1=2279381384 2i=2279381384 | calls 1622314/1622314 | godGoneShown 83
+SAME calendar/8675309: digest r1=2988368057 2i=2988368057 base=null | rngCallDigest r1=3792369770 2i=3792369770 | calls 1607313/1607313 | godGoneShown 99
+RESULT: PASS 6/6
+exit=0

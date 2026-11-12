@@ -1,0 +1,10 @@
+--- a/test_runner.js
++++ b/test_runner.js
+@@ -1271,6 +1271,7 @@
+     '\neventGateViolations:', results.eventGateViolations, JSON.stringify(results.eventGateViolationSamples),
+     '\ninvariantFailures:', JSON.stringify(Object.entries(results.invariantFailures.reduce((m, x) => (m[x] = (m[x] || 0) + 1, m), {})).slice(0, 8)),
+     '\nlifeDigest:', results.lifeDigest,
++    '\neventCountAll:', JSON.stringify(results.uniqueEvents),
+     '\nv177:', JSON.stringify(results.v177),
+     '\nv178:', JSON.stringify(results.v178),
+     '\nresidenceRi:', JSON.stringify(results.residenceRi),
