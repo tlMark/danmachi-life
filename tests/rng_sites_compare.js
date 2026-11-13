@@ -9,7 +9,7 @@
 const fs = require('fs'), path = require('path'), crypto = require('crypto');
 const { spawnSync } = require('child_process');
 const RngSites = require('./lib/rng_sites.js');
-const { envFailures, pairSame } = require('./lib/compare_verdict.js');
+const { envFailures, pairSame, checkByCls, isPlainObject } = require('./lib/compare_verdict.js');
 const ROOT = path.join(__dirname, '..');
 const sha = text => crypto.createHash('sha256').update(text, 'utf8').digest('hex');
 const SOURCE_FILES = ['data.js', 'events.js', 'core/aging.js', 'core/growth.js', 'core/relations.js', 'core/items.js', 'core/recruit.js', 'core/lineage.js', 'script.js'];
@@ -36,12 +36,13 @@ const harnessBody = [LIB.rng_core, LIB.rng_sites, LIB.commit_queue, LIB.driver_c
 const sourceSites = () => SOURCE_FILES.map((file, i) => ({ area: 'source', file, text: texts[i] }));
 
 function summarize(tag, r) {
-    // 집계가 없으면 0 으로 채우지 않는다(null → 판정에서 실패). UNKNOWN 수는 집계가 실제로 있을 때만 0 이 될 수 있다.
-    const has = !!(r.tally && r.tally.lives && r.tally.lives.byCls && r.tally.unit && r.tally.unit.byCls);
-    const t = has ? r.tally : { lives: { byCls: null, byId: null, calls: null, seqDigest: null, perLifeCallDigest: null }, unit: { byCls: null } };
+    // 집계를 값 변환 없이 그대로 넘긴다(없는 것을 0 이나 빈 객체로 채우지 않는다). 형식·합계·UNKNOWN 검사는 compare_verdict.js 가 한다.
+    const lives = isPlainObject(r.tally) && isPlainObject(r.tally.lives) ? r.tally.lives : {};
+    const unit = isPlainObject(r.tally) && isPlainObject(r.tally.unit) ? r.tally.unit : {};
     return { tag, lives: r.lives, lifeDigest: r.lifeDigest, rngCallDigest: r.rngCallDigest, rngCallsTotal: r.rngCallsTotal,
-        unknownLives: has ? (t.lives.byCls.UNKNOWN || 0) : null, unknownUnit: has ? (t.unit.byCls.UNKNOWN || 0) : null, siteCalls: t.lives.calls, byCls: t.lives.byCls, byId: t.lives.byId,
-        seqDigest: t.lives.seqDigest, perLifeCallDigest: t.lives.perLifeCallDigest, integrity: r.integrity || null, extra: r.extra || null, unknownSamples: (r.tally || {}).unknownSamples || [] };
+        unknownLives: checkByCls(lives.byCls, lives.calls, 'byCls', true).unknown, unknownUnit: checkByCls(unit.byCls, unit.calls, 'unitByCls', false).unknown,   // 표시용. 판정은 집계에서 다시 읽는다
+        siteCalls: lives.calls, byCls: lives.byCls, byId: lives.byId, unitCalls: unit.calls, unitByCls: unit.byCls,
+        seqDigest: lives.seqDigest, perLifeCallDigest: lives.perLifeCallDigest, integrity: r.integrity || null, extra: r.extra || null, unknownSamples: (r.tally || {}).unknownSamples || [] };
 }
 
 function runNode(config) {

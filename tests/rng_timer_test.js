@@ -151,17 +151,38 @@ async function chromiumPage(browser, timerCapMs) {
             const f1 = mk(g.stdout), now = mk(cur);
             const CTX = "            const ev = (activeShowEventContext.length ? activeShowEventContext[activeShowEventContext.length - 1] : lastShownEventId) || '(no-event)';";
             const mutant = mk(cur, src => { if (src.split(CTX).length !== 2) throw new Error('TM-2b: 변이 대상 문장이 1개가 아님'); return src.replace(CTX, "            const ev = lastShownEventId || '(no-event)';   /* MUTATION: 활성 사건 스택 미사용 */"); });
-            const pickV = x => x.v ? JSON.stringify([x.v.v4.rollCalls, x.v.rollModes, x.v.rollModeByEvent]) : null;
-            const rolls = x => x.v ? Object.values(x.v.v4.rollCalls).reduce((a, b) => a + b, 0) : 0;
-            check('TM-2b 전제: F1 러너와 현재 러너 모두 자동 진행(동기 중첩)으로 400생애 완주, rollFamilia 계측 호출이 있음', f1.status === 0 && now.status === 0 && f1.completed === '400' && now.completed === '400' && rolls(f1) > 0, JSON.stringify([f1.status, now.status, f1.completed, now.completed, rolls(f1)]));
-            check('TM-2b 사건별 귀속: V8.v4.rollCalls · rollModes · rollModeByEvent 가 F1 러너와 같음', pickV(f1) !== null && pickV(f1) === pickV(now));
-            check('TM-2b 자동 진행 러너의 출력 전체(lifeDigest · 사건 집계 포함)가 F1 러너와 같음', f1.out === now.out && f1.lifeDigest === now.lifeDigest);
-            // 변이 러너도 정상적으로 끝까지 돌아 계측 자료가 있어야 한다. 실행 실패·자료 없음은 "변이 검출"이 아니라 시험 실패다.
-            const valid = x => x.status === 0 && x.completed === '400' && !!x.v && !!x.v.v4 && x.v.v4.rollCalls && typeof x.v.v4.rollCalls === 'object' && x.v.rollModes && typeof x.v.rollModes === 'object' && rolls(x) > 0;
-            check('TM-2b 변이 러너의 실행 유효성: 종료 코드 0 · 400생애 완주 · rollCalls 와 rollModes 생성 · rollFamilia 호출 수 > 0', valid(mutant), JSON.stringify([mutant.status, mutant.completed, !!mutant.v, rolls(mutant)]));
-            check('TM-2b 변이: 활성 사건 스택을 쓰지 않으면(lastShownEventId 만) 중첩에서 귀속이 F1 과 달라짐 — 시험이 결함을 잡음(유효한 실행끼리 비교)', valid(mutant) && valid(f1) && rolls(mutant) === rolls(f1) && pickV(mutant) !== pickV(f1));
-            check('TM-2b 변이: 귀속만 달라지고 생애 결과는 같음(lifeDigest 동일) — 차이가 계측 귀속에서만 난 것임을 확인', valid(mutant) && mutant.lifeDigest === f1.lifeDigest && JSON.stringify(mutant.v.rollModes) === JSON.stringify(f1.v.rollModes));
-            info('TM-2b rollFamilia 계측 호출 수 ' + rolls(f1) + ', lifeDigest(자동 진행 400생애) ' + f1.lifeDigest + ', 사건 키 수 ' + (f1.v ? Object.keys(f1.v.v4.rollCalls).length : 0));
+            // 세 러너(F1 · 현재 · 변이)에 같은 유효성 검사를 적용한다. 실행 실패·계측 자료 누락은 "변이 검출"이 아니라 시험 실패다.
+            const plain = o => !!o && typeof o === 'object' && !Array.isArray(o);
+            const tallyOk = o => plain(o) && Object.keys(o).length > 0 && Object.values(o).every(n => typeof n === 'number' && Number.isInteger(n) && n > 0);   // 배열 불가, 모든 카운트는 양의 정수
+            const sumOf = o => Object.values(o).reduce((a, b) => a + b, 0);
+            const parts = x => (x.v && plain(x.v.v4)) ? { rollCalls: x.v.v4.rollCalls, rollModes: x.v.rollModes, rollModeByEvent: x.v.rollModeByEvent } : { rollCalls: null, rollModes: null, rollModeByEvent: null };
+            const rolls = x => tallyOk(parts(x).rollCalls) ? sumOf(parts(x).rollCalls) : null;   // rollFamilia 계측 호출 수(계측 1회마다 세 집계에 1씩 들어간다)
+            const digestOk = x => typeof x.lifeDigest === 'string' && /^\d+$/.test(x.lifeDigest) && Number(x.lifeDigest) <= 0xFFFFFFFF;
+            const why = x => { const p = parts(x), bad = [];
+                if (x.status !== 0) bad.push('exit:' + x.status);
+                if (x.completed !== '400') bad.push('completed:' + x.completed);
+                if (!digestOk(x)) bad.push('lifeDigest:' + x.lifeDigest);
+                for (const k of ['rollCalls', 'rollModes', 'rollModeByEvent']) if (!tallyOk(p[k])) bad.push(k + '-invalid');
+                if (bad.length === 0) { const n = sumOf(p.rollCalls); if (!(n > 0)) bad.push('no-roll-calls'); if (sumOf(p.rollModes) !== n) bad.push('rollModes-sum:' + sumOf(p.rollModes) + '/' + n); if (sumOf(p.rollModeByEvent) !== n) bad.push('rollModeByEvent-sum:' + sumOf(p.rollModeByEvent) + '/' + n); }
+                return bad; };
+            const valid = x => why(x).length === 0;
+            const J = o => JSON.stringify(Object.keys(o).sort().map(k => [k, o[k]]));
+            check('TM-2b 실행 유효성(F1 러너): 종료 코드 0 · 400생애 완주 · lifeDigest 유효 · 세 집계(rollCalls · rollModes · rollModeByEvent) 객체·양의 정수·합계 = rollFamilia 호출 수', valid(f1), JSON.stringify(why(f1)));
+            check('TM-2b 실행 유효성(현재 러너): 같은 조건', valid(now), JSON.stringify(why(now)));
+            check('TM-2b 실행 유효성(변이 러너): 같은 조건 — 실행 실패·자료 누락은 변이 검출로 인정하지 않음', valid(mutant), JSON.stringify(why(mutant)));
+            const allValid = valid(f1) && valid(now) && valid(mutant);
+            check('TM-2b 사건별 귀속: 현재 러너의 rollCalls · rollModes · rollModeByEvent 가 F1 러너와 같음', allValid && J(parts(f1).rollCalls) === J(parts(now).rollCalls) && J(parts(f1).rollModes) === J(parts(now).rollModes) && J(parts(f1).rollModeByEvent) === J(parts(now).rollModeByEvent));
+            check('TM-2b 자동 진행 러너의 출력 전체(lifeDigest · 사건 집계 포함)가 F1 러너와 같음', allValid && f1.out === now.out && f1.lifeDigest === now.lifeDigest);
+            check('TM-2b 변이 전제: 세 러너의 rollFamilia 호출 수 · lifeDigest · rollModes 가 같음(차이가 사건 귀속에서만 나야 함)', allValid && rolls(mutant) === rolls(f1) && rolls(now) === rolls(f1) && mutant.lifeDigest === f1.lifeDigest && J(parts(mutant).rollModes) === J(parts(f1).rollModes));
+            check('TM-2b 변이: 활성 사건 스택을 쓰지 않으면 사건별 귀속(rollCalls 와 rollModeByEvent 둘 다)이 F1 과 달라짐 — 시험이 결함을 잡음', allValid && rolls(mutant) === rolls(f1) && mutant.lifeDigest === f1.lifeDigest && J(parts(mutant).rollModes) === J(parts(f1).rollModes) && J(parts(mutant).rollCalls) !== J(parts(f1).rollCalls) && J(parts(mutant).rollModeByEvent) !== J(parts(f1).rollModeByEvent));
+            {   // 유효성 검사 자체의 변이: 자료가 빠지거나 형식이 틀린 결과는 유효하지 않다고 판정해야 한다
+                const clone = () => JSON.parse(JSON.stringify({ status: f1.status, completed: f1.completed, lifeDigest: f1.lifeDigest, v: f1.v }));
+                const broken = [x => { x.status = 1; }, x => { x.status = null; }, x => { x.completed = '399'; }, x => { x.lifeDigest = undefined; }, x => { x.lifeDigest = 'INVALID(harness integrity error)'; }, x => { x.v = null; },
+                    x => { delete x.v.rollModeByEvent; }, x => { x.v.rollModeByEvent = []; }, x => { x.v.rollModes = {}; }, x => { x.v.v4.rollCalls = [1, 2]; }, x => { const k = Object.keys(x.v.rollModes)[0]; x.v.rollModes[k] = String(x.v.rollModes[k]); },
+                    x => { const k = Object.keys(x.v.v4.rollCalls)[0]; x.v.v4.rollCalls[k] = 0; }, x => { const k = Object.keys(x.v.rollModeByEvent)[0]; x.v.rollModeByEvent[k] += 1; }, x => { const k = Object.keys(x.v.rollModes)[0]; x.v.rollModes[k] -= 1; x.v.rollModes.extra = -1; }];
+                check('TM-2b 유효성 검사의 변이 ' + broken.length + '종(종료 코드 · 완주 수 · lifeDigest 누락/비숫자 · 계측 누락 · 배열 · 빈 객체 · 문자열/0/음수 카운트 · 합계 불일치)을 모두 무효로 판정', valid(clone()) && broken.every(f => { const x = clone(); f(x); return !valid(x); }));
+            }
+            info('TM-2b rollFamilia 계측 호출 수 F1 ' + rolls(f1) + ' / 현재 ' + rolls(now) + ' / 변이 ' + rolls(mutant) + ', lifeDigest(자동 진행 400생애) ' + f1.lifeDigest + ' / ' + now.lifeDigest + ' / ' + mutant.lifeDigest);
         }
     }
     // ── TM-3: 정지 뒤 남은 타이머 ────────────────────────────────────────────────────────
