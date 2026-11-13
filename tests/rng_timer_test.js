@@ -2,11 +2,14 @@
 //   TM-1: 주 루프(자동 진행 꺼짐)는 타이머를 쓰지 않는다 → Node(동기 모의 타이머)와 Chromium(실제 타이머)의 사건 순서·지점별 RNG 순서열이 같아야 한다.
 //   TM-2: 자동 진행 켬. Node 는 동기 중첩, Chromium 은 비동기 순차. 두 환경의 사건 순서열·지점 순서열(R2 포함)을 비교한다.
 //         이 동일성은 기대값이지 전제가 아니다. 다르면 차이를 기록한다(판정은 결과 표기만, 종료 코드에 넣지 않음).
+//   TM-2b: 자동 진행을 켠 러너(동기 중첩)에서 rollFamilia 계측(V8.v4.rollCalls · rollModes · rollModeByEvent)의 사건별 귀속이
+//          F1 러너(호출 전에 lastShownEventId 를 기록하던 원래 방식)와 같은지 비교한다. F1 러너는 git 의 P0 기준선 커밋에서 꺼낸다.
 //   TM-3: 정지(progressHalted) 뒤 남은 자동 진행 타이머가 Chromium 비동기 환경에서도 진행하지 않는다(stale_timer 진단만).
 // 사용: node tests/rng_timer_test.js [lives=20] [seed=20261104]
 // 기존 tests/browser_test.js 스모크 시험과는 별개다(대체하지 않음). Playwright 쪽 난수는 쓰지 않는다.
 'use strict';
-const fs = require('fs'), path = require('path'), vm = require('vm'), crypto = require('crypto');
+const fs = require('fs'), path = require('path'), vm = require('vm'), crypto = require('crypto'), os = require('os');
+const { spawnSync } = require('child_process');
 const RngSites = require('./lib/rng_sites.js');
 const { makeDocument } = require('./lib/mock_dom.js');
 const ROOT = path.join(__dirname, '..');
@@ -123,6 +126,39 @@ async function chromiumPage(browser, timerCapMs) {
         if (dS >= 0) { const a = nodeLives[dS].siteIds, b = chromeLives[dS].siteIds; let k = 0; while (k < a.length && k < b.length && a[k] === b[k]) k++; info('TM-2 첫 차이: 생애 ' + (dS + 1) + ' 의 ' + (k + 1) + '번째 호출 — Node ' + a[k] + ' / Chromium ' + b[k] + ' (길이 ' + a.length + ' / ' + b.length + ')'); }
         info('TM-2 R2 호출 수 Node ' + nodeLives.reduce((a, l) => a + r2(l), 0) + ' / Chromium ' + chromeLives.reduce((a, l) => a + r2(l), 0) + ', Chromium setTimeout 호출 ' + (await c.page.evaluate(() => window.__timerCalls)));
         await c.page.close();
+    }
+    // ── TM-2b: 중첩 자동 진행에서 rollFamilia 계측의 사건 귀속(러너, Node) ───────────────────
+    {
+        const F1_COMMIT = '61f5d63f99315d99a3ffd1f9ca37bf4d23b9ba2b';   // P0 기준선(F1 그대로)
+        const g = spawnSync('git', ['-C', ROOT, 'show', F1_COMMIT + ':test_runner.js'], { encoding: 'utf8', maxBuffer: 1 << 26 });
+        if (g.status !== 0 || !g.stdout) { check('TM-2b F1 러너를 git 에서 꺼냄(꺼내지 못하면 미실행 — 통과로 치지 않음)', false, 'git show 실패: ' + String(g.stderr || g.error).slice(0, 120)); }
+        else {
+            const NEEDLE = '            startLife();\n            let actions = 0;';
+            const AUTO = "            $('auto').checked = true;   /* TM-2b: 자동 진행 켬(임시 사본에서만) */\n" + NEEDLE;
+            const cur = read('test_runner.js');
+            const mk = (runnerSrc, mutate) => {
+                if (runnerSrc.split(NEEDLE).length !== 2) throw new Error('TM-2b: 주 루프 startLife 위치가 1곳이 아님');
+                const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tm2b-'));
+                const cp = (a, b) => { fs.mkdirSync(b, { recursive: true }); for (const e of fs.readdirSync(a, { withFileTypes: true })) { if (['logs', 'archive', 'node_modules', '.git'].includes(e.name)) continue; const s = path.join(a, e.name), d = path.join(b, e.name); e.isDirectory() ? cp(s, d) : fs.copyFileSync(s, d); } };
+                cp(ROOT, dir);
+                let src = runnerSrc.replace(NEEDLE, AUTO); if (mutate) src = mutate(src);
+                fs.writeFileSync(path.join(dir, 'test_runner.js'), src);
+                const r = spawnSync('node', [path.join(dir, 'test_runner.js')], { env: Object.assign({}, process.env, { SIM_RUNS: '400', SIM_SEED: String(SEED), FORCE_COLOR: '0', NO_COLOR: '1' }), encoding: 'utf8', maxBuffer: 1 << 26 });
+                fs.rmSync(dir, { recursive: true, force: true });
+                const v = JSON.parse(((r.stdout || '').match(/^v178:\s*(\{.*\})\s*$/m) || [])[1] || 'null');
+                return { status: r.status, out: r.stdout || '', v, lifeDigest: ((r.stdout || '').match(/^lifeDigest:\s*(\S+)/m) || [])[1], completed: ((r.stdout || '').match(/^completed:\s*(\d+)/m) || [])[1] };
+            };
+            const f1 = mk(g.stdout), now = mk(cur);
+            const CTX = "            const ev = (activeShowEventContext.length ? activeShowEventContext[activeShowEventContext.length - 1] : lastShownEventId) || '(no-event)';";
+            const mutant = mk(cur, src => { if (src.split(CTX).length !== 2) throw new Error('TM-2b: 변이 대상 문장이 1개가 아님'); return src.replace(CTX, "            const ev = lastShownEventId || '(no-event)';   /* MUTATION: 활성 사건 스택 미사용 */"); });
+            const pickV = x => x.v ? JSON.stringify([x.v.v4.rollCalls, x.v.rollModes, x.v.rollModeByEvent]) : null;
+            const rolls = x => x.v ? Object.values(x.v.v4.rollCalls).reduce((a, b) => a + b, 0) : 0;
+            check('TM-2b 전제: F1 러너와 현재 러너 모두 자동 진행(동기 중첩)으로 400생애 완주, rollFamilia 계측 호출이 있음', f1.status === 0 && now.status === 0 && f1.completed === '400' && now.completed === '400' && rolls(f1) > 0, JSON.stringify([f1.status, now.status, f1.completed, now.completed, rolls(f1)]));
+            check('TM-2b 사건별 귀속: V8.v4.rollCalls · rollModes · rollModeByEvent 가 F1 러너와 같음', pickV(f1) !== null && pickV(f1) === pickV(now));
+            check('TM-2b 자동 진행 러너의 출력 전체(lifeDigest · 사건 집계 포함)가 F1 러너와 같음', f1.out === now.out && f1.lifeDigest === now.lifeDigest);
+            check('TM-2b 변이: 활성 사건 스택을 쓰지 않으면(lastShownEventId 만) 중첩에서 귀속이 F1 과 달라짐 — 시험이 결함을 잡음', mutant.status !== null && pickV(mutant) !== pickV(f1));
+            info('TM-2b rollFamilia 계측 호출 수 ' + rolls(f1) + ', lifeDigest(자동 진행 400생애) ' + f1.lifeDigest + ', 사건 키 수 ' + (f1.v ? Object.keys(f1.v.v4.rollCalls).length : 0));
+        }
     }
     // ── TM-3: 정지 뒤 남은 타이머 ────────────────────────────────────────────────────────
     {

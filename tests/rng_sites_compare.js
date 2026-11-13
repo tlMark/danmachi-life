@@ -9,6 +9,7 @@
 const fs = require('fs'), path = require('path'), crypto = require('crypto');
 const { spawnSync } = require('child_process');
 const RngSites = require('./lib/rng_sites.js');
+const { envFailures, pairSame } = require('./lib/compare_verdict.js');
 const ROOT = path.join(__dirname, '..');
 const sha = text => crypto.createHash('sha256').update(text, 'utf8').digest('hex');
 const SOURCE_FILES = ['data.js', 'events.js', 'core/aging.js', 'core/growth.js', 'core/relations.js', 'core/items.js', 'core/recruit.js', 'core/lineage.js', 'script.js'];
@@ -50,14 +51,15 @@ function runNode(config) {
     fs.writeFileSync(path.join(OUT, 'node_' + config.replace('/', '_') + '.stdout.log'), (r.stdout || '') + (r.stderr || '') + 'exit=' + r.status + '\n');
     const g = re => { const m = (r.stdout || '').match(re); return m ? m[1] : null; };
     const j = JSON.parse(fs.readFileSync(out, 'utf8'));
-    const hi = JSON.parse(fs.readFileSync(hj, 'utf8')).harnessIntegrity;
+    const hi = fs.existsSync(hj) ? JSON.parse(fs.readFileSync(hj, 'utf8')).harnessIntegrity : null;
     nodeStartState[config] = j.firstLifeRngState;
     return summarize('node', { lives: Number(g(/^completed:\s*(\d+)/m)), lifeDigest: Number(g(/^lifeDigest:\s*(\d+)/m)), rngCallDigest: Number(g(/"rngCallDigest":(\d+)/)), rngCallsTotal: Number(g(/"rngCallsTotal":(\d+)/)),
-        tally: j.tally, integrity: hi, extra: { exit: r.status, firstLifeRngState: j.firstLifeRngState, stackTraceLimit: j.stackTraceLimit, rows: j.rows.length, driverCoreSha256: j.driverCoreSha256, rngCoreSha256: sha(LIB.rng_core), sourceSha256: j.sourceSha256, siteCount: j.sites.length, unitCalls: j.tally.unit.calls, unitByCls: j.tally.unit.byCls } });
+        tally: j.tally, integrity: hi, extra: { exit: r.status, spawnError: r.error ? String(r.error.message || r.error) : null, firstLifeRngState: j.firstLifeRngState, stackTraceLimit: j.stackTraceLimit, rows: j.rows.length, driverCoreSha256: j.driverCoreSha256, rngCoreSha256: sha(LIB.rng_core), sourceSha256: j.sourceSha256, siteCount: j.sites.length, unitCalls: j.tally.unit.calls, unitByCls: j.tally.unit.byCls } });
 }
 
 // F1 러너는 단위 시험 단계를 거친 뒤 주 루프를 돈다. 그래서 주 루프 시작 시점의 난수 상태는 시드만으로 정해지지 않는다.
 // Chromium 측정은 같은 구성의 Node 실행이 기록한 "첫 생애 시작 시점의 난수 상태"에서 시작한다(값은 결과에 기록).
+// 즉 이 비교는 "같은 시드"가 아니라 "같은 첫 생애 RNG 상태"에서 출발한 비교다.
 const nodeStartState = {};
 function startStateFor(config) {
     if (nodeStartState[config]) return nodeStartState[config];
@@ -164,17 +166,14 @@ function fnText(src, name) {
             catch (e) { row[env] = { failed: true, error: String(e && e.stack || e).split('\n').slice(0, 4).join(' | ') }; }
         }
         const ran = ['node', 'file', 'inline'].filter(e => row[e] && !row[e].notRun);
-        const ok = e => !row[e].failed && row[e].lives === RUNS && row[e].unknownLives === 0 && !(row[e].integrity && row[e].integrity.broken) && !(row[e].extra && row[e].extra.error) && !(row[e].extra && row[e].extra.pageSha && !row[e].extra.pageSha.same);
-        const same = (a, b) => JSON.stringify(sortKeys(row[a].byId)) === JSON.stringify(sortKeys(row[b].byId)) && row[a].seqDigest === row[b].seqDigest && row[a].lifeDigest === row[b].lifeDigest && row[a].rngCallDigest === row[b].rngCallDigest;
-        row.verdict = { ran, eachOk: Object.fromEntries(ran.map(e => [e, ok(e)])), pairSame: {} };
-        for (let i = 0; i < ran.length; i++) for (let k = i + 1; k < ran.length; k++) if (!row[ran[i]].failed && !row[ran[k]].failed) row.verdict.pairSame[ran[i] + '=' + ran[k]] = same(ran[i], ran[k]);
-        const good = ran.every(ok) && Object.values(row.verdict.pairSame).every(Boolean);
+        row.verdict = { ran, failures: Object.fromEntries(ran.map(e => [e, envFailures(e, row[e], RUNS)])), pairSame: {} };   // 합격 조건은 tests/lib/compare_verdict.js
+        for (let i = 0; i < ran.length; i++) for (let k = i + 1; k < ran.length; k++) if (!row[ran[i]].failed && !row[ran[k]].failed) row.verdict.pairSame[ran[i] + '=' + ran[k]] = pairSame(row[ran[i]], row[ran[k]]);
+        const good = ran.length > 0 && ran.every(e => row.verdict.failures[e].length === 0) && Object.values(row.verdict.pairSame).every(Boolean);
         if (!good) bad++;
-        console.log((good ? 'OK   ' : 'FAIL ') + config + ': ' + ['node', 'file', 'inline'].map(e => e + '=' + (row[e].notRun ? '미실행' : row[e].failed ? '실패' : 'lives ' + row[e].lives + ' digest ' + row[e].lifeDigest + ' rng ' + row[e].rngCallDigest + ' UNKNOWN ' + row[e].unknownLives + ' seq ' + row[e].seqDigest)).join(' | ') + ' | 일치 ' + JSON.stringify(row.verdict.pairSame));
+        console.log((good ? 'OK   ' : 'FAIL ') + config + ': ' + ['node', 'file', 'inline'].map(e => e + '=' + (row[e].notRun ? '미실행' : row[e].failed ? '실패' : 'lives ' + row[e].lives + ' digest ' + row[e].lifeDigest + ' rng ' + row[e].rngCallDigest + ' UNKNOWN ' + row[e].unknownLives + ' seq ' + row[e].seqDigest)).join(' | ') + ' | 일치 ' + JSON.stringify(row.verdict.pairSame) + (good ? '' : ' | 실패 사유 ' + JSON.stringify(row.verdict.failures)));
         fs.writeFileSync(path.join(OUT, 'compare_' + ENVS.join('-') + '.json'), JSON.stringify(result, null, 1));
     }
     if (browser) await browser.close();
     console.log('SUMMARY: ' + (CONFIGS.length - bad) + '/' + CONFIGS.length + ' 구성 통과 (실행 환경: ' + ENVS.join(', ') + '; 미실행 환경: ' + (['node', 'file', 'inline'].filter(e => ENVS.indexOf(e) < 0).join(', ') || '없음') + ')');
     process.exitCode = bad ? 1 : 0;
 })().catch(e => { console.error(e && e.stack || e); process.exit(1); });
-function sortKeys(o) { const r = {}; for (const k of Object.keys(o || {}).sort()) r[k] = o[k]; return r; }

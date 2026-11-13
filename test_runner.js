@@ -787,8 +787,16 @@ const integrationScript = `
     };
     const showEventQueue = createCommitQueue(applyShowEventCommit);
     ${DRIVER_CORE_SRC}
+    // 지금 원래 showEvent 가 실행 중인 사건 id 의 스택(하네스 전용, S 밖). 자동 진행을 켠 동기 중첩에서는 원래 함수가 끝나기 전에
+    // 자동 클릭 → 다음 처리 → rollFamilia 까지 실행된다. 그때 rollFamilia 계측이 "지금 표시 중인 사건"에 귀속되도록 한다.
+    // lastShownEventId 는 큐 반영 시점에 바뀌므로(호출 전 전역 변경 없음) 중첩 안에서는 아직 이전 사건을 가리킨다.
+    const activeShowEventContext = [];
+    const callOriginalShowEvent = function (event) {
+        activeShowEventContext.push(event.id);
+        try { return originalShowEvent(event); } finally { activeShowEventContext.pop(); }
+    };
     showEvent = function (event) {
-        return showEventQueue.run(() => captureShowEvent(event), () => originalShowEvent(event), classifyShowEvent);
+        return showEventQueue.run(() => captureShowEvent(event), () => callOriginalShowEvent(event), classifyShowEvent);
     };
 
     const originalRollFamilia = rollFamilia;
@@ -798,7 +806,7 @@ const integrationScript = `
         const mode = arguments.length > 1 ? String(arguments[1]) : '(none)';
         const result = originalRollFamilia.apply(this, arguments);
         {   // v1.7.8-2i(Q18): 모드는 러너 호출 계측으로만 판정. V4: 이벤트·상태별 호출과 이동 결과(두 빌드 공통 계측)
-            const ev = lastShownEventId || '(no-event)';
+            const ev = (activeShowEventContext.length ? activeShowEventContext[activeShowEventContext.length - 1] : lastShownEventId) || '(no-event)';   // 활성 사건이 있으면 그것을 우선
             tally(V8.v4.rollCalls, ev + ':' + stBefore + '->' + rDerive(S) + ':' + (famBefore !== (S.familia ? S.familia.id : null) ? 'moved' : 'same'));
             tally(V8.rollModes, mode); tally(V8.rollModeByEvent, ev + ':' + mode);
             if (result === false) V8.rejectedRolls += 1;
@@ -896,6 +904,7 @@ const integrationScript = `
             lastShownEventId = null; d3Sink.ids = new Set();
             const rngCallsAtLifeStart = __rngCalls();
             if (typeof __siteLifeStart === 'function') __siteLifeStart(run);   // F1D4A P1: RNG 지점 기록의 생애 경계(SIM_RNG_SITES 지정 시에만 존재)
+            if (activeShowEventContext.length !== 0) throw new Error('harness: activeShowEventContext not empty at life start');
             startLife();
             let actions = 0;
             let firstAdventurerAge = null, firstFalnaAge = null; let wasRetired = false, reachedLv6 = false, reachedLv6InWindow = false;

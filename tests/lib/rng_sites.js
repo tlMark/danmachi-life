@@ -170,83 +170,112 @@
     }
 
     // ── 위치 표(지점 표) ──────────────────────────────────────────────────────────────────
-    // 규칙(F1 정적 확인, 00_INDEX §4.1.1). 표에 없는 (파일, 함수)는 UNKNOWN 으로 둔다.
+    // 규칙(F1 정적 확인, 00_INDEX §4.1.1). **명시적 허용 목록**이다: (파일, 둘러싼 함수, 종류)마다 분류와 "그 묶음의 지점 수"를 적는다.
+    //   - 목록에 없는 묶음은 UNKNOWN.
+    //   - 묶음의 실제 지점 수가 적힌 수와 다르면(같은 함수에 호출이 늘거나 줄면) 그 묶음 전체가 UNKNOWN. 자동으로 기존 분류를 물려받지 않는다.
+    //   - 와일드카드는 쓰지 않는다.
+    // 키: 'random' = Math.random() 직접 호출, 'call-<함수>' = 공유·래퍼 함수 호출.
+    const G = (cls, count) => ({ cls, count });
     const RULES = {
         shared: { 'script.js': ['getRandomItemByWeight'], 'core/relations.js': ['weightedPick'] },   // Math.random 을 직접 부르고 둘 이상 지점에서 불리는 함수
         wrapper: { 'script.js': ['rnd'] },                                                            // 호출자 1곳인 래퍼
-        direct: {   // (파일, 둘러싼 함수) → 분류. '*' 는 그 파일의 나머지 전부
-            'script.js': { rollFamiliaBody: 'R4', startLife: 'R4', nextYear: 'R5', showEvent: 'R2', chooseBody: 'R3' },
-            'core/growth.js': { '*': 'R4' },
-            'core/relations.js': { '*': 'R4' }
+        groups: {
+            'script.js': {
+                rnd: { random: G('(wrapper)', 1) },
+                getRandomItemByWeight: { random: G('(shared)', 1) },
+                pickFamiliaCandidate: { 'call-getRandomItemByWeight': G('R4', 1) },
+                rollFamiliaBody: { random: G('R4', 1), 'call-rnd': G('R4', 1) },
+                startLife: { random: G('R4', 1), 'call-getRandomItemByWeight': G('R4', 4) },
+                nextYear: { random: G('R5', 1), 'call-getRandomItemByWeight': G('R1', 1) },
+                showEvent: { random: G('R2', 1) },
+                chooseBody: { random: G('R3', 1) }
+            },
+            'core/growth.js': { rollAnnualExcelia: { random: G('R4', 1) } },
+            'core/relations.js': {
+                weightedPick: { random: G('(shared)', 1) },
+                pickPartnerRace: { random: G('R4', 1), 'call-weightedPick': G('R4', 1) },
+                createRomanticPartner: { random: G('R4', 2), 'call-weightedPick': G('R4', 1) },
+                parentRaces: { random: G('R4', 1) },
+                generateFamily: { random: G('R4', 3), 'call-weightedPick': G('R4', 1) },
+                createChild: { random: G('R4', 1) },
+                advanceYear: { random: G('R4', 3) }
+            }
         },
-        call: {     // 공유·래퍼 함수의 (호출 파일, 호출 함수) → 분류
-            getRandomItemByWeight: { 'script.js': { nextYear: 'R1', pickFamiliaCandidate: 'R4', startLife: 'R4' } },
-            weightedPick: { 'core/relations.js': { '*': 'R4' } },
-            rnd: { 'script.js': { rollFamiliaBody: 'R4' } }
-        },
-        harness: { driverChoose: 'HARNESS' }   // 하네스 영역: 공통 드라이버의 버튼 선택 한 곳
+        harness: { driverChoose: { random: G('HARNESS', 1) } }   // 하네스 영역: 공통 드라이버의 버튼 선택 한 곳
     };
-    const lookup = (table, fn) => !table ? null : (fn && Object.prototype.hasOwnProperty.call(table, fn) ? table[fn] : (Object.prototype.hasOwnProperty.call(table, '*') ? table['*'] : null));
+    const own = (o, k) => !!o && typeof k === 'string' && Object.prototype.hasOwnProperty.call(o, k);
 
     // files: [{ area: 'source' | 'harness', file, text }] → sites 배열
-    // site: { id, area, file, line, col, endCol, kind: 'direct' | 'call', callee, fn, role: 'plain' | 'shared' | 'wrapper', cls }
-    // col 은 표현식의 첫 글자(Math 의 M, 호출 함수 이름의 첫 글자) 열. V8 스택 열과의 대응은 siteAt 이 처리한다.
+    // site: { id, area, file, line, col, stackCol, kind: 'direct' | 'call', callee, fn, role: 'plain' | 'shared' | 'wrapper', cls }
+    //   col      = 표현식의 첫 글자 열(Math 의 M, 호출 함수 이름의 첫 글자). 1부터, UTF-16.
+    //   stackCol = V8 스택이 그 호출에 대해 보고하는 열. 결정 규칙(보정이 아님):
+    //                멤버 호출 `Math.random()` → 속성 이름 `random` 의 시작 열 = col + 5 ('Math.' 다섯 글자)
+    //                일반 호출 `f()`            → 함수 이름의 시작 열 = col
+    //              분류는 stackCol 과 **정확히 같은** 열만 그 지점으로 본다. 다른 열은 모두 UNKNOWN.
+    // 호출식만 지점이다: 이름 뒤(공백 허용)에 '(' 가 와야 한다. `Math.random = f` · `x === Math.random` 같은 대입·참조와 주석·문자열 속 글자는 지점이 아니다.
+    const MEMBER_CALL_OFFSET = 5;   // 'Math.'.length
     function buildSiteTable(files, rules) {
         const R = rules || RULES;
         const sites = [];
-        const counter = {};
         for (const f of files) {
             const text = f.text, mask = codeMask(text), starts = lineStarts(text);
+            const isCall = (at, len) => /^\s*\(/.test(text.slice(at + len, at + len + 64));
             const found = [];
-            for (const at of findAllCode(text, mask, 'Math.random', (t, a) => !identChar(t[a - 1]) && t[a - 1] !== '.' && !identChar(t[a + 11]))) found.push({ at, kind: 'direct', callee: null, len: 11 });
+            for (const at of findAllCode(text, mask, 'Math.random', (t, a) => !identChar(t[a - 1]) && t[a - 1] !== '.' && !identChar(t[a + 11]))) {
+                if (isCall(at, 11)) found.push({ at, kind: 'direct', callee: null, len: 11 });
+            }
             if (f.area === 'source') {
                 const names = [];
                 for (const k of Object.keys(R.shared)) for (const nm of R.shared[k]) if (names.indexOf(nm) < 0) names.push(nm);
                 for (const k of Object.keys(R.wrapper)) for (const nm of R.wrapper[k]) if (names.indexOf(nm) < 0) names.push(nm);
                 for (const name of names) {
                     for (const at of findAllCode(text, mask, name, (t, a) => !identChar(t[a - 1]) && t[a - 1] !== '.' && !identChar(t[a + name.length]))) {
-                        // 호출 표현식만: 이름 뒤(공백 허용)에 '(' 가 오고, 선언(`function NAME(` · `const NAME =`)이 아닌 것
-                        const after = text.slice(at + name.length).match(/^\s*\(/);
-                        const before = text.slice(Math.max(0, at - 12), at);
-                        if (!after || /function\s+$/.test(before) || /(?:const|let|var)\s+$/.test(before)) continue;
+                        const before = text.slice(Math.max(0, at - 12), at);   // 선언(`function NAME(` · `const NAME =`)은 호출이 아니다
+                        if (!isCall(at, name.length) || /function\s+$/.test(before) || /(?:const|let|var)\s+$/.test(before)) continue;
                         found.push({ at, kind: 'call', callee: name, len: name.length });
                     }
                 }
             }
             found.sort((a, b) => a.at - b.at);
+            const fileKey = f.area === 'harness' ? 'harness' : f.file;
+            const groups = {};   // 묶음 키 → 지점 목록
             for (const x of found) {
                 const p = posOfOffset(starts, x.at);
-                const fn = enclosingFunction(text, starts, x.at);
-                let role = 'plain', cls = 'UNKNOWN';
-                if (f.area === 'harness') cls = lookup(R.harness, fn) || 'HARNESS-OTHER';
-                else if (x.kind === 'direct') {
-                    if ((R.shared[f.file] || []).indexOf(fn) >= 0) { role = 'shared'; cls = '(shared)'; }
-                    else if ((R.wrapper[f.file] || []).indexOf(fn) >= 0) { role = 'wrapper'; cls = '(wrapper)'; }
-                    else cls = lookup(R.direct[f.file], fn) || 'UNKNOWN';
-                } else cls = lookup((R.call[x.callee] || {})[f.file], fn) || 'UNKNOWN';
-                const base = (f.area === 'harness' ? 'harness' : f.file) + ':' + (fn || '?') + ':' + (x.kind === 'direct' ? 'random' : 'call-' + x.callee);
-                counter[base] = (counter[base] || 0) + 1;
-                sites.push({ id: base + '#' + counter[base], area: f.area, file: f.area === 'harness' ? 'harness' : f.file, line: p.line, col: p.col, endCol: p.col + x.len, kind: x.kind, callee: x.callee, fn, role, cls });
+                const fn = enclosingFunction(text, starts, x.at);   // 판정할 수 없으면 null → UNKNOWN
+                const kindKey = x.kind === 'direct' ? 'random' : 'call-' + x.callee;
+                const base = fileKey + ':' + (fn || '?') + ':' + kindKey;
+                (groups[base] = groups[base] || []).push({ x, p, fn, kindKey });
+            }
+            for (const base of Object.keys(groups)) {
+                const list = groups[base];
+                const fn = list[0].fn, kindKey = list[0].kindKey;
+                const table = f.area === 'harness' ? R.harness : (R.groups || {})[f.file];
+                const rule = fn !== null && own(table, fn) && own(table[fn], kindKey) ? table[fn][kindKey] : null;
+                const cls = rule && rule.count === list.length ? rule.cls : 'UNKNOWN';   // 목록에 없거나 지점 수가 다르면 UNKNOWN
+                list.forEach((it, i) => {
+                    const role = cls === '(shared)' ? 'shared' : cls === '(wrapper)' ? 'wrapper' : 'plain';
+                    sites.push({ id: base + '#' + (i + 1), area: f.area, file: fileKey, line: it.p.line, col: it.p.col, stackCol: it.p.col + (it.x.kind === 'direct' ? MEMBER_CALL_OFFSET : 0),
+                        kind: it.x.kind, callee: it.x.callee, fn: it.fn, role, cls, unknownReason: cls === 'UNKNOWN' ? (fn === null ? 'no-enclosing-function' : !rule ? 'not-in-allowlist' : 'count-mismatch') : null, _at: it.x.at });
+                });
             }
         }
+        // 파일 순서 → 파일 안 위치 순서로 정렬(표의 순서를 결정적으로)
+        const order = files.map(f => f.area === 'harness' ? 'harness' : f.file);
+        sites.sort((a, b) => (order.indexOf(a.file) - order.indexOf(b.file)) || (a._at - b._at));
+        for (const s of sites) delete s._at;
         return sites;
     }
-    // 변환된 위치 → 지점. V8 은 멤버 호출 `Math.random()` 의 위치를 속성 이름(`random`) 시작 열로, 일반 호출 `f()` 는 함수 이름 시작 열로 보고한다.
-    // 그래서 표현식 범위 [col, endCol) 안의 열이면 그 지점으로 본다(같은 줄의 다른 지점과 범위가 겹치지 않음. 겹치면 표 생성 단계에서 실패).
+    // 변환된 위치 → 지점. (영역, 파일, 줄, stackCol)이 정확히 같을 때만 그 지점이다. 범위·근접 일치는 없다.
     function makeSiteIndex(sites) {
-        const byLine = new Map();
+        const byPos = new Map();
         for (const s of sites) {
-            const key = s.area + '|' + s.file + '|' + s.line;
-            if (!byLine.has(key)) byLine.set(key, []);
-            for (const o of byLine.get(key)) if (!(s.endCol <= o.col || o.endCol <= s.col)) throw new Error('site ranges overlap: ' + s.id + ' / ' + o.id);
-            byLine.get(key).push(s);
+            const key = s.area + '|' + s.file + '|' + s.line + '|' + s.stackCol;
+            if (byPos.has(key)) throw new Error('two sites at the same stack position: ' + s.id + ' / ' + byPos.get(key).id);
+            byPos.set(key, s);
         }
         return function siteAt(pos) {
             if (!pos || pos.area === 'unknown') return null;
-            const list = byLine.get(pos.area + '|' + pos.file + '|' + pos.line);
-            if (!list) return null;
-            for (const s of list) if (s.col <= pos.col && pos.col < s.endCol) return s;
-            return null;
+            return byPos.get(pos.area + '|' + pos.file + '|' + pos.line + '|' + pos.col) || null;
         };
     }
 
@@ -331,5 +360,5 @@
     }
 
     return { lineStarts, countSpecialChars, posOfOffset, buildAssembly, checkRows, buildNodeVmParts, mapPosition,
-        codeMask, findAllCode, enclosingFunction, RULES, buildSiteTable, makeSiteIndex, parseFrameLine, parseStack, makeClassifier, makeTally, fnv };
+        codeMask, findAllCode, enclosingFunction, RULES, MEMBER_CALL_OFFSET, buildSiteTable, makeSiteIndex, parseFrameLine, parseStack, makeClassifier, makeTally, fnv };
 });

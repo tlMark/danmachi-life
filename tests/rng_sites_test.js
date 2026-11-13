@@ -101,31 +101,124 @@ check('지점 표: 하네스 영역의 Math.random 호출 지점은 driverChoose
 check('지점 표: 러너가 기록한 표와 같음', eq(J.sites.map(s => [s.id, s.file, s.line, s.col, s.cls]), sites.map(s => [s.id, s.file, s.line, s.col, s.cls])));
 check('지점 표: lineage.js · recruit.js 의 주석 속 "Math.random" 은 지점이 아님', sites.every(s => s.file !== 'core/lineage.js' && s.file !== 'core/recruit.js'));
 
+// ── 호출식만 지점(대입·참조·주석·문자열 제외) ───────────────────────────────────────────────
+{
+    const fnSrc = (name, body) => 'function ' + name + '() {\n    ' + body + '\n}';
+    const code = [
+        fnSrc('a', 'return Math.random();'),                          // 호출 → 지점
+        fnSrc('b', 'Math.random = function () { return 0; };'),       // 대입 → 아님
+        fnSrc('c', 'return Math.random === x;'),                      // 참조 비교 → 아님
+        fnSrc('d', 'const f = Math.random; return f;'),               // 참조 → 아님
+        fnSrc('e', 'return Math.random  ();'),                        // 공백 뒤 호출 → 지점
+        fnSrc('g', 'return "Math.random()"; // Math.random()'),       // 문자열·줄 주석 → 아님
+        fnSrc('h', '/* Math.random() */ return `Math.random()`;'),    // 블록 주석·템플릿 본문 → 아님
+        fnSrc('k', 'return obj.Math.random();'),                      // 다른 객체의 속성 → 아님
+        fnSrc('m', 'return Math.randomize();')                        // 다른 이름 → 아님
+    ].join('\n') + '\n';
+    const rules = { shared: {}, wrapper: {}, groups: { 'x.js': { a: { random: { cls: 'R4', count: 1 } }, e: { random: { cls: 'R4', count: 1 } } } }, harness: {} };
+    const st = R.buildSiteTable([{ area: 'source', file: 'x.js', text: code }], rules);
+    check('지점 표: 호출식(뒤에 "(" — 공백 허용)만 지점. 대입·참조·비교·문자열·주석·템플릿 본문·다른 객체 속성·다른 이름은 제외', st.length === 2 && st[0].fn === 'a' && st[1].fn === 'e' && st.every(s => s.cls === 'R4'), JSON.stringify(st.map(s => s.id)));
+    const pageHarness = ['tests/lib/rng_core.js', 'tests/lib/rng_sites.js', 'tests/lib/commit_queue.js', 'tests/lib/driver_core.js', 'tests/lib/page_driver.js'].map(read).join('\n');
+    const ph = R.buildSiteTable([{ area: 'harness', file: 'harness', text: pageHarness }]);
+    check('지점 표: Chromium 주입 하네스의 호출 지점도 driverChoose 한 곳(페이지 어댑터의 Math.random 대입·비교 참조는 지점이 아님)', ph.length === 1 && ph[0].id === 'harness:driverChoose:random#1' && ph[0].cls === 'HARNESS' && /Math\.random = recordedRandom/.test(pageHarness), JSON.stringify(ph.map(s => s.id)));
+    check('지점 표: Node 와 Chromium 의 지점 수가 같음(게임 30 + 하네스 1 = 31)', sites.length === 31 && src.length + ph.length === 31);
+}
+// ── 명시적 허용 목록(와일드카드 없음)과 판정 불가 구조 ───────────────────────────────────────
+{
+    const tbl = name => R.buildSiteTable([{ area: 'source', file: name, text: read(name) }]);
+    const withText = (name, text) => R.buildSiteTable([{ area: 'source', file: name, text }]);
+    const rel = read('core/relations.js'), gro = read('core/growth.js'), scr = read('script.js');
+    check('허용 목록: 규칙에 와일드카드("*")가 없음', JSON.stringify(R.RULES).indexOf('"*"') < 0);
+    const relPlus = rel.replace('    function createChild(S, ctx) {', '    function createChild(S, ctx) {\n        if (Math.random() < 2) { /* 새 호출 */ }');
+    const a = withText('core/relations.js', relPlus).filter(s => s.fn === 'createChild');
+    check('허용 목록: 기존 함수에 Math.random() 호출이 하나 늘면 그 묶음 전체가 UNKNOWN(자동 R4 아님)', relPlus !== rel && a.length === 2 && a.every(s => s.cls === 'UNKNOWN' && s.unknownReason === 'count-mismatch'), JSON.stringify(a.map(s => s.cls)));
+    const groPlus = gro.replace('    function getAbilityTotal(S) {', '    function getAbilityTotal(S) {\n        const z = Math.random();');
+    const b = withText('core/growth.js', groPlus).filter(s => s.fn === 'getAbilityTotal');
+    check('허용 목록: 기존 파일의 목록에 없는 함수에 생긴 호출은 UNKNOWN', groPlus !== gro && b.length === 1 && b[0].cls === 'UNKNOWN' && b[0].unknownReason === 'not-in-allowlist');
+    const relCall = rel.replace('    function createChild(S, ctx) {', '    function createChild(S, ctx) {\n        weightedPick([[0, 1]]);');
+    const c = withText('core/relations.js', relCall).filter(s => s.fn === 'createChild' && s.kind === 'call');
+    check('허용 목록: 목록에 없는 호출자의 weightedPick 호출은 UNKNOWN(자동 R4 아님)', relCall !== rel && c.length === 1 && c[0].cls === 'UNKNOWN');
+    const scrPlus = scr.replace('function chooseBody(ch) {', 'function chooseBody(ch) {\n    getRandomItemByWeight([]);');
+    const d = withText('script.js', scrPlus).filter(s => s.fn === 'chooseBody' && s.kind === 'call');
+    check('허용 목록: 목록에 없는 호출자의 getRandomItemByWeight 호출은 UNKNOWN', scrPlus !== scr && d.length === 1 && d[0].cls === 'UNKNOWN');
+    const odd = ['const v = Math.random();', 'class K {', '    m() {', '        return Math.random();', '    }', '}', 'const obj = {', '    f: function () {', '        return Math.random();', '    }', '};', 'const multi =', '    () => Math.random();'].join('\n') + '\n';
+    const o = withText('script.js', odd);
+    check('판정 불가 구조(최상위 문장·클래스 메서드·객체 속성 함수·여러 줄 화살표 함수)는 둘러싼 함수 null → UNKNOWN(추정하지 않음)', o.length === 4 && o.every(s => s.fn === null && s.cls === 'UNKNOWN' && s.unknownReason === 'no-enclosing-function'), JSON.stringify(o.map(s => [s.fn, s.cls])));
+    const cl = R.makeClassifier({ sites: withText('core/relations.js', relPlus), dropFrames: 1, locate: fr => ({ area: 'source', file: fr.file, line: fr.line, col: fr.col }) });
+    const u = withText('core/relations.js', relPlus).find(s => s.fn === 'createChild');
+    check('분류기: UNKNOWN 지점에서 난 호출은 UNKNOWN 으로 집계', cl('Error\n    at rec (x:1:1)\n    at createChild (core/relations.js:' + u.line + ':' + u.stackCol + ')').cls === 'UNKNOWN');
+    const oneLine = withText('script.js', 'function chooseBody(ch) { return Math.random(); }\n');
+    check('판정 불가 구조: 한 줄짜리 함수도 둘러싼 함수를 정하지 못해 UNKNOWN(휴리스틱의 한계를 추정으로 메우지 않음)', oneLine.length === 1 && oneLine[0].fn === null && oneLine[0].cls === 'UNKNOWN');
+    void tbl;
+}
+// ── 세 환경 비교의 합격 판정(tests/lib/compare_verdict.js) ───────────────────────────────────
+{
+    const { envFailures, pairSame } = require('./lib/compare_verdict.js');
+    const node = () => ({ lives: 3000, lifeDigest: 1715334118, rngCallDigest: 3460114558, seqDigest: 2717645230, rngCallsTotal: 1611555, siteCalls: 1611555, unknownLives: 0, unknownUnit: 0, byId: { a: 1 },
+        integrity: { broken: false, issued: 10, committed: 9, discarded: 1 }, extra: { exit: 0, spawnError: null } });
+    const page = () => Object.assign(node(), { extra: { error: null, pageErrors: [], pageSha: { same: true }, mathRandomIsRecorder: true, preConfigCalls: 0, progressHalted: false } });
+    const mutN = f => { const r = node(); f(r); return envFailures('node', r, 3000); };
+    const mutP = f => { const r = page(); f(r); return envFailures('file', r, 3000); };
+    check('비교 판정: 정상 결과는 실패 사유 0(Node · Chromium)', envFailures('node', node(), 3000).length === 0 && envFailures('file', page(), 3000).length === 0 && envFailures('inline', page(), 3000).length === 0);
+    check('비교 판정 변이: Node 종료 코드 ≠ 0 → 실패', mutN(r => { r.extra.exit = 1; }).some(x => x.startsWith('exit:')));
+    check('비교 판정 변이: Node 종료 상태 null(신호 종료)·spawn 오류 → 실패', mutN(r => { r.extra.exit = null; }).indexOf('exit-missing') >= 0 && mutN(r => { r.extra.spawnError = 'ENOENT'; }).some(x => x.startsWith('spawn-error')));
+    check('비교 판정 변이: integrity 누락 → 실패(Node · Chromium)', mutN(r => { r.integrity = null; }).indexOf('integrity-missing') >= 0 && mutP(r => { delete r.integrity; }).indexOf('integrity-missing') >= 0);
+    check('비교 판정 변이: integrity.broken = true → 실패', mutN(r => { r.integrity.broken = true; }).indexOf('integrity-broken') >= 0 && mutP(r => { r.integrity.broken = true; }).indexOf('integrity-broken') >= 0);
+    check('비교 판정 변이: issued ≠ committed + discarded → 실패', mutN(r => { r.integrity.committed = 8; }).some(x => x.startsWith('integrity-count')) && mutP(r => { r.integrity.issued = 0; r.integrity.committed = 0; r.integrity.discarded = 0; }).some(x => x.startsWith('integrity-count')));
+    check('비교 판정 변이: Chromium pageErrors 존재·누락 → 실패', mutP(r => { r.extra.pageErrors = ['boom']; }).some(x => x.startsWith('page-errors')) && mutP(r => { delete r.extra.pageErrors; }).indexOf('pageErrors-missing') >= 0);
+    check('비교 판정 변이: lifeDigest · rngCallDigest 가 숫자가 아님(NaN · null · 문자열) → 실패', mutN(r => { r.lifeDigest = NaN; }).some(x => x.startsWith('lifeDigest-invalid')) && mutN(r => { r.rngCallDigest = null; }).some(x => x.startsWith('rngCallDigest-invalid')) && mutP(r => { r.lifeDigest = '1715334118'; }).some(x => x.startsWith('lifeDigest-invalid')));
+    check('비교 판정 변이: 생애 수 부족·NaN → 실패', mutN(r => { r.lives = 2999; }).some(x => x.startsWith('lives:')) && mutP(r => { r.lives = NaN; }).some(x => x.startsWith('lives:')));
+    check('비교 판정 변이: UNKNOWN > 0, 지점 기록 수 ≠ RNG 호출 수, 페이지 소스 해시 불일치, 실행 오류 → 실패', mutN(r => { r.unknownLives = 1; }).length > 0 && mutN(r => { r.siteCalls -= 1; }).length > 0 && mutP(r => { r.extra.pageSha.same = false; }).length > 0 && mutP(r => { r.extra.error = 'x'; }).length > 0 && mutN(r => { r.unknownUnit = 2; }).length > 0);
+    check('비교 판정: 결과 없음·미실행·실패 표시·extra 누락은 합격이 아님', envFailures('node', null, 3000).length > 0 && envFailures('node', { notRun: true }, 3000).length > 0 && envFailures('file', { failed: true, error: 'x' }, 3000).length > 0 && mutN(r => { delete r.extra; }).indexOf('extra-missing') >= 0);
+    const a = node(), b = node();
+    check('비교 판정: 환경 쌍 일치는 lifeDigest · rngCallDigest · 지점 순서열 해시 · 지점별 호출 수가 모두 같을 때만', pairSame(a, b) && !pairSame(a, Object.assign(node(), { seqDigest: 1 })) && !pairSame(a, Object.assign(node(), { byId: { a: 2 } })) && !pairSame(a, Object.assign(node(), { lifeDigest: 2 })) && !pairSame(a, null));
+    const cmpSrc = read('tests/rng_sites_compare.js');
+    check('비교 도구가 이 판정 함수를 씀(자체 조건식 없음)', cmpSrc.indexOf("envFailures(e, row[e], RUNS)") >= 0 && cmpSrc.indexOf('const ok = e =>') < 0);
+}
 // ── VM-9: 열 위치 ───────────────────────────────────────────────────────────────────────
 {
     // V8 은 멤버 호출 Math.random() 의 위치를 속성 이름(random) 열로 보고한다(= M 의 열 + 5). 실제 실행 기록으로 확인한다.
     const siteAt = R.makeSiteIndex(sites);
-    let okM = true, okV8 = true; const bad = [];
+    // 결정 규칙: V8 은 멤버 호출 Math.random() 의 위치를 속성 이름(random) 시작 열로 보고한다(= M 의 열 + 5). 일반 호출 f() 는 함수 이름 시작 열.
+    // 지점은 그 열(stackCol)과 정확히 같을 때만 일치한다. 표현식 범위 안의 다른 열은 모두 불일치(UNKNOWN)여야 한다.
+    let okM = true, okExact = true, okMiss = true, okCall = true; const bad = [];
+    const atCol = (s, col) => { const i = SOURCE_FILES.indexOf(s.file); const p = vmPosOf(fileOffset[i] + offsetInFile(i, s.line, col)); return R.mapPosition(asm, p.line, p.col); };
     for (const s of src.filter(x => x.kind === 'direct')) {
         const i = SOURCE_FILES.indexOf(s.file);
         const lineText = texts[i].slice(origStarts[i][s.line - 1], origStarts[i][s.line]);
-        if (lineText.substr(s.col - 1, 11) !== 'Math.random') okM = false;                       // 표의 열 = 원본에서 M 이 있는 열(UTF-16)
-        for (const delta of [0, 5]) {                                                          // M 의 열, random 의 열(V8 보고 위치)
-            const p = vmPosOf(fileOffset[i] + offsetInFile(i, s.line, s.col + delta));
-            const m = R.mapPosition(asm, p.line, p.col);
-            if (!(m.area === 'source' && m.file === s.file && m.line === s.line && m.col === s.col + delta && siteAt(m) === s)) { okV8 = false; bad.push(s.id); }
+        if (lineText.substr(s.col - 1, 11) !== 'Math.random' || s.stackCol !== s.col + 5 || lineText.substr(s.stackCol - 1, 6) !== 'random') okM = false;   // 표의 열 = M 의 열(UTF-16), 기대 스택 열 = random 의 열
+        const hit = atCol(s, s.stackCol);
+        if (!(hit.area === 'source' && hit.file === s.file && hit.line === s.line && hit.col === s.stackCol && siteAt(hit) === s)) { okExact = false; bad.push('정확 일치 실패 ' + s.id); }
+        for (const d of [-1, 0, 1, 2, 3, 4, 6, 7, 10, 11, 12]) {   // M 의 열(0)을 포함해 random 시작 열(5)이 아닌 모든 위치
+            const col = s.col + d; if (col < 1 || col === s.stackCol) continue;
+            const m = atCol(s, col);
+            if (m.area === 'source' && siteAt(m) !== null && siteAt(m) === s) { okMiss = false; bad.push('불일치여야 하는 열이 일치 ' + s.id + ' +' + d); }
         }
-        const before = vmPosOf(fileOffset[i] + offsetInFile(i, s.line, s.col) - 1), after = vmPosOf(fileOffset[i] + offsetInFile(i, s.line, s.endCol));
-        for (const p of [before, after]) { const m = R.mapPosition(asm, p.line, p.col); if (m.area === 'source' && siteAt(m) === s) { okV8 = false; bad.push('범위 밖 일치 ' + s.id); } }
     }
-    check('VM-9 지점 표의 열 = 원본 줄에서 Math.random 의 M 이 있는 열(UTF-16, 1부터)', okM);
-    check('VM-9 조립 문자열 위치 → 원본 (파일, 줄, 열) 변환이 정확하고, 표현식 범위 안의 열만 그 지점으로 판정(범위 밖은 불일치)', okV8, bad.join(','));
+    for (const s of src.filter(x => x.kind === 'call')) {
+        const i = SOURCE_FILES.indexOf(s.file);
+        const lineText = texts[i].slice(origStarts[i][s.line - 1], origStarts[i][s.line]);
+        const hit = atCol(s, s.stackCol);
+        if (!(s.stackCol === s.col && lineText.substr(s.col - 1, s.callee.length) === s.callee && siteAt(hit) === s)) { okCall = false; bad.push('호출 지점 ' + s.id); }
+        for (const d of [-1, 1, 2, s.callee.length - 1, s.callee.length]) { const m = atCol(s, s.col + d); if (m.area === 'source' && siteAt(m) === s) { okCall = false; bad.push('호출 지점 불일치여야 함 ' + s.id + ' +' + d); } }
+    }
+    check('VM-9 지점 표: col = 원본 줄에서 Math.random 의 M 열, stackCol = random 토큰 시작 열(M + 5) — 20곳 모두', okM);
+    check('VM-9 직접 호출: 기대 스택 열(random 시작)과 정확히 같은 위치만 그 지점으로 분류(20곳)', okExact, bad.join(','));
+    check('VM-9 직접 호출: M 의 열을 포함해 표현식 안팎의 다른 열은 모두 불일치(범위 일치 없음)', okMiss, bad.join(','));
+    check('VM-9 공유·래퍼 함수 호출: 함수 이름 시작 열과 정확히 같을 때만 일치, 이름 안의 다른 열·바로 앞뒤는 불일치(10곳)', okCall, bad.join(','));
+    {
+        const VMF = 'danmachi-integration-test.js';
+        const cl = R.makeClassifier({ sites, dropFrames: 1, locate: fr => (fr && fr.file === VMF) ? R.mapPosition(asm, fr.line, fr.col) : { area: 'unknown' } });
+        const r5 = sites.find(s => s.id === 'script.js:nextYear:random#1'), i = SOURCE_FILES.indexOf('script.js');
+        const stackAt = col => { const p = vmPosOf(fileOffset[i] + offsetInFile(i, r5.line, col)); return 'Error\n    at recordedRandom (/x/test_runner.js:1:1)\n    at nextYear (' + VMF + ':' + p.line + ':' + p.col + ')'; };
+        check('VM-9 분류기: 기대 열이면 R5, M 의 열·한 칸 옆·표현식 끝이면 UNKNOWN(예상하지 못한 열은 반드시 UNKNOWN)', cl(stackAt(r5.stackCol)).cls === 'R5' && [r5.col, r5.stackCol - 1, r5.stackCol + 1, r5.col + 11].every(c => cl(stackAt(c)).cls === 'UNKNOWN'));
+    }
     const k = J.tally.unknownSamples.length;
     check('VM-9 실제 실행: V8 이 보고한 열로 모든 호출이 지점에 정확히 맞음(UNKNOWN 표본 0)', k === 0);
     // 합성: 줄 앞에 한글(BMP, 1 단위)과 보충 평면 문자(2 단위)가 있는 소스
     const synth = 'const a = "가나다"; const b = "\u{1F600}"; const x = Math.random();\nfunction f() { return Math.random(); }\n';
     const sa = R.buildAssembly(R.buildNodeVmParts(['a.js', 'b.js'], ['// 한글 머리말\n', synth], '\n;\n', '\n', '/* h */'));
-    const ss = R.buildSiteTable([{ area: 'source', file: 'b.js', text: synth }], { shared: {}, wrapper: {}, direct: { 'b.js': { '*': 'R4' } }, call: {}, harness: {} });
+    const ss = R.buildSiteTable([{ area: 'source', file: 'b.js', text: synth }], { shared: {}, wrapper: {}, groups: {}, harness: {} });
     const col1 = synth.indexOf('Math.random') + 1;   // JS 문자열 인덱스 = UTF-16 코드 단위
     let captured = null;
     const ctx = vm.createContext({ Math: Object.assign(Object.create(Math), { random() { captured = new Error().stack; return 0.5; } }), Error });
@@ -151,7 +244,7 @@ check('지점 표: lineage.js · recruit.js 의 주석 속 "Math.random" 은 지
 {
     const VMF = 'danmachi-integration-test.js';
     const locate = a => fr => (fr && fr.file === VMF) ? R.mapPosition(a, fr.line, fr.col) : { area: 'unknown', reason: 'not-vm-file' };
-    const frameOf = s => { const i = SOURCE_FILES.indexOf(s.file); const p = vmPosOf(fileOffset[i] + offsetInFile(i, s.line, s.col + (s.kind === 'direct' ? 5 : 0))); return '    at x (' + VMF + ':' + p.line + ':' + p.col + ')'; };
+    const frameOf = s => { const i = SOURCE_FILES.indexOf(s.file); const p = vmPosOf(fileOffset[i] + offsetInFile(i, s.line, s.stackCol)); return '    at x (' + VMF + ':' + p.line + ':' + p.col + ')'; };
     const byId = id => sites.find(s => s.id === id);
     const stackOf = (...frames) => ['Error', '    at recordedRandom (/x/test_runner.js:1:1)'].concat(frames).join('\n');
     const good = R.makeClassifier({ sites, dropFrames: 1, locate: locate(asm) });
