@@ -156,7 +156,11 @@ async function chromiumPage(browser, timerCapMs) {
             check('TM-2b 전제: F1 러너와 현재 러너 모두 자동 진행(동기 중첩)으로 400생애 완주, rollFamilia 계측 호출이 있음', f1.status === 0 && now.status === 0 && f1.completed === '400' && now.completed === '400' && rolls(f1) > 0, JSON.stringify([f1.status, now.status, f1.completed, now.completed, rolls(f1)]));
             check('TM-2b 사건별 귀속: V8.v4.rollCalls · rollModes · rollModeByEvent 가 F1 러너와 같음', pickV(f1) !== null && pickV(f1) === pickV(now));
             check('TM-2b 자동 진행 러너의 출력 전체(lifeDigest · 사건 집계 포함)가 F1 러너와 같음', f1.out === now.out && f1.lifeDigest === now.lifeDigest);
-            check('TM-2b 변이: 활성 사건 스택을 쓰지 않으면(lastShownEventId 만) 중첩에서 귀속이 F1 과 달라짐 — 시험이 결함을 잡음', mutant.status !== null && pickV(mutant) !== pickV(f1));
+            // 변이 러너도 정상적으로 끝까지 돌아 계측 자료가 있어야 한다. 실행 실패·자료 없음은 "변이 검출"이 아니라 시험 실패다.
+            const valid = x => x.status === 0 && x.completed === '400' && !!x.v && !!x.v.v4 && x.v.v4.rollCalls && typeof x.v.v4.rollCalls === 'object' && x.v.rollModes && typeof x.v.rollModes === 'object' && rolls(x) > 0;
+            check('TM-2b 변이 러너의 실행 유효성: 종료 코드 0 · 400생애 완주 · rollCalls 와 rollModes 생성 · rollFamilia 호출 수 > 0', valid(mutant), JSON.stringify([mutant.status, mutant.completed, !!mutant.v, rolls(mutant)]));
+            check('TM-2b 변이: 활성 사건 스택을 쓰지 않으면(lastShownEventId 만) 중첩에서 귀속이 F1 과 달라짐 — 시험이 결함을 잡음(유효한 실행끼리 비교)', valid(mutant) && valid(f1) && rolls(mutant) === rolls(f1) && pickV(mutant) !== pickV(f1));
+            check('TM-2b 변이: 귀속만 달라지고 생애 결과는 같음(lifeDigest 동일) — 차이가 계측 귀속에서만 난 것임을 확인', valid(mutant) && mutant.lifeDigest === f1.lifeDigest && JSON.stringify(mutant.v.rollModes) === JSON.stringify(f1.v.rollModes));
             info('TM-2b rollFamilia 계측 호출 수 ' + rolls(f1) + ', lifeDigest(자동 진행 400생애) ' + f1.lifeDigest + ', 사건 키 수 ' + (f1.v ? Object.keys(f1.v.v4.rollCalls).length : 0));
         }
     }

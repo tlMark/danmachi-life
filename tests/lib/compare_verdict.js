@@ -15,20 +15,28 @@ function envFailures(env, row, runs) {
     if (!isUint32(row.seqDigest)) bad.push('seqDigest-invalid:' + row.seqDigest);
     if (!(Number.isInteger(row.rngCallsTotal) && row.rngCallsTotal > 0)) bad.push('rngCallsTotal-invalid:' + row.rngCallsTotal);
     if (!(Number.isInteger(row.siteCalls) && row.siteCalls === row.rngCallsTotal)) bad.push('siteCalls!=rngCallsTotal:' + row.siteCalls + '/' + row.rngCallsTotal);
-    if (row.unknownLives !== 0) bad.push('unknown-lives:' + row.unknownLives);
-    if (!row.byId || typeof row.byId !== 'object' || Object.keys(row.byId).length === 0) bad.push('byId-missing');
+    if (row.unknownLives !== 0) bad.push('unknown-lives:' + row.unknownLives);   // 생애 구간 UNKNOWN
+    if (row.unknownUnit !== 0) bad.push('unknown-unit:' + row.unknownUnit);      // 생애 밖(단위 시험·설정 단계) 구간 UNKNOWN — 세 환경 공통
+    // 지점 id 별 호출 수: 객체여야 하고, 비어 있지 않고, 값은 모두 양의 정수이며, 합계가 siteCalls 와 같아야 한다
+    if (!row.byId || typeof row.byId !== 'object' || Array.isArray(row.byId) || Object.keys(row.byId).length === 0) bad.push('byId-missing');
+    else {
+        let sum = 0, okValues = true;
+        for (const k of Object.keys(row.byId)) { const v = row.byId[k]; if (!(typeof v === 'number' && Number.isInteger(v) && v > 0)) { okValues = false; break; } sum += v; }
+        if (!okValues) bad.push('byId-value-invalid');
+        else if (sum !== row.siteCalls) bad.push('byId-sum!=siteCalls:' + sum + '/' + row.siteCalls);
+    }
     const it = row.integrity;
     if (!it || typeof it !== 'object') bad.push('integrity-missing');
     else {
         if (it.broken !== false) bad.push('integrity-broken');
-        if (!(Number.isInteger(it.issued) && Number.isInteger(it.committed) && Number.isInteger(it.discarded) && it.issued > 0 && it.issued === it.committed + it.discarded)) bad.push('integrity-count:' + it.issued + '/' + it.committed + '/' + it.discarded);
+        const nonNegInt = n => typeof n === 'number' && Number.isInteger(n) && n >= 0;   // 세 계수 모두 0 이상의 정수
+        if (!(nonNegInt(it.issued) && nonNegInt(it.committed) && nonNegInt(it.discarded) && it.issued > 0 && it.issued === it.committed + it.discarded)) bad.push('integrity-count:' + it.issued + '/' + it.committed + '/' + it.discarded);
     }
     if (x && typeof x === 'object') {
         if (env === 'node') {
             if (x.spawnError) bad.push('spawn-error:' + x.spawnError);
             if (x.exit === null || x.exit === undefined) bad.push('exit-missing');
             else if (x.exit !== 0) bad.push('exit:' + x.exit);
-            if (row.unknownUnit !== 0) bad.push('unknown-unit:' + row.unknownUnit);
         } else {
             if (x.error) bad.push('run-error:' + String(x.error).slice(0, 80));
             if (!Array.isArray(x.pageErrors)) bad.push('pageErrors-missing');

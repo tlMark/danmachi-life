@@ -154,7 +154,7 @@ check('지점 표: lineage.js · recruit.js 의 주석 속 "Math.random" 은 지
 // ── 세 환경 비교의 합격 판정(tests/lib/compare_verdict.js) ───────────────────────────────────
 {
     const { envFailures, pairSame } = require('./lib/compare_verdict.js');
-    const node = () => ({ lives: 3000, lifeDigest: 1715334118, rngCallDigest: 3460114558, seqDigest: 2717645230, rngCallsTotal: 1611555, siteCalls: 1611555, unknownLives: 0, unknownUnit: 0, byId: { a: 1 },
+    const node = () => ({ lives: 3000, lifeDigest: 1715334118, rngCallDigest: 3460114558, seqDigest: 2717645230, rngCallsTotal: 1611555, siteCalls: 1611555, unknownLives: 0, unknownUnit: 0, byId: { a: 1611000, b: 555 },
         integrity: { broken: false, issued: 10, committed: 9, discarded: 1 }, extra: { exit: 0, spawnError: null } });
     const page = () => Object.assign(node(), { extra: { error: null, pageErrors: [], pageSha: { same: true }, mathRandomIsRecorder: true, preConfigCalls: 0, progressHalted: false } });
     const mutN = f => { const r = node(); f(r); return envFailures('node', r, 3000); };
@@ -169,9 +169,16 @@ check('지점 표: lineage.js · recruit.js 의 주석 속 "Math.random" 은 지
     check('비교 판정 변이: lifeDigest · rngCallDigest 가 숫자가 아님(NaN · null · 문자열) → 실패', mutN(r => { r.lifeDigest = NaN; }).some(x => x.startsWith('lifeDigest-invalid')) && mutN(r => { r.rngCallDigest = null; }).some(x => x.startsWith('rngCallDigest-invalid')) && mutP(r => { r.lifeDigest = '1715334118'; }).some(x => x.startsWith('lifeDigest-invalid')));
     check('비교 판정 변이: 생애 수 부족·NaN → 실패', mutN(r => { r.lives = 2999; }).some(x => x.startsWith('lives:')) && mutP(r => { r.lives = NaN; }).some(x => x.startsWith('lives:')));
     check('비교 판정 변이: UNKNOWN > 0, 지점 기록 수 ≠ RNG 호출 수, 페이지 소스 해시 불일치, 실행 오류 → 실패', mutN(r => { r.unknownLives = 1; }).length > 0 && mutN(r => { r.siteCalls -= 1; }).length > 0 && mutP(r => { r.extra.pageSha.same = false; }).length > 0 && mutP(r => { r.extra.error = 'x'; }).length > 0 && mutN(r => { r.unknownUnit = 2; }).length > 0);
+    const mutI = f => { const r = page(); f(r); return envFailures('inline', r, 3000); };
+    check('비교 판정 변이: 생애 밖 구간 UNKNOWN(unknownUnit) > 0 → Node · file · inline 모두 실패', [mutN, mutP, mutI].every(m => m(r => { r.unknownUnit = 1; }).some(x => x.startsWith('unknown-unit'))));
+    check('비교 판정 변이: unknownUnit · unknownLives 가 없거나 숫자가 아님 → 세 환경 모두 실패', [mutN, mutP, mutI].every(m => m(r => { delete r.unknownUnit; }).length > 0 && m(r => { r.unknownLives = null; }).length > 0 && m(r => { r.unknownUnit = '0'; }).length > 0));
+    check('비교 판정 변이: integrity 계수 음수(issued = committed + discarded 는 성립) → 실패', [mutN, mutP].every(m => m(r => { r.integrity = { broken: false, issued: 10, committed: 11, discarded: -1 }; }).some(x => x.startsWith('integrity-count')) && m(r => { r.integrity = { broken: false, issued: 10, committed: -5, discarded: 15 }; }).some(x => x.startsWith('integrity-count'))));
+    check('비교 판정 변이: integrity 계수가 소수·문자열·누락 → 실패', mutN(r => { r.integrity.discarded = 1.5; r.integrity.committed = 8.5; }).some(x => x.startsWith('integrity-count')) && mutP(r => { r.integrity.issued = '10'; }).some(x => x.startsWith('integrity-count')) && mutN(r => { delete r.integrity.discarded; }).some(x => x.startsWith('integrity-count')));
+    check('비교 판정 변이: byId 값이 문자열 · null · 음수 · 0 · 소수 → 실패', [v => '5', v => null, v => -3, v => 0, v => 1.5].every(g => mutN(r => { r.byId = { a: g() }; }).indexOf('byId-value-invalid') >= 0 && mutP(r => { r.byId = { a: 5, b: g() }; }).indexOf('byId-value-invalid') >= 0));
+    check('비교 판정 변이: byId 합계 ≠ siteCalls → 실패(Node · Chromium), 배열·빈 객체도 실패', mutN(r => { r.byId = { a: 1611554 }; }).some(x => x.startsWith('byId-sum')) && mutP(r => { r.byId = { a: 1611555, b: 1 }; }).some(x => x.startsWith('byId-sum')) && mutN(r => { r.byId = [1611555]; }).indexOf('byId-missing') >= 0 && mutN(r => { r.byId = {}; }).indexOf('byId-missing') >= 0);
     check('비교 판정: 결과 없음·미실행·실패 표시·extra 누락은 합격이 아님', envFailures('node', null, 3000).length > 0 && envFailures('node', { notRun: true }, 3000).length > 0 && envFailures('file', { failed: true, error: 'x' }, 3000).length > 0 && mutN(r => { delete r.extra; }).indexOf('extra-missing') >= 0);
     const a = node(), b = node();
-    check('비교 판정: 환경 쌍 일치는 lifeDigest · rngCallDigest · 지점 순서열 해시 · 지점별 호출 수가 모두 같을 때만', pairSame(a, b) && !pairSame(a, Object.assign(node(), { seqDigest: 1 })) && !pairSame(a, Object.assign(node(), { byId: { a: 2 } })) && !pairSame(a, Object.assign(node(), { lifeDigest: 2 })) && !pairSame(a, null));
+    check('비교 판정: 환경 쌍 일치는 lifeDigest · rngCallDigest · 지점 순서열 해시 · 지점별 호출 수가 모두 같을 때만', pairSame(a, b) && !pairSame(a, Object.assign(node(), { seqDigest: 1 })) && !pairSame(a, Object.assign(node(), { byId: { a: 1611001, b: 554 } })) && !pairSame(a, Object.assign(node(), { lifeDigest: 2 })) && !pairSame(a, null));
     const cmpSrc = read('tests/rng_sites_compare.js');
     check('비교 도구가 이 판정 함수를 씀(자체 조건식 없음)', cmpSrc.indexOf("envFailures(e, row[e], RUNS)") >= 0 && cmpSrc.indexOf('const ok = e =>') < 0);
 }

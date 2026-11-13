@@ -36,9 +36,11 @@ const harnessBody = [LIB.rng_core, LIB.rng_sites, LIB.commit_queue, LIB.driver_c
 const sourceSites = () => SOURCE_FILES.map((file, i) => ({ area: 'source', file, text: texts[i] }));
 
 function summarize(tag, r) {
-    const t = r.tally || { lives: { byCls: {}, byId: {} }, unit: { byCls: {} } };
+    // 집계가 없으면 0 으로 채우지 않는다(null → 판정에서 실패). UNKNOWN 수는 집계가 실제로 있을 때만 0 이 될 수 있다.
+    const has = !!(r.tally && r.tally.lives && r.tally.lives.byCls && r.tally.unit && r.tally.unit.byCls);
+    const t = has ? r.tally : { lives: { byCls: null, byId: null, calls: null, seqDigest: null, perLifeCallDigest: null }, unit: { byCls: null } };
     return { tag, lives: r.lives, lifeDigest: r.lifeDigest, rngCallDigest: r.rngCallDigest, rngCallsTotal: r.rngCallsTotal,
-        unknownLives: t.lives.byCls.UNKNOWN || 0, unknownUnit: (t.unit.byCls || {}).UNKNOWN || 0, siteCalls: t.lives.calls, byCls: t.lives.byCls, byId: t.lives.byId,
+        unknownLives: has ? (t.lives.byCls.UNKNOWN || 0) : null, unknownUnit: has ? (t.unit.byCls.UNKNOWN || 0) : null, siteCalls: t.lives.calls, byCls: t.lives.byCls, byId: t.lives.byId,
         seqDigest: t.lives.seqDigest, perLifeCallDigest: t.lives.perLifeCallDigest, integrity: r.integrity || null, extra: r.extra || null, unknownSamples: (r.tally || {}).unknownSamples || [] };
 }
 
