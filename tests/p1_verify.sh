@@ -2,19 +2,20 @@
 # F1D4A P1 — 전체 검증 실행 스크립트(시험 전용). 게임 코드·F1 기준 파일을 바꾸지 않는다. 로그는 지정한 폴더에만 쓴다.
 # 사용: bash tests/p1_verify.sh <출력 폴더>
 # 각 항목의 종료 코드를 <출력 폴더>/logs/*.log 끝에 "exit=N" 으로 적고, 하나라도 0 이 아니면 이 스크립트도 0 이 아닌 코드로 끝난다.
+# 실행할 항목을 미리 등록해 두고 끝에서 대조한다. 병렬 하위 셸이 강제 종료되어 기록을 남기지 못한 항목, 시작되지 못한 항목도 실패다(tests/lib/verify_run.sh).
 set -u
 OUT=${1:?usage: bash tests/p1_verify.sh <out dir>}
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 cd "$ROOT" || exit 2
-mkdir -p "$OUT/logs" "$OUT/compare" || exit 2
-L="$OUT/logs"; C="$OUT/compare"; FAILS="$OUT/failed_steps.txt"; : > "$FAILS"
-run() {   # run <이름> <명령...> : 로그에 출력과 종료 코드를 남기고, 실패하면 FAILS 에 적는다
-    local name=$1; shift
-    "$@" > "$L/$name.log" 2>&1; local code=$?
-    echo "exit=$code" >> "$L/$name.log"
-    if [ "$code" -ne 0 ]; then echo "$name exit=$code" >> "$FAILS"; fi
-    return $code
-}
+mkdir -p "$OUT/compare" || exit 2
+. "$ROOT/tests/lib/verify_run.sh"
+vr_init "$OUT" || exit 2
+L="$VR_L"; C="$OUT/compare"
+# 이번 실행에서 반드시 끝나야 하는 항목(아래 run 호출과 1:1). 여기 없는 이름으로는 run 할 수 없고, 여기 있는데 기록이 없으면 실패다.
+vr_expect 01_syntax 02_tr_20261104 03_tr_777 04_digest10_vs_F1 05_f1_byte_compare 06_digest10_strict 07_verify_run_selftest \
+    10_followup_pf_test 10_followup_halt_test 10_f1_joinhard_test 10_f1_transition_test 10_god_gone_2ba_test 10_residence_ri_test 10_sync_2i_test 10_jobsince_test 10_recruit_2bb_test \
+    11_f1_mutation 12_jobsince_mutation 13_recruit_2bb_mutation 14_d3_wiring_mutation \
+    20_browser_file 21_browser_inline 30_rng_sites_test 31_rng_timer_test 40_cmp_physical 41_cmp_off 42_cmp_cal_newborn
 syntax() { local bad=0; for f in *.js core/*.js tests/*.js tests/lib/*.js; do node --check "$f" || { echo "FAIL $f"; bad=1; }; done; return $bad; }
 f1cmp() {   # F1 기록 로그와의 바이트 비교(증빙: 양쪽 SHA-256 과 cmp 결과)
     local bad=0
@@ -28,6 +29,7 @@ f1cmp() {   # F1 기록 로그와의 바이트 비교(증빙: 양쪽 SHA-256 과
     return $bad
 }
 run 01_syntax syntax
+run 07_verify_run_selftest bash tests/verify_run_selftest.sh
 ( run 40_cmp_physical node tests/rng_sites_compare.js "$C/physical" configs=physical/20261104,physical/777,physical/314159,physical/8675309 ) &
 ( run 41_cmp_off node tests/rng_sites_compare.js "$C/off" configs=off/20261104,off/777,off/314159,off/8675309 ) &
 ( run 42_cmp_cal_newborn node tests/rng_sites_compare.js "$C/cal_newborn" configs=calendar/20261104,newborn_parent_familia/20261104 ) &
@@ -46,6 +48,5 @@ run 20_browser_file node tests/browser_test.js 24
 run 21_browser_inline env BROWSER_LOAD=inline node tests/browser_test.js 24
 # digest10 도구는 lifeDigest 만 비교하고 종료 코드에 반영하지 않으므로, lifeDigest · rngCallDigest · 종료 코드 · 완주 수 · 불변식을 F1 기록과 직접 대조한다
 run 06_digest10_strict node tests/digest10_strict.js "$L/04_digest10.json" logs/v178_f1/digest10_vs_s3.json
-N=$(wc -l < "$FAILS")
-if [ "$N" -eq 0 ]; then echo "ALL_DONE: 모든 항목 종료 코드 0" > "$L/99_done.log"; exit 0; fi
-{ echo "FAILED_STEPS: $N"; cat "$FAILS"; } > "$L/99_done.log"; cat "$L/99_done.log"; exit 1
+vr_finish
+exit $?
