@@ -26,6 +26,8 @@ for (const f of ['data.js', 'events.js', 'script.js']) fs.copyFileSync(path.join
 fs.mkdirSync(path.join(tmp, 'core'));
 for (const f of fs.readdirSync(path.join(r1, 'core'))) fs.copyFileSync(path.join(r1, 'core', f), path.join(tmp, 'core', f));
 fs.copyFileSync(path.join(here, 'test_runner.js'), path.join(tmp, 'test_runner.js'));
+fs.mkdirSync(path.join(tmp, 'tests', 'lib'), { recursive: true });   // F1D4A P1: 러너가 쓰는 하네스 라이브러리도 함께 복사
+for (const f of fs.readdirSync(path.join(here, 'tests', 'lib'))) fs.copyFileSync(path.join(here, 'tests', 'lib', f), path.join(tmp, 'tests', 'lib', f));
 
 const run = (dir, mode, seed) => new Promise(resolve => {
   const env = { ...process.env, SIM_RUNS: String(base.runs), SIM_SEED: seed, SIM_HP_REGEN_MODE: mode === 'newborn_parent_familia' ? 'physical' : mode };

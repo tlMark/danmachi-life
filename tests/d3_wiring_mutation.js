@@ -9,7 +9,9 @@ const root = path.resolve(__dirname, '..');
 const src = fs.readFileSync(path.join(root, 'test_runner.js'), 'utf8');
 const MUTATIONS = {
   none: null,
-  'remove ① showEvent 래퍼의 measurePolluted': "        measurePolluted('event', d3Sink.ids, d3Sink.out);   // D-3 연결 ①",
+  // F1D4A P1: showEvent 래퍼가 "캡처 → 호출 → 반영" 으로 바뀌어 ① 은 캡처(임시 출력에 측정)와 반영(임시 출력을 sink 에 더함) 두 문장이 됐다. 둘 다 변이 대상이다.
+  'remove ① showEvent 래퍼의 measurePolluted': "        measurePolluted('event', d3Sink.ids, d3);   // D-3 연결 ①",
+  'remove ①b showEvent 반영 단계의 D-3 반영': "        for (const key of Object.keys(x.d3)) x.sinkOut[key] = (x.sinkOut[key] || 0) + x.d3[key];   // (a) D-3",
   'remove ② rollFamilia 래퍼의 trackSealedJoin': "        trackSealedJoin(mode, result, d3Sink.ids);   // D-3 연결 ②",
   'remove ③ endLife 래퍼의 measurePolluted': "        measurePolluted('endLife', d3Sink.ids, d3Sink.out);   // D-3 연결 ③",
   'remove helper 내부 id 추가': "        const last = open[open.length - 1]; if (last) ids.add(last.id);"

@@ -11,115 +11,21 @@ const RUNS = Number.isInteger(Number(process.env.SIM_RUNS)) ? Math.max(1, Number
 const MAX_ACTIONS_PER_LIFE = 3000;
 const SEED = Number.isInteger(Number(process.env.SIM_SEED)) ? Number(process.env.SIM_SEED) >>> 0 : 20261104;
 
-function createRng(seed) {
-    let state = seed >>> 0;
-    let calls = 0;   // v1.7.8-2i(V1·Q19): 호출 카운터. 테스트 러너 전용 계측, 게임 코드에는 없음.
-    const random = function random() {
-        calls += 1;
-        state += 0x6D2B79F5;
-        let value = state;
-        value = Math.imul(value ^ (value >>> 15), value | 1);
-        value ^= value + Math.imul(value ^ (value >>> 7), value | 61);
-        return ((value ^ (value >>> 14)) >>> 0) / 4294967296;
-    };
-    // 단위 테스트가 본 시뮬레이션의 난수열을 소비하지 않도록 상태를 저장/복원할 수 있다.
-    random.getState = () => ({ state, calls });
-    random.setState = value => { state = value.state; calls = value.calls; };
-    random.calls = () => calls;
-    return random;
-}
+const { createRng } = require('./tests/lib/rng_core.js');   // F1D4A P1: 같은 함수를 공통 소스로 옮김(Chromium 측정과 공유). 내용은 F1 과 같다
 
-function makeElement(tagName) {
-    let html = '';
-    let text = '';
-    let classes = new Set();
-    const element = {
-        tagName: String(tagName || 'div').toUpperCase(),
-        kids: [],
-        parentNode: null,
-        isConnected: true,
-        checked: false,
-        onclick: null,
-        listeners: {},
-        classList: {
-            add(...names) { names.forEach(name => classes.add(String(name))); },
-            remove(...names) { names.forEach(name => classes.delete(String(name))); },
-            contains(name) { return classes.has(String(name)); }
-        },
-        appendChild(child) {
-            child.parentNode = this;
-            child.isConnected = true;
-            this.kids.push(child);
-            return child;
-        },
-        removeChild(child) {
-            this.kids = this.kids.filter(item => item !== child);
-            child.parentNode = null;
-            child.isConnected = false;
-            return child;
-        },
-        querySelectorAll(selector) {
-            if (selector === 'button') return this.kids.filter(child => child.tagName === 'BUTTON');
-            return this.kids.slice();
-        },
-        addEventListener(type, callback) {
-            (this.listeners[type] ||= []).push(callback);
-        },
-        click() {
-            if (typeof this.onclick === 'function') this.onclick();
-            (this.listeners.click || []).forEach(callback => callback({ target: this }));
-        },
-        scrollIntoView() {},
-        set innerHTML(value) {
-            html = String(value == null ? '' : value);
-            if (html === '') this.kids = [];
-        },
-        get innerHTML() { return html; },
-        set innerText(value) { text = String(value == null ? '' : value); },
-        get innerText() { return text; },
-        set textContent(value) { text = String(value == null ? '' : value); },
-        get textContent() { return text; }
-    };
-    Object.defineProperty(element, 'className', {
-        get() { return Array.from(classes).join(' '); },
-        set(value) { classes = new Set(String(value || '').split(/\s+/).filter(Boolean)); }
-    });
-    return element;
-}
-
-function makeDocument() {
-    const elements = new Map();
-    const screenIds = ['screen-start', 'screen-loading', 'screen-play', 'screen-result'];
-    screenIds.forEach((id, index) => {
-        const screen = makeElement('div');
-        screen.id = id;
-        screen.className = index === 0 ? 'screen active' : 'screen hidden';
-        elements.set(id, screen);
-    });
-    return {
-        getElementById(id) {
-            if (!elements.has(id)) {
-                const element = makeElement('div');
-                element.id = id;
-                elements.set(id, element);
-            }
-            return elements.get(id);
-        },
-        createElement(tagName) { return makeElement(tagName); },
-        querySelectorAll(selector) {
-            return selector === '.screen' ? screenIds.map(id => elements.get(id)) : [];
-        },
-        _elements: elements
-    };
-}
+const { makeElement, makeDocument } = require('./tests/lib/mock_dom.js');   // F1D4A P1: 모의 DOM 을 공통 소스로 옮김. 내용은 F1 과 같다
 
 function assert(condition, message) {
     if (!condition) throw new Error(message || 'assertion failed');
 }
 
 const rng = createRng(SEED);
+// F1D4A P1: RNG 지점 기록(SIM_RNG_SITES=<출력 파일> 일 때만 켬). 호출마다 스택을 분류해 적을 뿐, 난수열·호출 수는 바꾸지 않는다.
+const SITE_OUT = process.env.SIM_RNG_SITES || null;
+let siteRecorder = null;   // 조립 문자열이 만들어진 뒤(아래) 채운다
+const recordedRandom = function recordedRandom() { siteRecorder.note(new Error().stack); return rng(); };
 const math = Object.create(Math);
-Object.defineProperty(math, 'random', { value: rng });
+Object.defineProperty(math, 'random', { value: SITE_OUT ? recordedRandom : rng });
 const document = makeDocument();
 const sandbox = {
     console,
@@ -146,6 +52,10 @@ const sandbox = {
     __NEWBORN_MEMBERSHIP: process.env.SIM_NEWBORN_MEMBERSHIP === '1' ? true : undefined,   // A/B: 1 = v1.7.1 방식(출생 즉시 입단)
     __HP_REGEN_MODE: process.env.SIM_HP_REGEN_MODE || undefined   // A/B 비교용(physical|calendar|off). 기본: 게임 기본값(physical)
 };
+
+// F1D4A P1: 하네스 라이브러리(시험 전용). 아래 두 소스는 integrationScript 안에 그대로 넣는다(공통 드라이버는 Chromium 측정에서도 같은 소스를 쓴다).
+const COMMIT_QUEUE_SRC = fs.readFileSync(path.join(ROOT, 'tests', 'lib', 'commit_queue.js'), 'utf8').replace(/\nif \(typeof module[^\n]*\n?$/, '\n');   // 끝의 module.exports 줄만 뺀다
+const DRIVER_CORE_SRC = fs.readFileSync(path.join(ROOT, 'tests', 'lib', 'driver_core.js'), 'utf8');
 
 const sourceFiles = [
     'data.js',
@@ -781,22 +691,33 @@ const integrationScript = `
             out[(tracked ? 'tracked:' : 'untracked:') + where] = (out[(tracked ? 'tracked:' : 'untracked:') + where] || 0) + 1;
         }
     };
-    showEvent = function (event) {
-        measurePolluted('event', d3Sink.ids, d3Sink.out);   // D-3 연결 ①: 이벤트 표시 시점(일시 정지와 무관한 단일 호출 지점)
-        if (instrumentPaused) return originalShowEvent(event);   // 2i-r2: 합성 테스트 중 그 밖의 집계 제외
-        results.eventCount += 1;
-        results.uniqueEvents[event.id] = (results.uniqueEvents[event.id] || 0) + 1;
+    // ── F1D4A P1: showEvent 계측을 "캡처 → 원래 함수 호출 → 반영/폐기" 로 바꾼다(설계 r3.20 00_INDEX §E-1.3 하네스 계측 규칙). ──
+    // 호출 전에는 지역 객체에만 캡처하고, 원래 함수가 끝난 뒤 발급 순번(seq) 순서로 반영한다. 게임 상태·난수는 읽기만 한다.
+    // 반영 대상: D-3 임시 출력(일시 정지와 무관) → 그 밖의 계측(일시 정지 중이 아니었을 때만). 순서와 내용은 F1 의 "호출 전 기록"과 같다.
+    ${COMMIT_QUEUE_SRC}
+    const captureShowEvent = function (event) {
+        const ops = [], d3 = {};
+        const sinkOut = d3Sink.out, paused = instrumentPaused;   // 호출 시작 시점의 sink 와 일시 정지 여부를 잡아 둔다(늦게 반영돼도 원래 sink 로 간다)
+        const haltedAtCall = typeof progressHalted !== 'undefined' && progressHalted === true;
+        const inc = (obj, key) => ops.push(() => { obj[key] = (obj[key] || 0) + 1; });
+        const push = (arr, value) => ops.push(() => { arr.push(value); });
+        const pushCap = (arr, value, cap) => ops.push(() => { if (arr.length < cap) arr.push(value); });
+        const setLastShown = id => ops.push(() => { lastShownEventId = id; });
+        measurePolluted('event', d3Sink.ids, d3);   // D-3 연결 ①: 이벤트 표시 시점(일시 정지와 무관한 단일 호출 지점). 임시 출력에 잰다
+        if (paused) return { ops, d3, sinkOut, paused, haltedAtCall };   // 2i-r2: 합성 테스트 중 그 밖의 집계 제외
+        inc(results, 'eventCount');
+        inc(results.uniqueEvents, event.id);
         const job = S.job || '(unknown)';
-        results.eventCountsByJob[job] = (results.eventCountsByJob[job] || 0) + 1;
-        currentLifeEvents.push(event.id);
-        if (job === 'adventurer') results.adventurerEvents += 1;
-        if (job === 'adventurer' && !S.flags.includes('falna')) results.preFalnaAdventurerEvents[event.id] = (results.preFalnaAdventurerEvents[event.id] || 0) + 1;
-        if (job === 'supporter') results.supporterEvents += 1;
+        inc(results.eventCountsByJob, job);
+        push(currentLifeEvents, event.id);
+        if (job === 'adventurer') inc(results, 'adventurerEvents');
+        if (job === 'adventurer' && !S.flags.includes('falna')) inc(results.preFalnaAdventurerEvents, event.id);
+        if (job === 'supporter') inc(results, 'supporterEvents');
         if (job === 'retired') {
-            results.retiredEvents += 1;
-            if (event.id === 'retired_days') results.retiredDaysEvents += 1;
+            inc(results, 'retiredEvents');
+            if (event.id === 'retired_days') inc(results, 'retiredDaysEvents');
         }
-        if (event.id === 'have_child' && !GameCore.Relations.hasPartner(S)) results.childWithoutPartner += 1;
+        if (event.id === 'have_child' && !GameCore.Relations.hasPartner(S)) inc(results, 'childWithoutPartner');
         {   // Every shown event must satisfy its own gate at the moment it is shown (job / ages / relatives / items).
             const c = event.cond || {};
             const bad = [];
@@ -816,42 +737,58 @@ const integrationScript = `
             if (c.flags && !c.flags.every(f => S.flags.includes(f))) bad.push('flags');
             if (c.noFlags && c.noFlags.some(f => S.flags.includes(f))) bad.push('noFlags');
             if (c.max && Object.keys(c.max).some(k => S[k] > c.max[k])) bad.push('max');
-            if (bad.length) { results.eventGateViolations += 1; if (results.eventGateViolationSamples.length < 5) results.eventGateViolationSamples.push(event.id + ':' + bad.join('+')); }
+            if (bad.length) { inc(results, 'eventGateViolations'); pushCap(results.eventGateViolationSamples, event.id + ':' + bad.join('+'), 5); }
         }
         {   // v1.7.7: protected(비팔나 보호·거주) 소속 상태에서 노출된 이벤트 집계
             const open = (S.familiaHistory || []).find(m => m.leftAt == null);
             if (open && open.role === 'protected' && S.familia) {
                 const area = (EVENT_AREA[event.id] || [])[0];
-                if (area === 'dungeon') results.v177.protectedDungeon += 1;
-                if (event.id === 'wargame') results.v177.protectedWargame += 1;
-                if ((event.cond || {}).hasFamilia === true) results.v177.protectedHasFamiliaEvents[event.id] = (results.v177.protectedHasFamiliaEvents[event.id] || 0) + 1;
+                if (area === 'dungeon') inc(results.v177, 'protectedDungeon');
+                if (event.id === 'wargame') inc(results.v177, 'protectedWargame');
+                if ((event.cond || {}).hasFamilia === true) inc(results.v177.protectedHasFamiliaEvents, event.id);
             }
         }
         {   // v1.7.8-2i: 이벤트 표시 시점 검사
-            lastShownEventId = event.id;
+            setLastShown(event.id);
             const st = rDerive(S);
-            if (event.id === 'god_gone') V8.v4.godGoneShown += 1;
-            if (['join', 'join_hard', 'latejoin'].includes(event.id)) tally(V8.v4.joinShownByState, event.id + ':' + st);
+            if (event.id === 'god_gone') inc(V8.v4, 'godGoneShown');
+            if (['join', 'join_hard', 'latejoin'].includes(event.id)) inc(V8.v4.joinShownByState, event.id + ':' + st);
             if (HAS_2I) {
                 const c = event.cond || {};
-                if (S.syncBaseline === null && (S.falnaState !== deriveFalnaState() || (S.falnaHolder ?? null) !== deriveFalnaHolder())) V8.staleStoredAtEvent += 1;   // N8m
-                if (syncDepth !== 0) V8.depthNonZeroAtEvent += 1;
+                if (S.syncBaseline === null && (S.falnaState !== deriveFalnaState() || (S.falnaHolder ?? null) !== deriveFalnaHolder())) inc(V8, 'staleStoredAtEvent');   // N8m
+                if (syncDepth !== 0) inc(V8, 'depthNonZeroAtEvent');
                 const bad = [];
                 if (c.falnaState && !c.falnaState.includes(S.falnaState)) bad.push('falnaState');
                 if (c.familiaRole && !c.familiaRole.includes(currentFamiliaRole())) bad.push('familiaRole');
                 if (c.canEnterDungeon === true && !canEnterDungeon(S)) bad.push('canEnterDungeon');
-                if (bad.length) { V8.gate2iViolations += 1; if (V8.gate2iSamples.length < 5) V8.gate2iSamples.push(event.id + ':' + bad.join('+')); }
-                if (S.flags.includes('falna') !== canUseFalna(S)) V8.invHasFalnaVsUse += 1;
-                if (S.falnaState === 'none' && ((S.falnaHistory || []).length || (S.levelHistory || []).length)) V8.invNoneWithHistory += 1;
+                if (bad.length) { inc(V8, 'gate2iViolations'); pushCap(V8.gate2iSamples, event.id + ':' + bad.join('+'), 5); }
+                if (S.flags.includes('falna') !== canUseFalna(S)) inc(V8, 'invHasFalnaVsUse');
+                if (S.falnaState === 'none' && ((S.falnaHistory || []).length || (S.levelHistory || []).length)) inc(V8, 'invNoneWithHistory');
                 const open = (S.familiaHistory || []).filter(m => m.leftAt == null);
-                if (S.falnaState === 'active' && !(S.familia && S.falnaHolder === S.familia.id && open.length === 1 && open[0].role === 'member')) V8.measure.activeShapeFail += 1;
-                if (S.falnaState === 'unbound' && (S.familia || open.length)) V8.measure.unboundShapeFail += 1;
-                if (S.falnaState === 'sealed') { const last = (S.familiaHistory || [])[S.familiaHistory.length - 1]; if (S.familia || open.length || !last || last.leftReason !== 'god_returned') V8.measure.normalSealedShapeFail += 1; }
-                if (['join', 'join_hard', 'latejoin'].includes(event.id) && S.falnaState === 'sealed') V8.measure.sealedAtJoinEvent += 1;
-                if (currentFamiliaRole() === 'protected') tally(V8.measure.protectedShown, event.id);
+                if (S.falnaState === 'active' && !(S.familia && S.falnaHolder === S.familia.id && open.length === 1 && open[0].role === 'member')) inc(V8.measure, 'activeShapeFail');
+                if (S.falnaState === 'unbound' && (S.familia || open.length)) inc(V8.measure, 'unboundShapeFail');
+                if (S.falnaState === 'sealed') { const last = (S.familiaHistory || [])[S.familiaHistory.length - 1]; if (S.familia || open.length || !last || last.leftReason !== 'god_returned') inc(V8.measure, 'normalSealedShapeFail'); }
+                if (['join', 'join_hard', 'latejoin'].includes(event.id) && S.falnaState === 'sealed') inc(V8.measure, 'sealedAtJoinEvent');
+                if (currentFamiliaRole() === 'protected') inc(V8.measure.protectedShown, event.id);
             }
         }
-        return originalShowEvent(event);
+        return { ops, d3, sinkOut, paused, haltedAtCall };
+    };
+    const applyShowEventCommit = function (x) {
+        for (const key of Object.keys(x.d3)) x.sinkOut[key] = (x.sinkOut[key] || 0) + x.d3[key];   // (a) D-3 — instrumentPaused 와 무관(F1 동작 보존)
+        if (!x.paused) for (const op of x.ops) op();                                               // (b) 일반 계측
+    };
+    // 반환값 분류: true = 정상 표시(반영) / false = 보이는 선택지 0개(폐기) / undefined = 정지 중(폐기).
+    // F1 의 showEvent 는 정상 표시에도 반환값이 없다(undefined). 그 경우는 호출 시작 시 정지 상태가 아니었으면 정상 표시로 본다(엔진 단계에서 true 로 바뀌면 이 분기는 쓰이지 않는다).
+    const classifyShowEvent = function (r, cap) {
+        const disposition = showEventDisposition(r, cap.haltedAtCall);   // 공통 규칙(tests/lib/commit_queue.js)
+        if (disposition === 'discard') return { kind: 'discard', reason: String(r) };
+        return { kind: 'commit', legacyUndefined: disposition === 'commit-legacy', d3: cap.d3, sinkOut: cap.sinkOut, ops: cap.ops, paused: cap.paused };
+    };
+    const showEventQueue = createCommitQueue(applyShowEventCommit);
+    ${DRIVER_CORE_SRC}
+    showEvent = function (event) {
+        return showEventQueue.run(() => captureShowEvent(event), () => originalShowEvent(event), classifyShowEvent);
     };
 
     const originalRollFamilia = rollFamilia;
@@ -932,6 +869,7 @@ const integrationScript = `
         V8.d3SyntheticTest.mainCountersUntouched = JSON.stringify([V8.v4, V8.rollModes, V8.rollModeByEvent, V8.rejectedRolls, V8.pollutedSealed, V8.livesWithLegacySealedJoin, results.familiaJoins, results.familiaJoinJobOverwrites, results.eventCount, results.uniqueEvents, currentLifeEvents]) === mainBefore;
         V8.d3SyntheticTest.rngRestored = JSON.stringify(__rngState()) === JSON.stringify(snap);
         assert(Object.values(V8.d3SyntheticTest).every(Boolean), 'D-3 synthetic polluted-sealed test failed: ' + JSON.stringify(V8.d3SyntheticTest));
+        assert(showEventQueue.checkBoundary('d3_synthetic'), 'harness commit queue not drained after D-3 synthetic test: ' + JSON.stringify(showEventQueue.integrity()));   // F1D4A P1: 합성 시험 블록 끝 경계 검사
     }
     // T1-F/F-1 후속 선택 계측(읽기 전용). 러너는 후속 화면에서 항상 '지금 생활을 이어간다' 를 난수 없이 고른다(C21·C24).
     const HAS_F1 = typeof FOLLOWUP_KINDS !== 'undefined' && typeof followupDiagLog !== 'undefined';
@@ -957,6 +895,7 @@ const integrationScript = `
             currentLifeEvents = [];
             lastShownEventId = null; d3Sink.ids = new Set();
             const rngCallsAtLifeStart = __rngCalls();
+            if (typeof __siteLifeStart === 'function') __siteLifeStart(run);   // F1D4A P1: RNG 지점 기록의 생애 경계(SIM_RNG_SITES 지정 시에만 존재)
             startLife();
             let actions = 0;
             let firstAdventurerAge = null, firstFalnaAge = null; let wasRetired = false, reachedLv6 = false, reachedLv6InWindow = false;
@@ -966,9 +905,10 @@ const integrationScript = `
                 if (usable.length === 0) {
                     throw new Error('simulation stalled: no actionable choice at age ' + S.age + ', job=' + S.job);
                 }
-                if (S.pendingFollowup) {
-                    const stay = usable.find(button => button.dataset && button.dataset.followup === 'stay');
-                    if (!stay) throw new Error('followup screen without stay option at age ' + S.age + ', job=' + S.job);
+                const pick = driverChoose(usable, S.pendingFollowup);   // F1D4A P1: 버튼 선택은 공통 드라이버 한 곳(분기·난수 사용은 F1 과 같음)
+                if (pick.kind === 'error') throw new Error(pick.message + ' at age ' + S.age + ', job=' + S.job);
+                if (pick.kind === 'followup_stay') {
+                    const stay = pick.button;
                     const f1p = S.pendingFollowup, f1App = JSON.stringify(S.application), f1Rng = __rngCalls(), f1Job = S.job, f1State = JSON.stringify(S, f1Strip);
                     F1.followups += 1; if (f1p.seq === 1) F1.livesWithFollowup += 1;
                     tally(F1.byReason, String(f1p.context && f1p.context.reason)); tally(F1.byKind, f1p.kind);
@@ -983,7 +923,7 @@ const integrationScript = `
                     const f1After = ($('choices').kids || []).filter(button => typeof button.onclick === 'function');
                     if (f1After.length !== 1 || f1After[0].textContent !== '다음 해로') F1.nextButtonBad += 1;
                 } else {
-                    usable[Math.floor(Math.random() * usable.length)].onclick();
+                    pick.button.onclick();
                 }
                 actions += 1;
                 if (S.job === 'retired') wasRetired = true;
@@ -1017,6 +957,8 @@ const integrationScript = `
                 throw new Error('life exceeded action guard (' + ${MAX_ACTIONS_PER_LIFE} + ')');
             }
 
+            if (typeof __siteLifeEnd === 'function') __siteLifeEnd(run);
+            showEventQueue.checkBoundary('life');   // F1D4A P1: 생애 경계 검사. 위반하면 하네스 무결성 오류(실행 전체 무효)
             results.completedRuns += 1;
             {   // v1.7.8-2i 생애 단위 계측
                 const lifeCalls = __rngCalls() - rngCallsAtLifeStart;
@@ -1214,6 +1156,8 @@ const integrationScript = `
     }
 
     results.lifeDigest = lifeDigest;
+    showEventQueue.checkBoundary('run_end');
+    results.harnessIntegrity = showEventQueue.integrity();   // F1D4A P1: broken 이면 이 실행의 계측 결과(lifeDigest 포함)는 무효
     { const RB = results.recruit2bb; RB.membershipLivesPct = results.completedRuns ? +(results.timeline.livesWithMembership / results.completedRuns * 100).toFixed(2) : 0; RB.rejectionAmongAppliedPct = RB.livesApplied ? +(RB.livesWithRejection / RB.livesApplied * 100).toFixed(2) : 0; }
     results.residenceRi = RI;
     if (HAS_F1) {
@@ -1260,6 +1204,37 @@ const integrationScript = `
 })();
 `;
 
+if (SITE_OUT) {   // F1D4A P1: 실제로 실행하는 조립 문자열에서 조각 표와 지점 표를 만든다(설계 §4.1.5 · §4.1.3 B 규칙)
+    const RngSites = require('./tests/lib/rng_sites.js');
+    const VM_FILE = 'danmachi-integration-test.js';
+    const texts = sourceFiles.map(file => fs.readFileSync(path.join(ROOT, file), 'utf8'));
+    const asm = RngSites.buildAssembly(RngSites.buildNodeVmParts(sourceFiles, texts, '\n;\n', '\n', integrationScript, 'test_runner.js(integrationScript)'));
+    if (asm.text !== source + '\n' + integrationScript) throw new Error('RNG site recorder: assembly text differs from the executed script');
+    const rowProblems = RngSites.checkRows(asm.rows, asm.text.length);
+    if (rowProblems.length) throw new Error('RNG site recorder: bad segment table: ' + rowProblems.join('; '));
+    const sites = RngSites.buildSiteTable(sourceFiles.map((file, i) => ({ area: 'source', file, text: texts[i] })).concat([{ area: 'harness', file: 'harness', text: integrationScript }]));
+    const classify = RngSites.makeClassifier({ sites, dropFrames: 1,
+        locate: fr => (fr && fr.file === VM_FILE) ? (m => m.area === 'harness' ? { area: 'harness', file: 'harness', line: m.line, col: m.col } : m)(RngSites.mapPosition(asm, fr.line, fr.col)) : { area: 'unknown', reason: 'not-vm-file' } });
+    const tallyRec = RngSites.makeTally();
+    Error.stackTraceLimit = 50;
+    siteRecorder = { note(stack) { tallyRec.note(classify(stack), stack); } };
+    let firstLifeRngState = null;
+    sandbox.__siteLifeStart = () => { if (firstLifeRngState === null) firstLifeRngState = rng.getState(); tallyRec.lifeStart(); };
+    sandbox.__siteLifeEnd = () => { tallyRec.lifeEnd(); };
+    const sha = text => require('crypto').createHash('sha256').update(text, 'utf8').digest('hex');
+    if (process.env.SIM_RNG_ASSEMBLY === '1') fs.writeFileSync(SITE_OUT + '.assembly.txt', asm.text);   // 시험용: 실제로 실행하는 조립 문자열(위치 역변환 시험의 입력)
+    process.on('exit', () => {
+        try {
+            fs.writeFileSync(SITE_OUT, JSON.stringify({ env: 'node-vm', seed: SEED, runs: RUNS, hpRegenMode: process.env.SIM_HP_REGEN_MODE || '(default)', newbornMembership: process.env.SIM_NEWBORN_MEMBERSHIP === '1',
+                stackTraceLimit: Error.stackTraceLimit, vmFile: VM_FILE, assemblyLength: asm.text.length,
+                rows: asm.rows.map(r => ({ kind: r.kind, file: r.file, startOffset: r.startOffset, endOffsetExclusive: r.endOffsetExclusive, vmStartLine: r.vmStartLine, vmStartCol: r.vmStartCol, vmEndLine: r.vmEndLine, vmEndColExclusive: r.vmEndColExclusive })),
+                specialChars: Object.fromEntries(sourceFiles.map((file, i) => [file, RngSites.countSpecialChars(texts[i])]).concat([['integrationScript', RngSites.countSpecialChars(integrationScript)]])),
+                sourceSha256: Object.fromEntries(sourceFiles.map((file, i) => [file, sha(texts[i])])), driverCoreSha256: sha(DRIVER_CORE_SRC), commitQueueSha256: sha(COMMIT_QUEUE_SRC),
+                firstLifeRngState, sites, tally: tallyRec.report() }));
+        } catch (e) { console.error('RNG site output failed:', e && e.message); process.exitCode = 1; }
+    });
+}
+
 let context;
 try {
     context = vm.createContext(sandbox);
@@ -1278,6 +1253,14 @@ if (!results) {
     process.exit();
 }
 
+// F1D4A P1: 하네스 무결성 오류가 있으면 이 실행의 계측 결과는 무효다. lifeDigest 를 숫자로 내지 않고(집계 도구가 받지 못하게) 종료 코드를 0 이 아니게 한다.
+const harnessBroken = !!(results.harnessIntegrity && results.harnessIntegrity.broken);
+if (harnessBroken) {
+    console.error('harnessIntegrity: BROKEN', JSON.stringify(results.harnessIntegrity));
+    results.lifeDigest = 'INVALID(harness integrity error)';
+    process.exitCode = 1;
+}
+if (process.env.SIM_HARNESS_JSON) fs.writeFileSync(process.env.SIM_HARNESS_JSON, JSON.stringify({ harnessIntegrity: results.harnessIntegrity || null }));
 console.log('==== DanMachi Life Simulation Test ====',
     '\nseed:', results.seed,
     '\nrequested:', results.requestedRuns,
