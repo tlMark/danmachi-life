@@ -377,6 +377,17 @@ check('지점 표: lineage.js · recruit.js 의 주석 속 "Math.random" 은 지
     for (const d of [d1, d2]) fs.rmSync(d, { recursive: true, force: true });
     void events;
 }
+// ── 10구성 digest 엄격 대조(tests/digest10_strict.js) ───────────────────────────────────────
+{
+    const { strictCompare, EXPECTED_KEYS } = require('./digest10_strict.js');
+    const ref = JSON.parse(read('logs/v178_f1/digest10_vs_s3.json'));
+    const clone = () => JSON.parse(JSON.stringify(ref));
+    const badOf = f => { const now = clone(); f(now); return strictCompare(now, ref).bad; };
+    check('digest 엄격 대조: F1 기록 자신과 대조하면 10/10 동일(구성 10개)', EXPECTED_KEYS.length === 10 && ref.length === 10 && strictCompare(clone(), ref).bad === 0 && strictCompare(clone(), ref).lines.every(l => l.startsWith('SAME ')));
+    check('digest 엄격 대조 변이: lifeDigest 다름 · rngCallDigest 다름 · 누락(null) · 비숫자 → 실패', badOf(n => { n[0].lifeDigest = '1'; }) === 1 && badOf(n => { n[1].rngCallDigest = '2'; }) === 1 && badOf(n => { n[2].lifeDigest = null; }) === 1 && badOf(n => { n[3].rngCallDigest = null; }) === 1 && badOf(n => { n[4].lifeDigest = 'INVALID(harness integrity error)'; }) === 1);
+    check('digest 엄격 대조 변이: 종료 코드 ≠ 0 · 완주 수 부족 · 불변식 실패 · 예외 > 0 → 실패', badOf(n => { n[0].exit = 1; }) === 1 && badOf(n => { n[0].exit = null; }) === 1 && badOf(n => { n[5].completed = '2999'; }) === 1 && badOf(n => { n[6].allInv = 'false'; }) === 1 && badOf(n => { n[7].exc = '1'; }) === 1);
+    check('digest 엄격 대조 변이: 구성 누락 · 예상하지 않은 구성 · 배열이 아님 → 실패', badOf(n => { n.pop(); }) === 1 && badOf(n => { n.push({ key: 'x/1' }); }) === 1 && strictCompare(null, ref).bad > 0 && strictCompare([], ref).bad === 10);
+}
 // ── 공통 드라이버(§4.1.4) ───────────────────────────────────────────────────────────────
 {
     let calls = 0; const ctx = vm.createContext({ Math: Object.assign(Object.create(Math), { random() { calls++; return 0.75; } }) });

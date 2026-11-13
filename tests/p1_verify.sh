@@ -44,13 +44,8 @@ run 05_f1_byte_compare f1cmp
 wait
 run 20_browser_file node tests/browser_test.js 24
 run 21_browser_inline env BROWSER_LOAD=inline node tests/browser_test.js 24
-# digest10 도구는 lifeDigest 만 비교하고 종료 코드에 반영하지 않으므로, lifeDigest · rngCallDigest · 종료 코드 · 완주 수를 F1 기록과 직접 대조한다
-run 06_digest10_strict node -e "
-const a=require('$L/04_digest10.json'), b=require('./logs/v178_f1/digest10_vs_s3.json'); let bad=0;
-if(!Array.isArray(a)||a.length!==10){console.log('구성 수 '+(a&&a.length));bad++;}
-for(const r of a){const x=b.find(y=>y.key===r.key); const ok=!!x&&/^\\\\d+\$/.test(String(r.lifeDigest))&&/^\\\\d+\$/.test(String(r.rngCallDigest))&&x.lifeDigest===r.lifeDigest&&String(x.rngCallDigest)===String(r.rngCallDigest)&&r.exit===0&&r.completed==='3000'&&r.allInv==='true';
- console.log((ok?'SAME ':'DIFF ')+r.key+' lifeDigest='+r.lifeDigest+' rng='+r.rngCallDigest+' exit='+r.exit+' completed='+r.completed+' inv='+r.allInv+(x?' ref='+x.lifeDigest+'/'+x.rngCallDigest:' ref 없음')); if(!ok)bad++;}
-console.log('STRICT: '+(a.length-bad)+'/'+a.length); process.exit(bad?1:0);"
+# digest10 도구는 lifeDigest 만 비교하고 종료 코드에 반영하지 않으므로, lifeDigest · rngCallDigest · 종료 코드 · 완주 수 · 불변식을 F1 기록과 직접 대조한다
+run 06_digest10_strict node tests/digest10_strict.js "$L/04_digest10.json" logs/v178_f1/digest10_vs_s3.json
 N=$(wc -l < "$FAILS")
 if [ "$N" -eq 0 ]; then echo "ALL_DONE: 모든 항목 종료 코드 0" > "$L/99_done.log"; exit 0; fi
 { echo "FAILED_STEPS: $N"; cat "$FAILS"; } > "$L/99_done.log"; cat "$L/99_done.log"; exit 1
