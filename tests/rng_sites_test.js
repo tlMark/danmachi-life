@@ -190,8 +190,36 @@ check('지점 표: lineage.js · recruit.js 의 주석 속 "Math.random" 은 지
     check('비교 판정: 결과 없음·미실행·실패 표시·extra 누락은 합격이 아님', envFailures('node', null, 3000).length > 0 && envFailures('node', { notRun: true }, 3000).length > 0 && envFailures('file', { failed: true, error: 'x' }, 3000).length > 0 && mutN(r => { delete r.extra; }).indexOf('extra-missing') >= 0);
     const a = node(), b = node();
     check('비교 판정: 환경 쌍 일치는 lifeDigest · rngCallDigest · 지점 순서열 해시 · 지점별 호출 수가 모두 같을 때만', pairSame(a, b) && !pairSame(a, Object.assign(node(), { seqDigest: 1 })) && !pairSame(a, Object.assign(node(), { byId: { a: 1611001, b: 554 } })) && !pairSame(a, Object.assign(node(), { lifeDigest: 2 })) && !pairSame(a, null));
+    // ── 최종 판정(configVerdict)까지 연결한 통합 변이: 필수 환경 node · file · inline 이 모두 있어야 PASS ──
+    const { configVerdict, overallExitCode, parseRunnerOutput, parseUintField, REQUIRED_ENVS } = require('./lib/compare_verdict.js');
+    const full = () => ({ node: node(), file: page(), inline: page() });
+    const st = f => { const r = full(); f(r); return configVerdict(r, 3000).status; };
+    check('최종 판정: 필수 환경은 node · file · inline, 셋 모두 정상이고 세 쌍이 일치할 때만 PASS', eq(REQUIRED_ENVS, ['node', 'file', 'inline']) && configVerdict(full(), 3000).status === 'PASS' && eq(Object.keys(configVerdict(full(), 3000).pairSame).sort(), ['file=inline', 'node=file', 'node=inline']));
+    check('최종 판정 변이: Node 만 실행(file · inline 미실행) → PASS 아님(PARTIAL)', st(r => { r.file = { notRun: true }; r.inline = { notRun: true }; }) === 'PARTIAL');
+    check('최종 판정 변이: Node + file 만 실행(inline 미실행) → PASS 아님(PARTIAL)', st(r => { r.inline = { notRun: true }; }) === 'PARTIAL');
+    check('최종 판정 변이: Node 가 미실행(Chromium 둘만 실행) → PASS 아님', st(r => { r.node = { notRun: true }; }) === 'PARTIAL');
+    check('최종 판정 변이: 결과 객체 누락(inline 없음 · null · 행 자체 없음) → FAIL', st(r => { delete r.inline; }) === 'FAIL' && st(r => { r.file = null; }) === 'FAIL' && configVerdict(null, 3000).status === 'FAIL' && configVerdict(undefined, 3000).status === 'FAIL');
+    check('최종 판정 변이: 한 환경의 실행 실패(failed 표시) → FAIL', st(r => { r.file = { failed: true, error: 'boom' }; }) === 'FAIL' && st(r => { r.node = { failed: true, error: 'x' }; }) === 'FAIL');
+    check('최종 판정 변이: 한 환경에 실패 사유(UNKNOWN · integrity · pageErrors · 종료 코드) → FAIL', st(r => { r.inline.byCls = { R4: 1611000, R1: 554, UNKNOWN: 1 }; r.inline.unknownLives = 1; }) === 'FAIL' && st(r => { r.node.integrity.broken = true; }) === 'FAIL' && st(r => { r.file.extra.pageErrors = ['e']; }) === 'FAIL' && st(r => { r.node.extra.exit = 1; }) === 'FAIL');
+    check('최종 판정 변이: 환경 사이 불일치(한 환경만 lifeDigest · 지점 순서열 · 지점별 호출 수가 다름) → FAIL', st(r => { r.inline.lifeDigest = 5; }) === 'FAIL' && st(r => { r.file.seqDigest = 7; }) === 'FAIL' && st(r => { r.node.byId = { a: 1611001, b: 554 }; }) === 'FAIL');
+    check('최종 판정 변이: 실행한 환경이 0개(셋 다 미실행) → PASS 아님(FAIL)', st(r => { r.node = { notRun: true }; r.file = { notRun: true }; r.inline = { notRun: true }; }) === 'FAIL');
+    check('최종 판정 변이: 부분 실행이라도 실행한 환경에 결함이 있으면 PARTIAL 이 아니라 FAIL', st(r => { r.inline = { notRun: true }; r.file.extra.pageErrors = ['e']; }) === 'FAIL' && st(r => { r.inline = { notRun: true }; r.file.lifeDigest = 9; }) === 'FAIL');
+    check('최종 판정 변이: digest 가 세 환경에서 똑같이 누락(null)이어도 합격할 수 없음', st(r => { for (const e of REQUIRED_ENVS) r[e].lifeDigest = null; }) === 'FAIL' && st(r => { for (const e of REQUIRED_ENVS) r[e].rngCallDigest = null; }) === 'FAIL' && st(r => { for (const e of REQUIRED_ENVS) { r[e].lifeDigest = undefined; r[e].rngCallDigest = undefined; } }) === 'FAIL');
+    check('최종 판정: digest 의 실제 값이 0 인 것은 정상(세 환경 모두 0 → PASS)', st(r => { for (const e of REQUIRED_ENVS) r[e].lifeDigest = 0; }) === 'PASS' && st(r => { for (const e of REQUIRED_ENVS) r[e].rngCallDigest = 0; }) === 'PASS');
+    check('종료 코드: 모두 PASS → 0, FAIL 포함 → 1, FAIL 없이 PARTIAL 포함 → 3, 구성 0개·알 수 없는 상태 → 1', overallExitCode(['PASS', 'PASS']) === 0 && overallExitCode(['PASS', 'FAIL']) === 1 && overallExitCode(['PARTIAL', 'FAIL']) === 1 && overallExitCode(['PASS', 'PARTIAL']) === 3 && overallExitCode(['PARTIAL']) === 3 && overallExitCode([]) === 1 && overallExitCode(['PASS', undefined]) === 1 && overallExitCode(null) === 1);
+    // ── 러너 출력 파서: 누락이 0 으로 바뀌지 않는다 ──
+    const sample = 'completed: 3000 \nlifeDigest: 1715334118 \nv178: {"has2i":true,"rngCallDigest":3460114558,"rngCallsTotal":1611555,"v4":{}}\n';
+    const P = parseRunnerOutput;
+    check('파서: 정상 출력에서 uint32 값과 생애 수를 읽음', eq(P(sample), { lives: 3000, lifeDigest: 1715334118, rngCallDigest: 3460114558, rngCallsTotal: 1611555 }));
+    check('파서 변이: lifeDigest 줄 누락 → null(0 아님)', P(sample.replace(/^lifeDigest:.*\n/m, '')).lifeDigest === null && Number(null) === 0);
+    check('파서 변이: rngCallDigest 누락 → null(0 아님)', P(sample.replace('"rngCallDigest":3460114558,', '')).rngCallDigest === null);
+    check('파서 변이: 숫자가 아닌 텍스트(INVALID(...) · 음수 · 소수 · 16진수 · 빈 값) → null', ['INVALID(harness integrity error)', '-5', '1.5', '0x10', '', 'NaN'].every(v => P(sample.replace('lifeDigest: 1715334118', 'lifeDigest: ' + v)).lifeDigest === null) && P(sample.replace('"rngCallDigest":3460114558', '"rngCallDigest":"x"')).rngCallDigest === null);
+    check('파서: 실제 값이 숫자 0 인 digest 는 0 으로 읽음(누락과 구분)', P(sample.replace('lifeDigest: 1715334118', 'lifeDigest: 0')).lifeDigest === 0 && P(sample.replace('"rngCallDigest":3460114558', '"rngCallDigest":0')).rngCallDigest === 0);
+    check('파서: uint32 범위를 넘는 digest · 입력이 문자열이 아님 → null', P(sample.replace('lifeDigest: 1715334118', 'lifeDigest: 4294967296')).lifeDigest === null && P(sample.replace('lifeDigest: 1715334118', 'lifeDigest: 4294967295')).lifeDigest === 4294967295 && eq(P(null), { lives: null, lifeDigest: null, rngCallDigest: null, rngCallsTotal: null }) && eq(P(undefined), P('')));
+    check('파서 → 판정 연결: 러너 출력에 lifeDigest 가 없으면 그 환경은 실패 사유가 생기고 구성은 FAIL', (() => { const r = full(); Object.assign(r.node, P(sample.replace(/^lifeDigest:.*\n/m, ''))); r.node.siteCalls = r.node.rngCallsTotal; return envFailures('node', r.node, 3000).some(x => x.startsWith('lifeDigest-invalid')) && configVerdict(r, 3000).status === 'FAIL'; })());
+    void parseUintField;
     const cmpSrc = read('tests/rng_sites_compare.js');
-    check('비교 도구가 이 판정 함수를 씀(자체 조건식 없음)', cmpSrc.indexOf("envFailures(e, row[e], RUNS)") >= 0 && cmpSrc.indexOf('const ok = e =>') < 0);
+    check('비교 도구가 이 판정·파서를 씀(자체 조건식·Number(g(...)) 변환 없음)', cmpSrc.indexOf('configVerdict(row, RUNS)') >= 0 && cmpSrc.indexOf('overallExitCode(statuses)') >= 0 && cmpSrc.indexOf('parseRunnerOutput(r.stdout)') >= 0 && cmpSrc.indexOf('Number(g(') < 0 && cmpSrc.indexOf('const good') < 0 && cmpSrc.indexOf('const ok = e =>') < 0);
 }
 // ── VM-9: 열 위치 ───────────────────────────────────────────────────────────────────────
 {

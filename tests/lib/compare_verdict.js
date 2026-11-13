@@ -81,4 +81,53 @@ const sortKeys = o => { const r = {}; for (const k of Object.keys(o || {}).sort(
 function pairSame(a, b) {
     return !!a && !!b && a.lifeDigest === b.lifeDigest && a.rngCallDigest === b.rngCallDigest && a.seqDigest === b.seqDigest && JSON.stringify(sortKeys(a.byId)) === JSON.stringify(sortKeys(b.byId));
 }
-module.exports = { envFailures, pairSame, sortKeys, checkByCls, isPlainObject };
+// ── 구성 하나의 최종 판정 ────────────────────────────────────────────────────────────────
+// 완전 검수의 필수 환경. 셋 모두 실행되고, 각각 실패 사유가 없고, 세 쌍이 모두 일치해야 PASS 다.
+const REQUIRED_ENVS = ['node', 'file', 'inline'];
+// 반환: { status: 'PASS' | 'PARTIAL' | 'FAIL', missing: [...], failures: { env: [...] }, pairSame: { 'a=b': bool } }
+//   PASS    — 필수 환경 3개가 모두 실행됐고 실패 사유 0, 세 쌍(node=file, node=inline, file=inline) 모두 일치
+//   PARTIAL — 필수 환경 일부가 미실행(notRun)이지만, 실행한 환경에는 실패 사유가 없고 실행한 쌍은 일치. **합격이 아니다**(진단용 부분 실행)
+//   FAIL    — 그 밖의 모든 경우(실행 실패, 실패 사유 있음, 불일치, 결과 객체 누락, 실행한 환경 0개)
+function configVerdict(row, runs) {
+    const out = { status: 'FAIL', missing: [], failures: {}, pairSame: {} };
+    if (!isPlainObject(row)) { out.failures._row = ['row-missing']; return out; }
+    const ran = [];
+    let objectMissing = false;
+    for (const e of REQUIRED_ENVS) {
+        const r = row[e];
+        if (!isPlainObject(r)) { out.missing.push(e); out.failures[e] = ['no-result']; objectMissing = true; continue; }   // 결과 객체 자체가 없으면 미실행이 아니라 실패
+        if (r.notRun === true) { out.missing.push(e); out.failures[e] = ['not-run']; continue; }
+        ran.push(e);
+        out.failures[e] = envFailures(e, r, runs);
+    }
+    for (let i = 0; i < ran.length; i++) for (let k = i + 1; k < ran.length; k++) out.pairSame[ran[i] + '=' + ran[k]] = pairSame(row[ran[i]], row[ran[k]]);
+    const ranOk = ran.length > 0 && ran.every(e => out.failures[e].length === 0) && Object.values(out.pairSame).every(v => v === true);
+    if (objectMissing || !ranOk) return out;                                   // FAIL
+    if (out.missing.length > 0) { out.status = 'PARTIAL'; return out; }        // 일부 환경만 실행 — 합격 아님
+    const pairs = Object.keys(out.pairSame);
+    if (ran.length === REQUIRED_ENVS.length && pairs.length === 3 && pairs.every(k => out.pairSame[k] === true)) out.status = 'PASS';
+    return out;
+}
+// 전체 실행의 종료 코드: 모든 구성이 PASS 일 때만 0. FAIL 이 하나라도 있으면 1, FAIL 은 없지만 PARTIAL 이 있으면 3(부분 실행 — 합격 아님).
+function overallExitCode(statuses) {
+    if (!Array.isArray(statuses) || statuses.length === 0) return 1;
+    if (statuses.some(s => s !== 'PASS' && s !== 'PARTIAL')) return 1;
+    return statuses.some(s => s === 'PARTIAL') ? 3 : 0;
+}
+// ── 러너 표준 출력 파서 ──────────────────────────────────────────────────────────────────
+// 필드가 없거나 형식이 다르면 null 을 돌려준다(Number(null) === 0 같은 변환으로 누락이 0 이 되지 않게). 실제 값 0 은 0 으로 돌려준다.
+function parseUintField(text, re, max) {
+    const m = typeof text === 'string' ? text.match(re) : null;
+    if (!m || typeof m[1] !== 'string' || !/^\d+$/.test(m[1])) return null;
+    const n = Number(m[1]);
+    return Number.isSafeInteger(n) && n <= max ? n : null;
+}
+function parseRunnerOutput(stdout) {
+    return {
+        lives: parseUintField(stdout, /^completed:[ \t]*(\d+)[ \t]*$/m, Number.MAX_SAFE_INTEGER),
+        lifeDigest: parseUintField(stdout, /^lifeDigest:[ \t]*(\d+)[ \t]*$/m, 0xFFFFFFFF),
+        rngCallDigest: parseUintField(stdout, /"rngCallDigest":(\d+)[,}]/, 0xFFFFFFFF),
+        rngCallsTotal: parseUintField(stdout, /"rngCallsTotal":(\d+)[,}]/, Number.MAX_SAFE_INTEGER)
+    };
+}
+module.exports = { envFailures, pairSame, sortKeys, checkByCls, isPlainObject, REQUIRED_ENVS, configVerdict, overallExitCode, parseUintField, parseRunnerOutput };

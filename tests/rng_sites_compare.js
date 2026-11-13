@@ -9,7 +9,7 @@
 const fs = require('fs'), path = require('path'), crypto = require('crypto');
 const { spawnSync } = require('child_process');
 const RngSites = require('./lib/rng_sites.js');
-const { envFailures, pairSame, checkByCls, isPlainObject } = require('./lib/compare_verdict.js');
+const { checkByCls, isPlainObject, REQUIRED_ENVS, configVerdict, overallExitCode, parseRunnerOutput } = require('./lib/compare_verdict.js');
 const ROOT = path.join(__dirname, '..');
 const sha = text => crypto.createHash('sha256').update(text, 'utf8').digest('hex');
 const SOURCE_FILES = ['data.js', 'events.js', 'core/aging.js', 'core/growth.js', 'core/relations.js', 'core/items.js', 'core/recruit.js', 'core/lineage.js', 'script.js'];
@@ -52,11 +52,11 @@ function runNode(config) {
     const env = Object.assign({}, process.env, { SIM_SEED: seed, SIM_RUNS: String(RUNS), SIM_RNG_SITES: out, SIM_HARNESS_JSON: hj }, modeEnv(mode));
     const r = spawnSync('node', [path.join(ROOT, 'test_runner.js')], { env, encoding: 'utf8', maxBuffer: 1 << 26 });
     fs.writeFileSync(path.join(OUT, 'node_' + config.replace('/', '_') + '.stdout.log'), (r.stdout || '') + (r.stderr || '') + 'exit=' + r.status + '\n');
-    const g = re => { const m = (r.stdout || '').match(re); return m ? m[1] : null; };
+    const parsed = parseRunnerOutput(r.stdout);   // 필드가 없거나 형식이 다르면 null(0 으로 바뀌지 않는다)
     const j = JSON.parse(fs.readFileSync(out, 'utf8'));
     const hi = fs.existsSync(hj) ? JSON.parse(fs.readFileSync(hj, 'utf8')).harnessIntegrity : null;
     nodeStartState[config] = j.firstLifeRngState;
-    return summarize('node', { lives: Number(g(/^completed:\s*(\d+)/m)), lifeDigest: Number(g(/^lifeDigest:\s*(\d+)/m)), rngCallDigest: Number(g(/"rngCallDigest":(\d+)/)), rngCallsTotal: Number(g(/"rngCallsTotal":(\d+)/)),
+    return summarize('node', { lives: parsed.lives, lifeDigest: parsed.lifeDigest, rngCallDigest: parsed.rngCallDigest, rngCallsTotal: parsed.rngCallsTotal,
         tally: j.tally, integrity: hi, extra: { exit: r.status, spawnError: r.error ? String(r.error.message || r.error) : null, firstLifeRngState: j.firstLifeRngState, stackTraceLimit: j.stackTraceLimit, rows: j.rows.length, driverCoreSha256: j.driverCoreSha256, rngCoreSha256: sha(LIB.rng_core), sourceSha256: j.sourceSha256, siteCount: j.sites.length, unitCalls: j.tally.unit.calls, unitByCls: j.tally.unit.byCls } });
 }
 
@@ -160,23 +160,26 @@ function fnText(src, name) {
         result.chromium = browser.version();
         try { result.playwright = require('playwright/package.json').version; } catch (e) { result.playwright = '?'; }
     }
-    let bad = 0;
+    const statuses = [];
     for (const config of CONFIGS) {
         const row = result.rows[config] = {};
         for (const env of ['node', 'file', 'inline']) {
-            if (ENVS.indexOf(env) < 0) { row[env] = { notRun: true }; continue; }
+            if (ENVS.indexOf(env) < 0) { row[env] = { notRun: true }; continue; }   // 선택하지 않은 환경: 미실행으로 남는다(→ 그 구성은 PASS 가 될 수 없다)
             try { row[env] = env === 'node' ? runNode(config) : await runChromium(env, config, browser); }
             catch (e) { row[env] = { failed: true, error: String(e && e.stack || e).split('\n').slice(0, 4).join(' | ') }; }
         }
-        const ran = ['node', 'file', 'inline'].filter(e => row[e] && !row[e].notRun);
-        row.verdict = { ran, failures: Object.fromEntries(ran.map(e => [e, envFailures(e, row[e], RUNS)])), pairSame: {} };   // 합격 조건은 tests/lib/compare_verdict.js
-        for (let i = 0; i < ran.length; i++) for (let k = i + 1; k < ran.length; k++) if (!row[ran[i]].failed && !row[ran[k]].failed) row.verdict.pairSame[ran[i] + '=' + ran[k]] = pairSame(row[ran[i]], row[ran[k]]);
-        const good = ran.length > 0 && ran.every(e => row.verdict.failures[e].length === 0) && Object.values(row.verdict.pairSame).every(Boolean);
-        if (!good) bad++;
-        console.log((good ? 'OK   ' : 'FAIL ') + config + ': ' + ['node', 'file', 'inline'].map(e => e + '=' + (row[e].notRun ? '미실행' : row[e].failed ? '실패' : 'lives ' + row[e].lives + ' digest ' + row[e].lifeDigest + ' rng ' + row[e].rngCallDigest + ' UNKNOWN ' + row[e].unknownLives + ' seq ' + row[e].seqDigest)).join(' | ') + ' | 일치 ' + JSON.stringify(row.verdict.pairSame) + (good ? '' : ' | 실패 사유 ' + JSON.stringify(row.verdict.failures)));
+        row.verdict = configVerdict(row, RUNS);   // 최종 판정은 tests/lib/compare_verdict.js 한 곳. 필수 환경(node · file · inline)이 모두 실행돼야 PASS
+        statuses.push(row.verdict.status);
+        const label = row.verdict.status === 'PASS' ? 'OK      ' : row.verdict.status === 'PARTIAL' ? 'PARTIAL ' : 'FAIL    ';
+        console.log(label + config + ': ' + REQUIRED_ENVS.map(e => e + '=' + (row[e].notRun ? '미실행' : row[e].failed ? '실패' : 'lives ' + row[e].lives + ' digest ' + row[e].lifeDigest + ' rng ' + row[e].rngCallDigest + ' UNKNOWN ' + row[e].unknownLives + ' seq ' + row[e].seqDigest)).join(' | ') + ' | 일치 ' + JSON.stringify(row.verdict.pairSame) + (row.verdict.status === 'PASS' ? '' : ' | 사유 ' + JSON.stringify(row.verdict.failures)));
         fs.writeFileSync(path.join(OUT, 'compare_' + ENVS.join('-') + '.json'), JSON.stringify(result, null, 1));
     }
     if (browser) await browser.close();
-    console.log('SUMMARY: ' + (CONFIGS.length - bad) + '/' + CONFIGS.length + ' 구성 통과 (실행 환경: ' + ENVS.join(', ') + '; 미실행 환경: ' + (['node', 'file', 'inline'].filter(e => ENVS.indexOf(e) < 0).join(', ') || '없음') + ')');
-    process.exitCode = bad ? 1 : 0;
+    const count = s => statuses.filter(x => x === s).length;
+    const code = overallExitCode(statuses);
+    result.overall = { pass: count('PASS'), partial: count('PARTIAL'), fail: count('FAIL'), exitCode: code, requiredEnvs: REQUIRED_ENVS, notRunEnvs: REQUIRED_ENVS.filter(e => ENVS.indexOf(e) < 0) };
+    fs.writeFileSync(path.join(OUT, 'compare_' + ENVS.join('-') + '.json'), JSON.stringify(result, null, 1));
+    // PASS 는 필수 환경 3개를 모두 실행한 구성만 센다. 일부 환경만 실행한 구성은 PARTIAL 이며 합격이 아니다(종료 코드 3).
+    console.log('SUMMARY: PASS ' + count('PASS') + '/' + CONFIGS.length + ' · PARTIAL(부분 실행, 합격 아님) ' + count('PARTIAL') + ' · FAIL ' + count('FAIL') + ' (실행 환경: ' + ENVS.join(', ') + '; 미실행 환경: ' + (result.overall.notRunEnvs.join(', ') || '없음') + ') → ' + (code === 0 ? '완전 검수 통과' : code === 3 ? '부분 실행 — 완전 검수 아님' : '실패'));
+    process.exitCode = code;
 })().catch(e => { console.error(e && e.stack || e); process.exit(1); });
