@@ -5,6 +5,7 @@
 # 실행할 항목을 미리 등록해 두고 끝에서 대조한다(tests/lib/verify_run.sh). 판정은 래퍼만 쓰는 상태 기록(<출력 폴더>/status/)으로 하며
 # 명령 출력(logs/)은 판정에 쓰지 않는다. 강제 종료되어 상태를 남기지 못한 항목, 시작되지 못한 항목, 상태 기록이 손상된 항목은 실패다.
 # 결과를 읽을 때는 스크립트 종료 코드와 logs/99_done.log 의 ALL_DONE 줄을 함께 확인한다(이 스크립트 자체가 강제 종료되면 99_done.log 가 없다).
+# 종료 코드: 0 = 전부 성공, 1 = 검증 실패, 3 = 판정에 필요한 기록(I/O) 실패, 2 = 준비 실패. 백그라운드 작업은 vr_bg / vr_wait 로 PID 마다 종료 상태를 모은다.
 set -u
 OUT=${1:?usage: bash tests/p1_verify.sh <out dir>}
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
@@ -30,22 +31,25 @@ f1cmp() {   # F1 기록 로그와의 바이트 비교(증빙: 양쪽 SHA-256 과
     done
     return $bad
 }
+regress9() { local t; for t in followup_pf_test followup_halt_test f1_joinhard_test f1_transition_test god_gone_2ba_test residence_ri_test sync_2i_test jobsince_test recruit_2bb_test; do run 10_$t node tests/$t.js; done; }
+mut3() { run 12_jobsince_mutation node tests/jobsince_mutation.js; run 13_recruit_2bb_mutation node tests/recruit_2bb_mutation.js; run 14_d3_wiring_mutation node tests/d3_wiring_mutation.js; }
+rngtests() { run 30_rng_sites_test node tests/rng_sites_test.js; run 31_rng_timer_test node tests/rng_timer_test.js lives=20; }
 run 01_syntax syntax
 run 07_verify_run_selftest bash tests/verify_run_selftest.sh
-( run 40_cmp_physical node tests/rng_sites_compare.js "$C/physical" configs=physical/20261104,physical/777,physical/314159,physical/8675309 ) &
-( run 41_cmp_off node tests/rng_sites_compare.js "$C/off" configs=off/20261104,off/777,off/314159,off/8675309 ) &
-( run 42_cmp_cal_newborn node tests/rng_sites_compare.js "$C/cal_newborn" configs=calendar/20261104,newborn_parent_familia/20261104 ) &
-wait
-( run 02_tr_20261104 env SIM_SEED=20261104 node test_runner.js ) &
-( run 03_tr_777 env SIM_SEED=777 node test_runner.js ) &
-( run 04_digest10_vs_F1 node logs/v178_f1/tools/digest10.js "$ROOT" "$L/04_digest10.json" logs/v178_f1/digest10_vs_s3.json ) &
-wait
+vr_bg cmp_physical run 40_cmp_physical node tests/rng_sites_compare.js "$C/physical" configs=physical/20261104,physical/777,physical/314159,physical/8675309
+vr_bg cmp_off run 41_cmp_off node tests/rng_sites_compare.js "$C/off" configs=off/20261104,off/777,off/314159,off/8675309
+vr_bg cmp_cal_newborn run 42_cmp_cal_newborn node tests/rng_sites_compare.js "$C/cal_newborn" configs=calendar/20261104,newborn_parent_familia/20261104
+vr_wait
+vr_bg tr_20261104 run 02_tr_20261104 env SIM_SEED=20261104 node test_runner.js
+vr_bg tr_777 run 03_tr_777 env SIM_SEED=777 node test_runner.js
+vr_bg digest10 run 04_digest10_vs_F1 node logs/v178_f1/tools/digest10.js "$ROOT" "$L/04_digest10.json" logs/v178_f1/digest10_vs_s3.json
+vr_wait
 run 05_f1_byte_compare f1cmp
-( for t in followup_pf_test followup_halt_test f1_joinhard_test f1_transition_test god_gone_2ba_test residence_ri_test sync_2i_test jobsince_test recruit_2bb_test; do run 10_$t node tests/$t.js; done ) &
-( run 11_f1_mutation node tests/f1_mutation.js ) &
-( run 12_jobsince_mutation node tests/jobsince_mutation.js; run 13_recruit_2bb_mutation node tests/recruit_2bb_mutation.js; run 14_d3_wiring_mutation node tests/d3_wiring_mutation.js ) &
-( run 30_rng_sites_test node tests/rng_sites_test.js; run 31_rng_timer_test node tests/rng_timer_test.js lives=20 ) &
-wait
+vr_bg regress9 regress9
+vr_bg f1_mutation run 11_f1_mutation node tests/f1_mutation.js
+vr_bg mut3 mut3
+vr_bg rngtests rngtests
+vr_wait
 run 20_browser_file node tests/browser_test.js 24
 run 21_browser_inline env BROWSER_LOAD=inline node tests/browser_test.js 24
 # digest10 도구는 lifeDigest 만 비교하고 종료 코드에 반영하지 않으므로, lifeDigest · rngCallDigest · 종료 코드 · 완주 수 · 불변식을 F1 기록과 직접 대조한다
