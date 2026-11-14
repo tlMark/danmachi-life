@@ -179,6 +179,43 @@ s_done_r() { vr_expect a; run a true; cat() { [ "$1" = "$VR_DONE" ] && return 1;
 scenario done_r s_done_r; rc=$?
 { [ $rc -eq 3 ] && [ ! -s "$TMP/done_r/failed_steps.txt" ] && grep -q '99_done.log' "$TMP/done_r.finish_out"; } && ok 'D-3: 99_done.log 에 ALL_DONE 을 썼지만 다시 읽지 못함 → 성공 아님(3)' || bad "D-3: 99_done.log 읽기 실패 (rc=$rc)"
 
+# ── 중첩 vr_bg(NESTED-1·2) ─────────────────────────────────────────────────────────────
+n_in6() { run b true; exit 6; }
+s_n_wait6() { outer() { vr_bg IN n_in6; vr_wait; }; vr_expect a b; run a true; vr_bg OUT outer; vr_wait; }
+scenario n_wait6 s_n_wait6; check 'NESTED: 바깥이 기다린 안쪽 작업이 exit 6 → 경로 이름으로 최상위까지 전달' 1 $? "bg:OUT/IN exit=6${NL}bg:OUT exit=2" "$TMP/n_wait6"
+s_n_nowait6() { outer() { vr_bg IN n_in6; }; vr_expect a b; run a true; vr_bg OUT outer; vr_wait; }
+scenario n_nowait6 s_n_nowait6; check 'NESTED: 바깥이 vr_wait 없이 반환 → 종료 처리에서 회수해 같은 판정' 1 $? "bg:OUT/IN exit=6${NL}bg:OUT exit=2" "$TMP/n_nowait6"
+s_n_viol() { outer() { vr_bg IN run zzz true; }; vr_expect a; run a true; vr_bg OUT outer; vr_wait; }
+scenario n_viol s_n_viol; check 'NESTED: 안쪽 작업의 미등록 위반 → 위반 + 두 단계의 bg 실패' 1 $? "zzz 등록되지 않은 항목${NL}bg:OUT/IN exit=2${NL}bg:OUT exit=2" "$TMP/n_viol"
+if [ $HAVE_FULL -eq 1 ]; then
+    s_n_io() { inner() { VR_NOTES=/dev/full; run zzz true; }; outer() { vr_bg IN inner; }; vr_expect a; run a true; vr_bg OUT outer; vr_wait; }
+    scenario n_io s_n_io; check 'NESTED: 안쪽 작업의 기록 실패 → 위반과 기록 실패를 구분해 최상위까지, 3' 3 $? "zzz 등록되지 않은 항목${NL}기록 실패: _violations.txt${NL}bg:OUT/IN exit=2${NL}bg:OUT exit=2" "$TMP/n_io"
+else skp 'NESTED: 안쪽 작업의 기록 실패' '/dev/full 없음'; fi
+s_n3() { na() { vr_bg B nb; }; nb() { vr_bg C nc; }; nc() { run c true; exit 5; }; vr_expect a c; run a true; vr_bg A na; vr_wait; }
+scenario n3 s_n3; check 'NESTED: 3단계(A/B/C), 가장 안쪽이 exit 5 → 세 단계 모두' 1 $? "bg:A/B/C exit=5${NL}bg:A/B exit=2${NL}bg:A exit=2" "$TMP/n3"
+s_n_sib() { outer() { vr_bg IN1 run b sh -c 'exit 3'; vr_bg IN2 run zzz true; vr_bg IN3 run c true; }; four() { run d true; return 4; }
+            vr_expect a b c d; run a true; vr_bg OUT outer; vr_bg OUT2 four; vr_wait; }
+scenario n_sib s_n_sib; check 'NESTED: 형제 작업들의 서로 다른 실패(종료 코드 3 / 위반 / 정상) + 최상위 형제 return 4' 1 $? "b exit=3${NL}bg:OUT/IN1 exit=3${NL}zzz 등록되지 않은 항목${NL}bg:OUT/IN2 exit=2${NL}bg:OUT exit=2${NL}bg:OUT2 exit=4" "$TMP/n_sib"
+s_n_kill() { inner() { run b true; kill -9 $BASHPID; }; outer() { vr_bg IN inner; }; vr_expect a b; run a true; vr_bg OUT outer; vr_wait; }
+scenario n_kill s_n_kill 2>/dev/null; check 'NESTED: 안쪽 작업 강제 종료 → "bg:OUT/IN exit=137"(종료 기록 없음은 덧붙이지 않음)' 1 $? "bg:OUT/IN exit=137${NL}bg:OUT exit=2" "$TMP/n_kill"
+s_n_rd() { outer() { vr_hook_bg_before_read() { rm -f "$1"; mkdir "$1"; }; vr_bg IN run b true; }; vr_expect a b; run a true; vr_bg OUT outer; vr_wait; }
+scenario n_rd s_n_rd; check 'NESTED: 바깥 작업이 안쪽의 종료 기록을 읽지 못함 → 기록 실패로 최상위까지, 3' 3 $? "기록 실패: bg:OUT/IN 종료 기록 읽기${NL}bg:OUT exit=2" "$TMP/n_rd"
+s_top_rd() { vr_hook_bg_before_read() { rm -f "$1"; mkdir "$1"; }; vr_expect a b; run a true; vr_bg B run b true; vr_wait; }
+scenario top_rd s_top_rd; check 'NESTED: 최상위가 종료 기록을 읽지 못함 → 기록 실패, 3' 3 $? '기록 실패: bg:B 종료 기록 읽기' "$TMP/top_rd"
+s_n_ok() { na() { vr_bg B nb; vr_bg B2 run d true; }; nb() { vr_bg C run c true; }
+           vr_expect a b c d; run a true; vr_bg A na; vr_bg T run b true; printf '%s\n' "${#VR_BG_PIDS[@]}" > "$TMP/n_ok_pids"; vr_wait; }
+scenario n_ok s_n_ok; check 'NESTED: 2·3단계 중첩이 모두 정상 → 실패 없음, 0' 0 $? '' "$TMP/n_ok"
+{ [ "$(cat "$TMP/n_ok_pids")" = 2 ] && [ "$(ls -A "$TMP/n_ok/bg" | grep -c '\.read$')" = 5 ] && [ "$(ls -A "$TMP/n_ok/bg" | grep -vc '\.read$')" = 0 ]; } \
+  && ok 'NESTED: 최상위 목록에는 직접 자식 2개만, 작업 5개의 종료 기록이 모두 한 번씩 회수됨(중복 회수 없음)' || bad "NESTED: 회수 상태 (pids=$(cat "$TMP/n_ok_pids"), $(ls -A "$TMP/n_ok/bg" | tr '\n' ' '))"
+s_n_stray() { vr_expect a; run a true; echo x > "$VR_BGREC/fake"; echo x > "$VR_BGREC/x.tmp"; }
+scenario n_stray s_n_stray; check 'NESTED: 회수되지 않은 종료 기록·임시 파일 → "bg 종료 기록 미회수"' 1 $? "bg 종료 기록 미회수: fake${NL}bg 종료 기록 미회수: x.tmp" "$TMP/n_stray"
+s_n_reent() { outer() { vr_bg IN run b true; trap 'exit 0' EXIT; exit 4; }; vr_expect a b; run a true; vr_bg OUT outer; vr_wait; }
+scenario n_reent s_n_reent; check 'NESTED: 자식이 있는 작업이 trap 으로 다시 exit 0 → 처음 코드 4 유지, 자식은 한 번만 회수' 1 $? 'bg:OUT exit=4' "$TMP/n_reent"
+s_n_reent2() { outer() { vr_hook_bg_before_read() { exit 9; }; vr_bg IN run b true; }; vr_expect a b; run a true; vr_bg OUT outer; vr_wait; }
+scenario n_reent2 s_n_reent2; rc=$?
+{ [ $rc -eq 1 ] && [ "$(grep -c . "$TMP/n_reent2/failed_steps.txt")" = 2 ] && grep -qx 'bg:OUT exit=9' "$TMP/n_reent2/failed_steps.txt" && grep -q '^bg 종료 기록 미회수: [0-9]*_[0-9]*$' "$TMP/n_reent2/failed_steps.txt"; } \
+  && ok 'NESTED: 회수 도중 exit 로 재진입 → 무한 대기 없이 끝남, 읽지 못한 자식 기록은 "미회수"로 잡힘' || bad "NESTED: 회수 중 재진입 (rc=$rc, $(tr '\n' ';' < "$TMP/n_reent2/failed_steps.txt"))"
+
 # ── 동시 중복 실행(VR-002) ───────────────────────────────────────────────────────────────
 s_race() { vr_expect a b; run a true; local i; for i in 1 2 3 4 5 6; do vr_bg R run b sh -c 'echo x >> "$1"; sleep 1' _ "$TMP/race_counter"; done; vr_wait; }
 scenario race s_race; check 'VR-002: 같은 이름의 run 을 6개 동시에 호출 → "중복 실행 시도" + 그 작업들의 종료 코드 2, b 자체는 성공' 1 $? "b 중복 실행 시도${NL}bg:R exit=2" "$TMP/race"
