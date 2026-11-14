@@ -63,8 +63,10 @@ vr__write_verified() {
     local f=$1 content=$2 back
     printf '%s' "$content" > "$f" 2>/dev/null || return 1
     [ -f "$f" ] || return 1
-    back=$(cat "$f" 2>/dev/null; printf x) || return 1
-    [ "${back%x}" = "$content" ]
+    # cat 의 종료 코드를 따로 확인한다: 읽기에 실패하면 printf x 를 실행하지 않으므로 명령 치환 전체가 실패한다
+    # (빈 파일에서 읽기 실패가 "빈 내용"으로 오인되지 않게). 읽기에 성공한 뒤에만 내용을 비교한다.
+    back=$(cat "$f" 2>/dev/null && printf x) || return 1
+    [ "${back%x}" = "$content" ] || return 1
 }
 vr__violation() {   # 위반은 메모리에 먼저 기억하고, 파일 기록은 보조다. 파일 기록이 실패하면 기록 실패로도 기억한다
     VR_VIOLATED=1; VR_RUN_ERRS+=("$1")
@@ -99,13 +101,15 @@ run() {
     return $code
 }
 
-# 백그라운드 작업. 하위 셸은 자기 안에서 위반·기록 실패가 있었으면 2 로 끝난다(부모는 하위 셸의 메모리를 볼 수 없으므로).
+# 백그라운드 작업. 하위 셸의 종료 코드: 위반·기록 실패가 있었으면 2(부모는 하위 셸의 메모리를 볼 수 없으므로),
+# 그 밖에는 작업 함수의 반환 코드를 그대로 전달한다(0 이 아니면 부모가 "bg:<이름> exit=N" 으로 실패 처리). 모두 정상일 때만 0.
+# 작업 안의 run 이 항목 실패를 상태 기록으로 남기고 작업도 0 이 아닌 코드로 끝나면, 항목 실패와 bg 실패가 함께 기록된다(서로 다른 사유).
 vr_bg() {
     local label=$1; shift
     ( VR_VIOLATED=0; VR_IOERR=0; VR_RUN_ERRS=()
-      "$@"
+      "$@"; vr__task_rc=$?
       if [ "$VR_VIOLATED" -ne 0 ] || [ "$VR_IOERR" -ne 0 ]; then exit 2; fi
-      exit 0 ) &
+      exit "$vr__task_rc" ) &
     VR_BG_PIDS+=("$!"); VR_BG_LABELS+=("$label")
 }
 vr_wait() {
@@ -184,11 +188,18 @@ vr_finish() {
     if [ ${#list[@]} -gt 0 ]; then
         if sorted=$(set -o pipefail; printf '%s\n' "${list[@]}" | sort -u); then
             mapfile -t sorted_list <<< "$sorted"
-            # 정렬 결과는 원래 목록과 같은 집합이어야 한다(빈 줄·빠진 항목·덧붙은 항목이 있으면 불일치)
-            local okset=1; local -A inl=()
+            # 정렬 결과는 원래 목록과 같은 집합이어야 한다. list 는 (4)에서 중복을 없앴으므로, 다음 네 조건이 모두 맞으면 집합이 같다:
+            # 원소 수가 같음, 결과에 빈 줄·중복이 없음, 결과의 모든 원소가 원래 목록에 있음(추가 없음), 원래 목록의 모든 원소가 결과에 있음(누락 없음).
+            local okset=1; local -A inl=() ins=()
             for e in "${list[@]}"; do inl[$e]=1; done
             [ "${#sorted_list[@]}" -eq "${#list[@]}" ] || okset=0
-            for e in "${sorted_list[@]}"; do [ -n "$e" ] && [ -n "${inl[$e]+x}" ] || okset=0; done
+            for e in "${sorted_list[@]}"; do
+                [ -n "$e" ] || { okset=0; continue; }
+                [ -n "${ins[$e]+x}" ] && okset=0          # 중복 출력
+                ins[$e]=1
+                [ -n "${inl[$e]+x}" ] || okset=0          # 추가 항목
+            done
+            for e in "${list[@]}"; do [ -n "${ins[$e]+x}" ] || okset=0; done   # 누락 항목
             [ $okset -eq 1 ] || { ioerrs+=("기록 실패: sort 결과 불일치"); sorted_list=("${list[@]}"); }
         else ioerrs+=("기록 실패: sort"); sorted_list=("${list[@]}"); fi
     fi

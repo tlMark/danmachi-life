@@ -33,10 +33,10 @@ grep -qx 'ALL_DONE: 모든 항목 종료 코드 0 (3 개 항목)' "$TMP/ok/logs/
 [ "$(cat "$TMP/ok/step_status.txt")" = "a 0${NL}b 0${NL}c 0" ] && ok '정상: step_status.txt 에 항목별 검증된 코드' || bad '정상: step_status.txt'
 
 s_exit3() { vr_expect a b; run a true; vr_bg B run b sh -c 'exit 3'; vr_wait; }
-scenario exit3 s_exit3; check '백그라운드 항목의 종료 코드 3 → 실패 정확히 1건(작업 자체는 정상 종료)' 1 $? 'b exit=3' "$TMP/exit3"
+scenario exit3 s_exit3; check '백그라운드 항목의 종료 코드 3 → 항목 실패 + 그 코드를 반환한 작업의 실패(D-1)' 1 $? "b exit=3${NL}bg:B exit=3" "$TMP/exit3"
 
 s_cmdkill() { vr_expect a b; run a true; vr_bg B run b sh -c 'kill -9 $$'; vr_wait; }
-scenario cmdkill s_cmdkill 2>/dev/null; check '명령이 SIGKILL 로 죽음 → exit=137' 1 $? 'b exit=137' "$TMP/cmdkill"
+scenario cmdkill s_cmdkill 2>/dev/null; check '명령이 SIGKILL 로 죽음 → exit=137(항목) + 그 코드를 반환한 작업' 1 $? "b exit=137${NL}bg:B exit=137" "$TMP/cmdkill"
 
 # ── 래퍼(하위 셸)의 강제 종료: 상태 기록 쪽과 백그라운드 종료 상태 쪽, 두 경로로 모두 잡힌다 ───────
 s_shellkill_before() { body() { kill -9 $BASHPID; run b true; }; vr_expect a b; run a true; vr_bg B body; vr_wait; }
@@ -73,6 +73,12 @@ if [ $HAVE_FULL -eq 1 ]; then scenario bg_viol_lost s_bg_viol_lost; check 'D: �
 else skp 'D: 위반 기록 유실' '/dev/full 없음'; fi
 s_bg_viol() { vr_expect a; run a true; vr_bg V run zzz true; vr_wait; }
 scenario bg_viol s_bg_viol; check '백그라운드 위반(기록 정상) → 기록과 작업 종료 코드 두 경로 모두' 1 $? "zzz 등록되지 않은 항목${NL}bg:V exit=2" "$TMP/bg_viol"
+# D-1(8d18369 재검수): 작업 함수의 반환 코드를 부모에 그대로 전달한다
+s_bg_rc7() { body() { run b true; return 7; }; vr_expect a b; run a true; vr_bg B body; vr_wait; }
+scenario bg_rc7 s_bg_rc7; check 'D-1: 항목 상태는 모두 0, 백그라운드 작업 함수만 return 7 → "bg:B exit=7", 종료 코드 1' 1 $? 'bg:B exit=7' "$TMP/bg_rc7"
+[ "$(cat "$TMP/bg_rc7/step_status.txt")" = "a 0${NL}b 0" ] && ok 'D-1: 그 경우 항목 상태는 실제로 모두 0' || bad 'D-1: 항목 상태'
+s_bg_rc0() { body() { run b true; return 0; }; vr_expect a b; run a true; vr_bg B body; vr_wait; }
+scenario bg_rc0 s_bg_rc0; check 'D-1: 작업 함수가 0 을 반환 → 실패 없음, 종료 코드 0' 0 $? '' "$TMP/bg_rc0"
 s_nowait() { vr_expect a b; run a true; vr_bg B run b sh -c 'sleep 1'; }
 scenario nowait s_nowait; check 'vr_wait 를 부르지 않아도 vr_finish 가 남은 작업을 기다려 판정' 0 $? '' "$TMP/nowait"
 
@@ -102,6 +108,37 @@ s_sort() { vr_expect a b; run a true; run b sh -c 'exit 3'; sort() { return 1; }
 scenario sort_fail s_sort; check 'D: sort 실패 → 정렬 없이 실패 목록을 쓰고 기록 실패로 3' 3 $? "b exit=3${NL}기록 실패: sort" "$TMP/sort_fail"
 s_sort_empty() { vr_expect a b; run a true; run b sh -c 'exit 3'; sort() { cat > /dev/null; return 0; }; }
 scenario sort_empty s_sort_empty; check 'D: sort 가 성공 코드로 빈 결과를 냄 → 결과 수 불일치로 3' 3 $? "b exit=3${NL}기록 실패: sort 결과 불일치" "$TMP/sort_empty"
+
+# D-2(8d18369 재검수): sort 결과가 원래 실패 목록과 같은 집합인지(중복·누락·추가). 원래 목록 = "a exit=3", "b exit=3"
+s_sort_base() { vr_expect a b c; run a sh -c 'exit 3'; run b sh -c 'exit 3'; run c true; }
+s_sort_aa()   { s_sort_base; sort() { cat > /dev/null; printf '%s\n' 'a exit=3' 'a exit=3'; }; }
+s_sort_ba()   { s_sort_base; sort() { cat > /dev/null; printf '%s\n' 'b exit=3' 'a exit=3'; }; }
+s_sort_none() { s_sort_base; sort() { cat > /dev/null; }; }
+s_sort_abc()  { s_sort_base; sort() { cat > /dev/null; printf '%s\n' 'a exit=3' 'b exit=3' 'c exit=9'; }; }
+scenario sort_aa s_sort_aa;     check 'D-2: 원본 a,b / 출력 a,a(중복 + 누락, 개수는 같음) → 불일치, 3' 3 $? "a exit=3${NL}b exit=3${NL}기록 실패: sort 결과 불일치" "$TMP/sort_aa"
+scenario sort_ba s_sort_ba;     check 'D-2: 원본 a,b / 출력 b,a → 일치, 기록 실패 없음(1)' 1 $? "a exit=3${NL}b exit=3" "$TMP/sort_ba"
+[ "$(cat "$TMP/sort_ba/failed_steps.txt")" = "b exit=3${NL}a exit=3" ] && ok 'D-2: 일치하면 sort 의 출력 순서를 그대로 씀' || bad 'D-2: sort 출력 순서'
+scenario sort_none s_sort_none; check 'D-2: 원본 a,b / 출력 빈 결과 → 불일치, 3' 3 $? "a exit=3${NL}b exit=3${NL}기록 실패: sort 결과 불일치" "$TMP/sort_none"
+scenario sort_abc s_sort_abc;   check 'D-2: 원본 a,b / 출력 a,b,c(추가) → 불일치, 3(추가 항목은 쓰지 않음)' 3 $? "a exit=3${NL}b exit=3${NL}기록 실패: sort 결과 불일치" "$TMP/sort_abc"
+
+# D-3(8d18369 재검수): vr__write_verified 의 읽기 실패. cat 을 함수로 바꿔 지정한 일반 파일의 읽기만 실패시킨다(모의).
+wv() {   # wv <내용> <읽기 실패 주입 0|1> → vr__write_verified 의 반환 코드
+    ( . "$HERE/lib/verify_run.sh"; f="$TMP/wv_file"; rm -f "$f"
+      [ "$2" = 1 ] && cat() { [ "$1" = "$TMP/wv_file" ] && return 1; command cat "$@"; }
+      vr__write_verified "$f" "$1" ); }
+wv '' 0;        [ $? -eq 0 ] && ok 'D-3: 정상 빈 파일 쓰기·읽기 → 0' || bad 'D-3: 정상 빈 파일'
+wv "abc${NL}" 0; [ $? -eq 0 ] && ok 'D-3: 정상 비어 있지 않은 파일 쓰기·읽기 → 0' || bad 'D-3: 정상 비어 있지 않은 파일'
+wv '' 1;        [ $? -eq 1 ] && ok 'D-3: 빈 문자열을 쓴 뒤 읽기 실패 → 1(빈 내용으로 오인하지 않음)' || bad 'D-3: 빈 문자열 + 읽기 실패'
+wv "abc${NL}" 1; [ $? -eq 1 ] && ok 'D-3: 비어 있지 않은 내용을 쓴 뒤 읽기 실패 → 1' || bad 'D-3: 비어 있지 않은 내용 + 읽기 실패'
+[ -f "$TMP/wv_file" ] && ok 'D-3: 주입 대상은 실제 일반 파일(쓰기는 성공)' || bad 'D-3: 주입 대상 파일'
+s_fails_r0() { vr_expect a; run a true; cat() { [ "$1" = "$VR_FAILS" ] && return 1; command cat "$@"; }; }
+scenario fails_r0 s_fails_r0; rc=$?
+{ [ $rc -eq 3 ] && no_alldone "$TMP/fails_r0" && [ "$(cat "$TMP/fails_r0/logs/99_done.log" | tail -n +2)" = '기록 실패: failed_steps.txt' ]; } && ok 'D-3: 실패 없음(빈 failed_steps.txt)인데 그 파일 읽기 실패 → 3, ALL_DONE 없음, 사유는 기록 실패 1건' || bad "D-3: failed_steps.txt 읽기 실패 (rc=$rc)"
+s_steps_r() { vr_expect a; run a true; cat() { [ "$1" = "$VR_STEPS" ] && return 1; command cat "$@"; }; }
+scenario steps_r s_steps_r; check 'D-3: step_status.txt 읽기 실패 → 기록 실패, 3' 3 $? '기록 실패: step_status.txt' "$TMP/steps_r"
+s_done_r() { vr_expect a; run a true; cat() { [ "$1" = "$VR_DONE" ] && return 1; command cat "$@"; }; }
+scenario done_r s_done_r; rc=$?
+{ [ $rc -eq 3 ] && [ ! -s "$TMP/done_r/failed_steps.txt" ] && grep -q '99_done.log' "$TMP/done_r.finish_out"; } && ok 'D-3: 99_done.log 에 ALL_DONE 을 썼지만 다시 읽지 못함 → 성공 아님(3)' || bad "D-3: 99_done.log 읽기 실패 (rc=$rc)"
 
 # ── 동시 중복 실행(VR-002) ───────────────────────────────────────────────────────────────
 s_race() { vr_expect a b; run a true; local i; for i in 1 2 3 4 5 6; do vr_bg R run b sh -c 'echo x >> "$1"; sleep 1' _ "$TMP/race_counter"; done; vr_wait; }
@@ -150,10 +187,10 @@ s_multi() { vr_expect a b c d; run a sh -c 'exit 2'; vr_bg B run b sh -c 'printf
 scenario multi s_multi 2>/dev/null; check '실패가 여럿 → 다섯 건이 정확히 기록' 1 $? "a exit=2${NL}b 시작했으나 상태 기록 없음${NL}bg:B exit=137${NL}c 시작되지 않음${NL}d 시작되지 않음" "$TMP/multi"
 
 # ── VR-003: 대조 자체의 엄격성 ─────────────────────────────────────────────────────────────
-same_list 'b exit=3' "$TMP/exit3/failed_steps.txt" && ok '대조: 정확히 같은 목록 → 일치' || bad '대조: 정확히 같은 목록'
+same_list "b exit=3${NL}bg:B exit=3" "$TMP/exit3/failed_steps.txt" && ok '대조: 정확히 같은 목록 → 일치' || bad '대조: 정확히 같은 목록'
 ! same_list '' "$TMP/exit3/failed_steps.txt" && ok '대조: 실제로는 실패가 있는데 기대가 "실패 없음" → 불일치' || bad '대조: 빈 기대'
 ! same_list "c 시작되지 않음" "$TMP/loopkill/failed_steps.txt" && ok '대조: 실제 실패 중 일부만 기대 → 불일치(기대하지 않은 추가 실패를 잡음)' || bad '대조: 부분 집합'
-! same_list "b exit=3${NL}x 추가" "$TMP/exit3/failed_steps.txt" && ok '대조: 기대에 없는 실패가 기대 쪽에 더 있음 → 불일치' || bad '대조: 상위 집합'
+! same_list "b exit=3${NL}bg:B exit=3${NL}x 추가" "$TMP/exit3/failed_steps.txt" && ok '대조: 기대에 없는 실패가 기대 쪽에 더 있음 → 불일치' || bad '대조: 상위 집합'
 ( check_out=$(check '내부' 1 1 '' "$TMP/exit3" 2>&1); printf '%s' "$check_out" | grep -q '^FAIL' ) && ok '대조: check 는 기대하지 않은 실패가 있으면 FAIL 을 출력' || bad '대조: check 의 FAIL 출력'
 
 total=$((pass + fail + skip))
