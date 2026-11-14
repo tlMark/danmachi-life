@@ -90,12 +90,14 @@ if [ $HAVE_FULL -eq 1 ]; then
     s_bx_lost() { body() { VR_NOTES=/dev/full; run zzz true; exit 0; }; vr_expect a; run a true; vr_bg V body; vr_wait; }
     scenario bx_lost s_bx_lost; rc=$?; check 'D-1: 백그라운드에서 _violations.txt 기록 실패 + 미등록 위반 + 직접 exit 0 → "bg:V exit=2", 위반·기록 실패 각각, 3' 3 $rc "bg:V exit=2${NL}zzz 등록되지 않은 항목${NL}기록 실패: _violations.txt" "$TMP/bx_lost"
     no_alldone "$TMP/bx_lost" && ok 'D-1: 그 경우 ALL_DONE 없음' || bad 'D-1: ALL_DONE 있음'
-    s_bx_trap() { body() { trap 'echo replaced' EXIT; VR_NOTES=/dev/full; run zzz true; exit 0; }; vr_expect a; run a true; vr_bg V body; vr_wait; }
+    s_bx_trap() { body() { trap ': replaced' EXIT; VR_NOTES=/dev/full; run zzz true; exit 0; }; vr_expect a; run a true; vr_bg V body; vr_wait; }
     scenario bx_trap s_bx_trap; check 'D-1: 작업이 EXIT trap 을 바꾸고 exit 0 → exit 가로채기로 같은 판정' 3 $? "bg:V exit=2${NL}zzz 등록되지 않은 항목${NL}기록 실패: _violations.txt" "$TMP/bx_trap"
     s_bx_builtin() { body() { VR_NOTES=/dev/full; run zzz true; builtin exit 0; }; vr_expect a; run a true; vr_bg V body; vr_wait; }
     scenario bx_builtin s_bx_builtin; check 'D-1: 작업이 builtin exit 0 → EXIT trap 으로 같은 판정' 3 $? "bg:V exit=2${NL}zzz 등록되지 않은 항목${NL}기록 실패: _violations.txt" "$TMP/bx_builtin"
     s_bx_bypass() { body() { trap - EXIT; VR_NOTES=/dev/full; run zzz true; builtin exit 0; }; vr_expect a; run a true; vr_bg V body; vr_wait; }
-    scenario bx_bypass s_bx_bypass; check 'D-1: trap 을 지우고 builtin exit 0(의도적 우회) → 종료 코드 0 이어도 "종료 기록 없음"으로 실패' 1 $? 'bg:V 종료 기록 없음' "$TMP/bx_bypass"
+    scenario bx_bypass s_bx_bypass; check 'D-1: 작업이 trap 으로 EXIT trap 을 지우고 builtin exit 0 → 검증기 trap 은 남아 위반·기록 실패 판정, 3' 3 $? "bg:V exit=2${NL}zzz 등록되지 않은 항목${NL}기록 실패: _violations.txt" "$TMP/bx_bypass"
+    s_bx_bypass2() { body() { builtin trap - EXIT; VR_NOTES=/dev/full; run zzz true; builtin exit 0; }; vr_expect a; run a true; vr_bg V body; vr_wait; }
+    scenario bx_bypass2 s_bx_bypass2; check 'D-1: builtin trap 으로 지우고 builtin exit 0(의도적 우회) → 종료 코드 0 이어도 "종료 기록 없음"으로 실패' 1 $? 'bg:V 종료 기록 없음' "$TMP/bx_bypass2"
 else for n in 'exit 0 + 기록 유실' 'ALL_DONE' 'trap 교체' 'builtin exit' '의도적 우회'; do skp "D-1: $n" '/dev/full 없음'; done; fi
 s_bx_ok() { body() { run b true; exit 0; }; vr_expect a b; run a true; vr_bg B body; vr_wait; }
 scenario bx_ok s_bx_ok; check 'D-1: 위반 없이 직접 exit 0 → 실패 없음, 0' 0 $? '' "$TMP/bx_ok"
@@ -111,7 +113,7 @@ s_bx_twice() { body() { run b true; trap 'exit 0' EXIT; exit 5; }; vr_expect a b
 scenario bx_twice s_bx_twice; check 'D-1: 작업의 EXIT trap 이 다시 exit 0 을 부름(재진입) → 처음 정한 코드 5 유지' 1 $? 'bg:B exit=5' "$TMP/bx_twice"
 s_bx_norec() { body() { VR_BGREC=/nonexistent_vr_dir; run b true; }; vr_expect a b; run a true; vr_bg B body; vr_wait; }
 scenario bx_norec s_bx_norec; check 'D-1: 종료 기록을 쓰지 못함 → 2 + "종료 기록 없음"' 1 $? "bg:B exit=2${NL}bg:B 종료 기록 없음" "$TMP/bx_norec"
-s_bx_forge() { body() { trap - EXIT; printf 'v1 0000 x\n' > "$VR_BGREC/$vr__bg_id"; builtin exit 0; }; vr_expect a; run a true; vr_bg F body; vr_wait; }
+s_bx_forge() { body() { builtin trap - EXIT; printf 'v1 0000 x\n' > "$VR_BGREC/$vr__bg_id"; builtin exit 0; }; vr_expect a; run a true; vr_bg F body; vr_wait; }
 scenario bx_forge s_bx_forge; check 'D-1: 작업이 가짜 종료 기록을 쓰고 우회 종료 → "종료 기록 손상"' 1 $? 'bg:F 종료 기록 손상' "$TMP/bx_forge"
 s_nowait() { vr_expect a b; run a true; vr_bg B run b sh -c 'sleep 1'; }
 scenario nowait s_nowait; check 'vr_wait 를 부르지 않아도 vr_finish 가 남은 작업을 기다려 판정' 0 $? '' "$TMP/nowait"
@@ -260,8 +262,51 @@ scenario rd_dir s_rd_dir;       checkn 'RE-3: .read 목적 경로에 디렉터�
 scenario rd_nested s_rd_nested; checkn 'RE-3: .read 목적 경로에 중첩 디렉터리가 이미 있음 → 같은 판정' 3 $? "기록 실패: bg:B 회수 표시 대상이 이미 있음${NL}bg 종료 기록 미회수: <ID>${NL}bg 폴더에 예상하지 못한 항목: <ID>.read" "$TMP/rd_nested"
 s_rd_extra() { vr_expect a; run a true; mkdir -p "$VR_BGREC/zz.done/sub"; }
 scenario rd_extra s_rd_extra; check 'RE-3: 이름이 .done 이어도 디렉터리면 예상하지 못한 항목(하위 경로를 성공으로 보지 않음)' 1 $? 'bg 폴더에 예상하지 못한 항목: zz.done' "$TMP/rd_extra"
-s_rec_code() { body() { run b true; trap - EXIT; local id=$vr__bg_id; printf 'v1 %s %s\nL B\nC 0\n' "$(vr_tag "bg:$id")" "$id" > "$VR_BGREC/$id"; builtin exit 4; }; vr_expect a b; run a true; vr_bg B body; vr_wait; }
+s_rec_code() { body() { run b true; builtin trap - EXIT; local id=$vr__bg_id; printf 'v1 %s %s\nL B\nC 0\n' "$(vr_tag "bg:$id")" "$id" > "$VR_BGREC/$id"; builtin exit 4; }; vr_expect a b; run a true; vr_bg B body; vr_wait; }
 scenario rec_code s_rec_code; check 'RE: 종료 기록의 C(0)가 실제 종료 코드(4)와 다름 → 종료 기록 손상' 1 $? "bg:B exit=4${NL}bg:B 종료 기록 손상" "$TMP/rec_code"
+
+# ── 종료 경로 전체(D-1 재반려: trap 'exit 0' EXIT; builtin exit 5 가 성공으로 바뀌던 결함) ──────────────────
+# 모든 경우: vr_expect a b; run a true; 백그라운드 작업 B 가 run b true 뒤에 아래 방식으로 끝난다.
+ex_case() {   # ex_case <이름> <설명> <기대 종료 코드> <기대 실패 목록> <작업 본문(run b true 뒤에 실행)>
+    eval "s_ex_$1() { body() { run b true; $5; }; vr_expect a b; run a true; vr_bg B body; vr_wait; }"
+    scenario "ex_$1" "s_ex_$1" 2>/dev/null; local rc=$?
+    check "EXIT: $2" "$3" "$rc" "$4" "$TMP/ex_$1"
+    [ "$3" = 0 ] || { no_alldone "$TMP/ex_$1" && ok "EXIT: $2 — ALL_DONE 없음" || bad "EXIT: $2 — ALL_DONE 있음"; }
+}
+ex_case ret0     '일반 반환'                                         0 ''                          ':'
+ex_case ret4     'return 4'                                         1 'bg:B exit=4'               'return 4'
+ex_case fexit6   '함수 안의 exit 6'                                  1 'bg:B exit=6'               'f() { exit 6; }; f'
+ex_case noarg    '인자 없는 exit(직전 1)'                             1 'bg:B exit=1'               'false; exit'
+ex_case bexit6   'builtin exit 6'                                   1 'bg:B exit=6'               'builtin exit 6'
+ex_case repl6    'EXIT trap 교체 후 builtin exit 6'                   1 'bg:B exit=6'               "trap ': x' EXIT; builtin exit 6"
+ex_case rm6      'EXIT trap 제거(trap -) 후 builtin exit 6'           1 'bg:B exit=6'               'trap - EXIT; builtin exit 6'
+ex_case brm6     'builtin trap 으로 제거 후 builtin exit 6'           1 "bg:B exit=6${NL}bg:B 종료 기록 없음" 'builtin trap - EXIT; builtin exit 6'
+ex_case tx0e5    "처리기 안에서 exit 0, 작업은 exit 5"                1 'bg:B exit=5'               "trap 'exit 0' EXIT; exit 5"
+ex_case tbx0e5   "처리기 안에서 builtin exit 0, 작업은 exit 5"        1 'bg:B exit=5'               "trap 'builtin exit 0' EXIT; exit 5"
+ex_case tbx0b5   "처리기 안에서 builtin exit 0, 작업은 builtin exit 5(검증기 코드가 실행되지 못함)" 1 'bg:B 종료 기록 없음' "trap 'builtin exit 0' EXIT; builtin exit 5"
+ex_case tx3e5    '최초 5 / 처리기 exit 3 → 최초 코드 5'               1 'bg:B exit=5'               "trap 'exit 3' EXIT; exit 5"
+ex_case tx3e0    '최초 0 / 처리기 exit 3 → 처리기 코드 3'             1 'bg:B exit=3'               "trap 'exit 3' EXIT; exit 0"
+ex_case tx3r0    '정상 반환 / 처리기 exit 3 → 3'                      1 'bg:B exit=3'               "trap 'exit 3' EXIT; return 0"
+ex_case tx0r5    'return 5 / 처리기 exit 0 → 5'                       1 'bg:B exit=5'               "trap 'exit 0' EXIT; return 5"
+ex_case codex    "재현 사례: trap 'exit 0' EXIT; builtin exit 5"     1 'bg:B exit=5'               "trap 'exit 0' EXIT; builtin exit 5"
+ex_case bcodex   "builtin trap 'exit 0' EXIT; builtin exit 5"       1 "bg:B EXIT trap 변경${NL}bg:B exit=2" "builtin trap 'exit 0' EXIT; builtin exit 5"
+ex_case reinst   '처리기 안에서 trap 을 다시 설치하고 exit 0'          1 'bg:B exit=5'               "trap 'trap \"exit 0\" EXIT; exit 0' EXIT; exit 5"
+ex_case sigexit  'trap 의 신호 이름이 0 / SIGEXIT'                    1 'bg:B exit=5'               "trap 'exit 0' 0; trap 'exit 0' SIGEXIT; builtin exit 5"
+ex_case tclean   '처리기가 정상 정리만 하고 끝남 → 최초 코드 0'         0 ''                          "trap ': cleanup' EXIT; exit 0"
+s_ex_usr1() { body() { run b true; trap 'touch "$TMP/ex_usr1_hit"' USR1; kill -USR1 $BASHPID; }; vr_expect a b; run a true; vr_bg B body; vr_wait; }
+scenario ex_usr1 s_ex_usr1; check 'EXIT: EXIT 가 아닌 신호의 trap 은 그대로 동작' 0 $? '' "$TMP/ex_usr1"
+[ -f "$TMP/ex_usr1_hit" ] && ok 'EXIT: USR1 처리기 실행됨' || bad 'EXIT: USR1 처리기 미실행'
+
+# ── RE-2 남은 위험: 실행 표식을 쓰기 전에 부모가 강제 종료 ─────────────────────────────────────────────
+s_win() { outer() { vr_hook_bg_before_mark() { kill -9 $BASHPID; }; vr_bg IN bash -c 'sleep 1; exit 5'; }; vr_expect a; run a true; vr_bg OUT outer; vr_wait; }
+scenario win s_win 2>/dev/null; checkn 'RE-2: 표식 전에 부모가 죽은 후손(1초 뒤 exit 5) → 생명주기 추적으로 기다려 흡수' 1 $? "bg:OUT exit=137${NL}bg:OUT/IN exit=5${NL}bg 종료 기록 미회수: <ID>" "$TMP/win"
+re_bg_dir_ok "$TMP/win" && ok 'RE-2: 표식 없는 후손도 판정 시점에 처리 완료' || bad "RE-2: bg: $(ls -A "$TMP/win/bg" | tr '\n' ' ')"
+s_win_k() { outer() { vr_hook_bg_before_mark() { kill -9 $BASHPID; }; vr_bg IN wk; }; wk() { sleep 1; : > "$TMP/win_k_done"; kill -9 $BASHPID; }; vr_expect a; run a true; vr_bg OUT outer; vr_wait; }
+scenario win_k s_win_k 2>/dev/null; check 'RE-2: 표식 전에 부모가 죽고 후손도 기록 없이 강제 종료 → 부모 실패' 1 $? 'bg:OUT exit=137' "$TMP/win_k"
+[ -f "$TMP/win_k_done" ] && ok 'RE-2: 판정은 그 후손이 끝난 뒤에 이루어짐(판정 뒤에 실행 중인 후손 없음)' || bad 'RE-2: 판정이 후손 종료보다 먼저'
+s_runbg() { vr_expect a; run a sh -c 'sleep 3 > /dev/null 2>&1 &'; }
+t0=$SECONDS; scenario runbg s_runbg; rc=$?; dt=$((SECONDS - t0))
+{ [ $rc -eq 0 ] && [ $dt -lt 3 ]; } && ok "RE-2: run 으로 실행한 명령이 남긴 프로세스는 기다리지 않음(${dt}초)" || bad "RE-2: run 명령의 잔여 프로세스 대기 (rc=$rc, ${dt}초)"
 
 # ── 동시 중복 실행(VR-002) ───────────────────────────────────────────────────────────────
 s_race() { vr_expect a b; run a true; local i; for i in 1 2 3 4 5 6; do vr_bg R run b sh -c 'echo x >> "$1"; sleep 1' _ "$TMP/race_counter"; done; vr_wait; }

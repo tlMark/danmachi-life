@@ -56,6 +56,13 @@ vr_init() {
     : > "$VR_NOTES" || return 2
     VR_TOKEN=$(head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n') || return 2
     [ "${#VR_TOKEN}" -eq 48 ] || return 2
+    # 후손 생명주기 추적: FIFO 를 읽기·쓰기로 열어 두면, 그 fd 는 이후 만들어지는 모든 하위 셸에 커널이 자동으로 상속한다.
+    # vr_finish 는 자기 fd 를 닫고 EOF 를 기다린다 = 그 fd 를 가진 후손이 모두 끝났다(실행 표식을 쓰기 전에 부모가 죽어도 빠지지 않음).
+    # run 으로 실행하는 명령에는 이 fd 를 닫고 넘긴다(검사 대상 명령이 남긴 프로세스 때문에 기다리지 않도록).
+    if [ -n "${VR_LIFE_W:-}" ]; then exec {VR_LIFE_W}>&-; fi
+    VR_LIFE="$VR_OUT/.vr_life"; VR_LIFE_W=""
+    rm -f "$VR_LIFE" && mkfifo "$VR_LIFE" || return 2
+    exec {VR_LIFE_W}<>"$VR_LIFE" || return 2
 }
 
 vr__ioerr() { VR_IOERR=1; VR_RUN_ERRS+=("기록 실패: $1"); }
@@ -89,7 +96,9 @@ run() {
     if [ -z "${VR_EXPN[$name]+x}" ]; then vr__violation "$name 등록되지 않은 항목"; return 2; fi
     # 선점: mkdir 는 원자적이라 같은 이름을 동시에 불러도 한쪽만 성공한다
     if ! mkdir "$VR_ST/$name.claim" 2>/dev/null; then vr__violation "$name 중복 실행 시도"; return 2; fi
-    "$@" > "$VR_L/$name.log" 2>&1; local code=$?
+    local code
+    if [ -n "${VR_LIFE_W:-}" ]; then "$@" {VR_LIFE_W}>&- > "$VR_L/$name.log" 2>&1; code=$?
+    else "$@" > "$VR_L/$name.log" 2>&1; code=$?; fi
     # 여기까지 왔다는 것은 래퍼가 명령의 종료를 실제로 확인했다는 뜻이다. 그때에만 상태를 기록한다.
     # 로그 끝의 "exit=N" 줄은 사람이 읽기 위한 표시이며 판정에 쓰지 않는다(이전 출력 형식과 F1 기록 로그 비교의 호환을 위해 유지).
     echo "exit=$code" >> "$VR_L/$name.log" 2>/dev/null || vr__ioerr "$name.log 표시 줄"
@@ -169,15 +178,65 @@ vr__bg_mark_read() {
     if mv -f -T -- "$f" "$t" 2>/dev/null && [ -f "$t" ] && [ ! -L "$t" ] && [ ! -e "$f" ] && [ ! -L "$f" ]; then return 0; fi
     vr__ioerr "bg:$label 회수 표시"; return 1
 }
-vr__alive() {   # 프로세스가 살아 있음(좀비는 죽은 것으로 본다)
-    kill -0 "$1" 2>/dev/null || return 1
-    local st; st=$(awk '{print $3}' "/proc/$1/stat" 2>/dev/null) || return 0
-    [ "$st" != Z ]
+# ── 종료 경로 ───────────────────────────────────────────────────────────────────────────
+# 하위 셸 안에서 검증기는 세 가지를 가로챈다.
+#   exit  : 함수로 가로챈다(작업 코드가 부르는 exit 와, 작업의 EXIT 처리기 안에서 부르는 exit).
+#   trap  : 함수로 가로챈다. 작업이 EXIT 처리기를 설치·교체·제거하면 그 처리기는 vr__task_trap 에 보관만 하고,
+#           실제 EXIT trap 은 늘 검증기 것(vr__bg_on_exit)으로 남는다. 다른 신호의 trap 은 그대로 넘긴다.
+#   EXIT  : 실제 EXIT trap 은 검증기 것. builtin exit 나 셸 오류로 끝나도 여기로 온다.
+# 종료 순서: (1) 최초 종료 코드를 vr__bg_pend 에 고정 → (2) 작업의 EXIT 처리기를 한 번 실행(bash 와 같은 순서) →
+#           (3) vr__bg_finish. 최종 판정에 쓰는 코드는 "최초 종료 코드가 0 이 아니면 그 코드, 0 이면 처리기가 정한 코드".
+#           따라서 처리기가 exit 0 을 불러도 0 이 아닌 최초 코드는 0 으로 바뀌지 않는다.
+# 작업이 builtin trap 으로 실제 EXIT trap 을 바꾸면: vr__bg_finish 가 실제 trap 이 검증기 것인지 확인해 "EXIT trap 변경" 위반(2).
+# 바꾼 trap 안에서 builtin exit 로 끝내면 검증기 코드가 전혀 실행되지 않아 종료 기록이 없다 → 부모가 "종료 기록 없음"으로 실패.
+VR__BG_TRAP_P="trap -- 'vr__bg_on_exit \$?' EXIT"
+vr__setrc() { return "$1"; }
+vr__bg_trap_shadow() {   # 하위 셸 안의 trap 함수 본체
+    case "${1:-}" in -p|-l|-P) builtin trap "$@"; return ;; esac
+    [ "${1:-}" = "--" ] && shift
+    if [ $# -eq 0 ]; then builtin trap; return; fi
+    if [ $# -eq 1 ]; then set -- - "$1"; fi
+    local act=$1 sig; shift; local -a others=()
+    for sig in "$@"; do
+        case "${sig^^}" in
+            EXIT|SIGEXIT|0) if [ "$act" = - ]; then vr__task_trap=""; else vr__task_trap=$act; fi ;;
+            *) others+=("$sig") ;;
+        esac
+    done
+    if [ ${#others[@]} -gt 0 ]; then builtin trap -- "$act" "${others[@]}"; fi
 }
-vr__bg_finish() {   # vr__bg_finish <작업 종료 코드> : 자식을 회수하고, 종료 기록을 한 번만 쓰고, 정책 코드로 하위 셸을 끝낸다
-    local rc=$1 code tag f i
-    trap - EXIT
-    if [ -n "${vr__bg_code:-}" ]; then builtin exit "$vr__bg_code"; fi
+vr__bg_run_task_trap() {   # 작업의 EXIT 처리기를 한 번만, bash 처럼 $? = 종료 코드 상태로 실행
+    [ -z "${vr__task_trap_ran:-}" ] && [ -n "${vr__task_trap:-}" ] || return 0
+    vr__task_trap_ran=1; vr__in_task_trap=1
+    case "${vr__bg_pend:-}" in ''|*[!0-9]*) vr__setrc 2 ;; *) vr__setrc $(( 10#$vr__bg_pend % 256 )) ;; esac
+    eval "$vr__task_trap"
+    vr__in_task_trap=""
+}
+vr__bg_exit_req() {   # 가로챈 exit
+    local c=$1
+    # 이미 종료 처리 중(재진입)이거나 작업의 EXIT 처리기 안이면 바로 종료 처리로(최초 코드는 이미 고정됨)
+    if [ -n "${vr__in_task_trap:-}" ] || [ "${vr__bg_depth:-0}" -gt 0 ]; then vr__bg_finish "$c"; fi
+    [ -n "${vr__bg_pend:-}" ] || vr__bg_pend=$c
+    vr__bg_run_task_trap
+    vr__bg_finish "$c"
+}
+vr__bg_on_exit() {   # 실제 EXIT trap 과 작업 함수의 정상 반환
+    local rc=$1
+    if [ -n "${vr__in_task_trap:-}" ] || [ "${vr__bg_depth:-0}" -gt 0 ]; then vr__bg_finish "$rc"; fi
+    [ -n "${vr__bg_pend:-}" ] || vr__bg_pend=$rc
+    vr__bg_run_task_trap
+    vr__bg_finish "$rc"
+}
+vr__bg_finish() {   # vr__bg_finish <코드> : 자식을 회수하고, 종료 기록을 한 번만 쓰고, 정책 코드로 하위 셸을 끝낸다
+    local rc=$1 eff code tag f i
+    if [ -n "${vr__bg_code:-}" ]; then builtin trap - EXIT; builtin exit "$vr__bg_code"; fi
+    if [ -z "${vr__bg_trapchk:-}" ]; then   # 실제 EXIT trap 이 검증기 것인지(작업이 builtin trap 으로 바꾸거나 지웠는지) 한 번 확인
+        vr__bg_trapchk=1
+        if [ "$(builtin trap -p EXIT)" != "$VR__BG_TRAP_P" ]; then VR_VIOLATED=1; VR_RUN_ERRS+=("bg:$VR_BG_PATH EXIT trap 변경"); fi
+    fi
+    builtin trap - EXIT
+    # 최초 종료 코드가 0 이 아니면 그것을 쓴다(처리기·재진입이 0 으로 바꾸지 못함)
+    if [ -n "${vr__bg_pend:-}" ] && [ "$vr__bg_pend" != 0 ]; then eff=$vr__bg_pend; else eff=$rc; fi
     vr__bg_depth=$(( ${vr__bg_depth:-0} + 1 ))
     if [ "$vr__bg_depth" -eq 1 ]; then vr_wait
     elif [ "$vr__bg_depth" -eq 2 ]; then vr__bg_reentered=1; vr_wait     # 회수 도중 재진입: 남은 자식을 이어서 회수(주입 지점은 부르지 않음)
@@ -185,7 +244,7 @@ vr__bg_finish() {   # vr__bg_finish <작업 종료 코드> : 자식을 회수하
     for i in "${!VR_BG_PIDS[@]}"; do
         [ "${VR_BG_ST[$i]:-0}" = 2 ] || { VR_BG_FAILS+=("bg:$VR_BG_PATH 자식 회수 미완료"); break; }
     done
-    code=$(vr__bg_policy_code "$rc") || code=2
+    code=$(vr__bg_policy_code "$eff") || code=2
     code=${code:-2}
     f="$VR_BGREC/$vr__bg_id"
     if tag=$(vr_tag "bg:$vr__bg_id") && [ ${#tag} -eq 64 ] \
@@ -200,11 +259,14 @@ vr_bg() {
     local id="${BASHPID}_${VR_BG_SEQ}" pid
     ( VR_VIOLATED=0; VR_IOERR=0; VR_RUN_ERRS=(); VR_BG_PIDS=(); VR_BG_LABELS=(); VR_BG_IDS=(); VR_BG_ST=(); VR_BG_RC=(); VR_BG_FAILS=()
       VR_BG_PATH=$label; vr__bg_id=$id; vr__bg_code=""; vr__bg_depth=0; vr__bg_reentered=""
-      trap 'vr__bg_finish $?' EXIT
-      exit() { vr__bg_finish "${1-$?}"; }
+      vr__bg_pend=""; vr__task_trap=""; vr__task_trap_ran=""; vr__in_task_trap=""; vr__bg_trapchk=""
+      builtin trap 'vr__bg_on_exit $?' EXIT
+      exit() { vr__bg_exit_req "${1-$?}"; }
+      trap() { vr__bg_trap_shadow "$@"; }
       "$@"
-      vr__bg_finish $? ) &
+      vr__bg_on_exit $? ) &
     pid=$!
+    declare -F vr_hook_bg_before_mark > /dev/null && vr_hook_bg_before_mark "$pid"     # 시험용 주입 지점(평소에는 정의되지 않음)
     VR_BG_PIDS+=("$pid"); VR_BG_LABELS+=("$label"); VR_BG_IDS+=("$id")
     { printf '%s\n' "$pid" > "$VR_BGREC/$id.run"; } 2>/dev/null || vr__ioerr "bg:$label 실행 표식"
 }
@@ -231,24 +293,40 @@ vr_wait() {
     done
     VR_BG_PIDS=(); VR_BG_LABELS=(); VR_BG_IDS=(); VR_BG_ST=(); VR_BG_RC=()
 }
-# 최상위 전용: 처리되지 않은 실행 표식(.run) = 부모가 회수하지 못한 후손. 그 프로세스가 끝날 때까지 기다린 뒤 종료 기록을 흡수한다.
+# 최상위 전용. (1) 후손 생명주기 FIFO 의 EOF 를 기다린다 = 모든 후손 하위 셸이 끝났다(PID 로 기다리지 않으므로 PID 재사용 영향 없음).
+# (2) 처리되지 않은 실행 표식(.run)과, 표식 없이 남은 종료 기록(부모가 표식을 쓰기 전에 죽은 경우)을 흡수한다.
+vr__bg_drain_descendants() {
+    local r
+    if [ -z "${VR_LIFE_W:-}" ] || [ ! -p "$VR_LIFE" ]; then vr__ioerr "후손 추적 준비 안 됨"; return; fi
+    if ! exec {r}<"$VR_LIFE"; then vr__ioerr "후손 추적 열기"; return; fi
+    exec {VR_LIFE_W}>&-; VR_LIFE_W=""
+    command cat <&"$r" > /dev/null 2>&1 || vr__ioerr "후손 추적 읽기"
+    exec {r}<&-
+    rm -f "$VR_LIFE" 2>/dev/null
+}
+vr__bg_absorb() {   # vr__bg_absorb <id> : 부모가 회수하지 못한 종료 기록을 흡수
+    local id=$1 f="$VR_BGREC/$1"
+    if vr__bg_read_record "$f" "$id" ""; then
+        [ "$vr__rec_code" = 0 ] || VR_BG_FAILS+=("bg:$vr__rec_label exit=$vr__rec_code")
+    fi
+    VR_BG_FAILS+=("bg 종료 기록 미회수: $id")
+    vr__bg_mark_read "$f" "$id"
+}
 vr__bg_collect_orphans() {
-    local m id pid f
+    local m id f
+    vr__bg_drain_descendants
     for m in "$VR_BGREC"/*.run; do
         [ -e "$m" ] || [ -L "$m" ] || continue
         id=${m##*/}; id=${id%.run}; f="$VR_BGREC/$id"
-        if [ ! -f "$m" ] || [ -L "$m" ] || ! pid=$(cat "$m" 2>/dev/null); then vr__ioerr "bg 실행 표식 읽기: $id"; continue; fi
-        if ! [[ "$pid" =~ ^[1-9][0-9]*$ ]]; then VR_BG_FAILS+=("bg 실행 표식 손상: $id"); continue; fi
-        while [ ! -e "$f" ] && vr__alive "$pid"; do sleep 0.1; done
-        while vr__alive "$pid"; do sleep 0.1; done      # 기록을 쓴 뒤 끝나기까지(그 후손은 이미 그 작업이 회수했다)
-        if [ -e "$f" ] || [ -L "$f" ]; then
-            if vr__bg_read_record "$f" "$id" ""; then
-                [ "$vr__rec_code" = 0 ] || VR_BG_FAILS+=("bg:$vr__rec_label exit=$vr__rec_code")
-            fi
-            VR_BG_FAILS+=("bg 종료 기록 미회수: $id")
-            vr__bg_mark_read "$f" "$id"
+        if [ -e "$f" ] || [ -L "$f" ]; then vr__bg_absorb "$id"
         else VR_BG_FAILS+=("bg 종료 기록 없음(회수되지 않은 작업): $id"); fi
         { mv -f -T "$m" "$VR_BGREC/$id.done" 2>/dev/null && [ -f "$VR_BGREC/$id.done" ]; } || vr__ioerr "bg 실행 표식 정리: $id"
+    done
+    for f in "$VR_BGREC"/*; do       # 실행 표식 없이 남은 종료 기록(작업 ID 형식의 일반 파일)
+        [ -f "$f" ] && [ ! -L "$f" ] || continue
+        id=${f##*/}
+        [[ "$id" =~ ^[0-9]+_[0-9]+$ ]] || continue
+        [ -e "$VR_BGREC/$id.done" ] || [ -e "$VR_BGREC/$id.run" ] || vr__bg_absorb "$id"   # 부모가 처리한 작업(.done)은 최종 검사에서 "미회수"로
     done
 }
 
@@ -269,7 +347,7 @@ vr_status_code() {
 
 vr_finish() {
     vr_wait                                    # 남은 백그라운드 작업이 있으면 여기서 수집한다
-    [ -d "$VR_BGREC" ] && vr__bg_collect_orphans   # 부모가 회수하지 못한 후손이 끝날 때까지 기다려 흡수한다(판정 뒤에 늦게 생기는 기록이 없도록)
+    [ -d "$VR_BGREC" ] && vr__bg_collect_orphans   # 모든 후손이 끝날 때까지 기다리고, 부모가 회수하지 못한 기록을 흡수한다(판정 뒤에 늦게 생기는 기록이 없도록)
     local -a fails=() ioerrs=()
     local e name code rc base f l notes steps=""
     local total=${#VR_EXP[@]}
