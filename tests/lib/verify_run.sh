@@ -62,7 +62,11 @@ vr_init() {
     if [ -n "${VR_LIFE_W:-}" ]; then exec {VR_LIFE_W}>&-; fi
     VR_LIFE="$VR_OUT/.vr_life"; VR_LIFE_W=""
     rm -f "$VR_LIFE" && mkfifo "$VR_LIFE" || return 2
-    exec {VR_LIFE_W}<>"$VR_LIFE" || return 2
+    # 작업 코드가 번호를 직접 쓰는 fd(보통 3~9, 가끔 10 이상)와 겹치지 않도록 200~249 중 비어 있는 번호를 쓴다
+    local n
+    for n in {200..249}; do [ -e "/dev/fd/$n" ] || { VR_LIFE_W=$n; break; }; done
+    [ -n "$VR_LIFE_W" ] || return 2
+    eval "exec $VR_LIFE_W<>\"\$VR_LIFE\"" || { VR_LIFE_W=""; return 2; }
 }
 
 vr__ioerr() { VR_IOERR=1; VR_RUN_ERRS+=("기록 실패: $1"); }
@@ -191,6 +195,9 @@ vr__bg_mark_read() {
 # 바꾼 trap 안에서 builtin exit 로 끝내면 검증기 코드가 전혀 실행되지 않아 종료 기록이 없다 → 부모가 "종료 기록 없음"으로 실패.
 VR__BG_TRAP_P="trap -- 'vr__bg_on_exit \$?' EXIT"
 vr__setrc() { return "$1"; }
+vr__life_fd_ok() {   # 생명주기 fd 가 아직 그 FIFO 를 가리키는가(작업이 같은 번호를 덮어쓰거나 닫지 않았는가)
+    [ -n "${VR_LIFE_W:-}" ] && [ -p "$VR_LIFE" ] && [ "$VR_LIFE" -ef "/dev/fd/$VR_LIFE_W" ]
+}
 vr__bg_trap_shadow() {   # 하위 셸 안의 trap 함수 본체
     case "${1:-}" in -p|-l|-P) builtin trap "$@"; return ;; esac
     [ "${1:-}" = "--" ] && shift
@@ -205,12 +212,20 @@ vr__bg_trap_shadow() {   # 하위 셸 안의 trap 함수 본체
     done
     if [ ${#others[@]} -gt 0 ]; then builtin trap -- "$act" "${others[@]}"; fi
 }
+vr__bg_task_trap_body() {   # 작업의 처리기를 함수 안에서 실행: 처리기의 return 은 이 함수만 끝낸다
+    eval "$vr__task_trap"
+    vr__trap_natural=1          # return 없이 끝까지 실행됨(return 이면 이 줄에 오지 않는다)
+}
 vr__bg_run_task_trap() {   # 작업의 EXIT 처리기를 한 번만, bash 처럼 $? = 종료 코드 상태로 실행
     [ -z "${vr__task_trap_ran:-}" ] && [ -n "${vr__task_trap:-}" ] || return 0
-    vr__task_trap_ran=1; vr__in_task_trap=1
+    local trc
+    vr__task_trap_ran=1; vr__in_task_trap=1; vr__trap_natural=""
     case "${vr__bg_pend:-}" in ''|*[!0-9]*) vr__setrc 2 ;; *) vr__setrc $(( 10#$vr__bg_pend % 256 )) ;; esac
-    eval "$vr__task_trap"
+    vr__bg_task_trap_body; trc=$?
     vr__in_task_trap=""
+    # 작업은 늘 함수 안에서 실행되므로 bash 와 같게: 처리기가 return N 으로 끝나면 N 이 종료 코드(처리기 안의 exit N 과 같은 취급).
+    # 끝까지 실행되면 종료 코드는 바뀌지 않는다.
+    [ -n "$vr__trap_natural" ] || vr__bg_trap_code=$trc
 }
 vr__bg_exit_req() {   # 가로챈 exit
     local c=$1
@@ -235,8 +250,14 @@ vr__bg_finish() {   # vr__bg_finish <코드> : 자식을 회수하고, 종료 �
         if [ "$(builtin trap -p EXIT)" != "$VR__BG_TRAP_P" ]; then VR_VIOLATED=1; VR_RUN_ERRS+=("bg:$VR_BG_PATH EXIT trap 변경"); fi
     fi
     builtin trap - EXIT
-    # 최초 종료 코드가 0 이 아니면 그것을 쓴다(처리기·재진입이 0 으로 바꾸지 못함)
-    if [ -n "${vr__bg_pend:-}" ] && [ "$vr__bg_pend" != 0 ]; then eff=$vr__bg_pend; else eff=$rc; fi
+    # 최초 종료 코드가 0 이 아니면 그것을 쓴다(처리기·재진입이 0 으로 바꾸지 못함). 0 이면 처리기의 return 코드, 없으면 받은 코드.
+    if [ -n "${vr__bg_pend:-}" ] && [ "$vr__bg_pend" != 0 ]; then eff=$vr__bg_pend
+    elif [ -n "${vr__bg_trap_code:-}" ]; then eff=$vr__bg_trap_code
+    else eff=$rc; fi
+    if [ -z "${vr__bg_lifechk:-}" ]; then   # 생명주기 fd 확인(한 번)
+        vr__bg_lifechk=1
+        vr__life_fd_ok || { VR_VIOLATED=1; VR_RUN_ERRS+=("bg:$VR_BG_PATH 생명주기 fd 변경"); }
+    fi
     vr__bg_depth=$(( ${vr__bg_depth:-0} + 1 ))
     if [ "$vr__bg_depth" -eq 1 ]; then vr_wait
     elif [ "$vr__bg_depth" -eq 2 ]; then vr__bg_reentered=1; vr_wait     # 회수 도중 재진입: 남은 자식을 이어서 회수(주입 지점은 부르지 않음)
@@ -260,6 +281,7 @@ vr_bg() {
     ( VR_VIOLATED=0; VR_IOERR=0; VR_RUN_ERRS=(); VR_BG_PIDS=(); VR_BG_LABELS=(); VR_BG_IDS=(); VR_BG_ST=(); VR_BG_RC=(); VR_BG_FAILS=()
       VR_BG_PATH=$label; vr__bg_id=$id; vr__bg_code=""; vr__bg_depth=0; vr__bg_reentered=""
       vr__bg_pend=""; vr__task_trap=""; vr__task_trap_ran=""; vr__in_task_trap=""; vr__bg_trapchk=""
+      vr__bg_trap_code=""; vr__trap_natural=""; vr__bg_lifechk=""
       builtin trap 'vr__bg_on_exit $?' EXIT
       exit() { vr__bg_exit_req "${1-$?}"; }
       trap() { vr__bg_trap_shadow "$@"; }
@@ -298,6 +320,7 @@ vr_wait() {
 vr__bg_drain_descendants() {
     local r
     if [ -z "${VR_LIFE_W:-}" ] || [ ! -p "$VR_LIFE" ]; then vr__ioerr "후손 추적 준비 안 됨"; return; fi
+    vr__life_fd_ok || { vr__ioerr "후손 추적 fd 변경"; return; }      # 최상위 셸에서 fd 가 덮어써지거나 닫혔으면 EOF 로 완료를 보장할 수 없다
     if ! exec {r}<"$VR_LIFE"; then vr__ioerr "후손 추적 열기"; return; fi
     exec {VR_LIFE_W}>&-; VR_LIFE_W=""
     command cat <&"$r" > /dev/null 2>&1 || vr__ioerr "후손 추적 읽기"

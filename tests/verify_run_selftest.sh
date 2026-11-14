@@ -297,6 +297,36 @@ s_ex_usr1() { body() { run b true; trap 'touch "$TMP/ex_usr1_hit"' USR1; kill -U
 scenario ex_usr1 s_ex_usr1; check 'EXIT: EXIT 가 아닌 신호의 trap 은 그대로 동작' 0 $? '' "$TMP/ex_usr1"
 [ -f "$TMP/ex_usr1_hit" ] && ok 'EXIT: USR1 처리기 실행됨' || bad 'EXIT: USR1 처리기 미실행'
 
+# ── F-1: 작업 EXIT 처리기의 return(작업은 함수 안에서 실행되므로 bash 와 같게 return N = 종료 코드 N) ─────────
+for r in 0 3 5; do
+    for e in 'exit 0' 'exit 5' 'builtin exit 0' 'builtin exit 5' 'return 0'; do
+        case $e in *5) exp=5 ;; *) exp=$r ;; esac            # 최초 코드가 0 이 아니면 최초 코드, 0 이면 처리기의 return 코드
+        nm="r${r}_$(printf '%s' "$e" | tr ' ' '_')"
+        if [ "$exp" = 0 ]; then ex_case "$nm" "처리기 return $r, 작업 $e" 0 '' "trap 'return $r' EXIT; $e"
+        else ex_case "$nm" "처리기 return $r, 작업 $e → $exp" 1 "bg:B exit=$exp" "trap 'return $r' EXIT; $e"; fi
+    done
+done
+ex_case natfalse '처리기가 return 없이 false 로 끝남 → 최초 코드 0 유지(bash 와 같음)' 0 '' "trap 'false' EXIT; exit 0"
+ex_case retnoarg '처리기가 false 뒤 인자 없는 return → 1'                         1 'bg:B exit=1' "trap 'false; return' EXIT; exit 0"
+ex_case retmid   '처리기 중간의 return 뒤 명령은 실행되지 않음'                      1 'bg:B exit=4' "trap 'return 4; exit 0' EXIT; exit 0"
+s_ret_flag() { body() { vr_hook_bg_before_read() { printf '%s' "${vr__in_task_trap:-}" > "$TMP/ret_flag.val"; }; vr_bg C run b true; trap 'return 3' EXIT; exit 0; }
+               vr_expect a b; run a true; vr_bg B body; vr_wait; }
+scenario ret_flag s_ret_flag; check 'F-1: 처리기 return 뒤 종료 처리 중 자식 회수 → 3' 1 $? 'bg:B exit=3' "$TMP/ret_flag"
+[ -f "$TMP/ret_flag.val" ] && [ ! -s "$TMP/ret_flag.val" ] && ok 'F-1: 처리기 return 뒤 "처리기 실행 중" 표시가 지워져 있음' || bad "F-1: 처리기 실행 중 표시 [$(cat "$TMP/ret_flag.val" 2>/dev/null)]"
+
+# ── F-4: 생명주기 fd 를 200 번대로 옮기고, 덮어쓰기·닫기를 검출 ────────────────────────────────────────
+s_lfd() { vr_expect a; run a true; printf '%s' "$VR_LIFE_W" > "$TMP/lfd_num"; }
+scenario lfd s_lfd; check 'F-4: 생명주기 fd 사용 정상' 0 $? '' "$TMP/lfd"
+n=$(cat "$TMP/lfd_num"); { [ "$n" -ge 200 ] && [ "$n" -le 249 ]; } && ok "F-4: 생명주기 fd 번호 $n(200~249)" || bad "F-4: 생명주기 fd 번호 $n"
+s_col10() { outer() { exec 10>/dev/null; vr_bg IN bash -c 'sleep 1; exit 5'; kill -9 $BASHPID; }; vr_expect a; run a true; vr_bg OUT outer; vr_wait; }
+scenario col10 s_col10 2>/dev/null; checkn 'F-4: 작업이 fd 10 을 덮어쓰고 부모가 죽어도 후손을 기다려 흡수(이전에는 기다리지 못함)' 1 $? "bg:OUT exit=137${NL}bg:OUT/IN exit=5${NL}bg 종료 기록 미회수: <ID>" "$TMP/col10"
+s_lfd_over() { body() { run b true; eval "exec $VR_LIFE_W>/dev/null"; }; vr_expect a b; run a true; vr_bg B body; vr_wait; }
+scenario lfd_over s_lfd_over; check 'F-4: 작업이 생명주기 fd 번호를 덮어씀 → "생명주기 fd 변경" 위반' 1 $? "bg:B 생명주기 fd 변경${NL}bg:B exit=2" "$TMP/lfd_over"
+s_lfd_close() { body() { run b true; exec {VR_LIFE_W}>&-; }; vr_expect a b; run a true; vr_bg B body; vr_wait; }
+scenario lfd_close s_lfd_close; check 'F-4: 작업이 생명주기 fd 를 닫음 → "생명주기 fd 변경" 위반' 1 $? "bg:B 생명주기 fd 변경${NL}bg:B exit=2" "$TMP/lfd_close"
+s_lfd_top() { vr_expect a; run a true; eval "exec $VR_LIFE_W>/dev/null"; }
+scenario lfd_top s_lfd_top; check 'F-4: 최상위 셸에서 생명주기 fd 가 덮어써짐 → 완료를 보장할 수 없으므로 기록 실패, 3' 3 $? '기록 실패: 후손 추적 fd 변경' "$TMP/lfd_top"
+
 # ── RE-2 남은 위험: 실행 표식을 쓰기 전에 부모가 강제 종료 ─────────────────────────────────────────────
 s_win() { outer() { vr_hook_bg_before_mark() { kill -9 $BASHPID; }; vr_bg IN bash -c 'sleep 1; exit 5'; }; vr_expect a; run a true; vr_bg OUT outer; vr_wait; }
 scenario win s_win 2>/dev/null; checkn 'RE-2: 표식 전에 부모가 죽은 후손(1초 뒤 exit 5) → 생명주기 추적으로 기다려 흡수' 1 $? "bg:OUT exit=137${NL}bg:OUT/IN exit=5${NL}bg 종료 기록 미회수: <ID>" "$TMP/win"
