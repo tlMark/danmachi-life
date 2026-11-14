@@ -62,11 +62,24 @@ vr_init() {
     if [ -n "${VR_LIFE_W:-}" ]; then exec {VR_LIFE_W}>&-; fi
     VR_LIFE="$VR_OUT/.vr_life"; VR_LIFE_W=""
     rm -f "$VR_LIFE" && mkfifo "$VR_LIFE" || return 2
-    # 작업 코드가 번호를 직접 쓰는 fd(보통 3~9, 가끔 10 이상)와 겹치지 않도록 200~249 중 비어 있는 번호를 쓴다
-    local n
-    for n in {200..249}; do [ -e "/dev/fd/$n" ] || { VR_LIFE_W=$n; break; }; done
-    [ -n "$VR_LIFE_W" ] || return 2
-    eval "exec $VR_LIFE_W<>\"\$VR_LIFE\"" || { VR_LIFE_W=""; return 2; }
+    # fd 할당. 목표: 이미 열린 fd 를 덮어쓰지 않으면서, 작업 코드가 번호를 직접 쓰는 fd(보통 3~10)와 겹치지 않는 높은 번호(200~249).
+    #  (1) 먼저 bash 동적 할당({var})으로 연다 — 커널이 비어 있는 번호를 골라 주므로 기존 fd 를 덮어쓰지 않는다.
+    #  (2) fd 목록(VR__FD_DIR, 기본 /dev/fd = 이 셸의 fd 표)이 열린 fd 를 실제로 보여 주는지, 방금 연 fd 와 0·1·2 로 확인한다.
+    #      보여 주지 못하는 환경이면 "비어 있음" 판단을 믿을 수 없으므로 실패(2)한다.
+    #  (3) 200~249 중 목록에 없는 번호로 복제한다. fd 표는 이 프로세스 전용이고 bash 는 단일 스레드라, 확인과 복제 사이에
+    #      다른 주체가 그 번호를 열 수 없다(이 사이에 이 셸이 실행하는 명령이 없다).
+    #  (4) 복제한 번호가 FIFO 를 가리키는지 확인하고 임시 fd 를 닫는다. 어느 단계든 실패하면 fd 를 정리하고 2.
+    local tmpfd="" n d=${VR__FD_DIR:-/dev/fd}
+    exec {tmpfd}<>"$VR_LIFE" || return 2
+    if ! [ -e "$d/$tmpfd" ] || ! [ -e "$d/0" ] || ! [ "$VR_LIFE" -ef "$d/$tmpfd" ]; then exec {tmpfd}>&-; return 2; fi
+    for n in {200..249}; do
+        if ! [ -e "$d/$n" ] && ! [ -L "$d/$n" ]; then VR_LIFE_W=$n; break; fi
+    done
+    if [ -z "$VR_LIFE_W" ]; then exec {tmpfd}>&-; return 2; fi
+    if ! eval "exec $VR_LIFE_W>&$tmpfd" 2>/dev/null || ! [ "$VR_LIFE" -ef "$d/$VR_LIFE_W" ]; then
+        exec {tmpfd}>&-; VR_LIFE_W=""; return 2
+    fi
+    exec {tmpfd}>&-
 }
 
 vr__ioerr() { VR_IOERR=1; VR_RUN_ERRS+=("기록 실패: $1"); }
@@ -195,7 +208,9 @@ vr__bg_mark_read() {
 # 바꾼 trap 안에서 builtin exit 로 끝내면 검증기 코드가 전혀 실행되지 않아 종료 기록이 없다 → 부모가 "종료 기록 없음"으로 실패.
 VR__BG_TRAP_P="trap -- 'vr__bg_on_exit \$?' EXIT"
 vr__setrc() { return "$1"; }
-vr__life_fd_ok() {   # 생명주기 fd 가 아직 그 FIFO 를 가리키는가(작업이 같은 번호를 덮어쓰거나 닫지 않았는가)
+# 생명주기 fd 가 아직 그 FIFO 를 가리키는가. 보장 범위: 그 번호를 다른 파일로 덮어쓰거나 닫은 경우를 검출한다.
+# 같은 FIFO 를 다른 fd 로 다시 열어 그 번호에 두거나 복제 fd 를 넘기는 등 의도적 fd 재구성은 검출하지 못한다(범위 밖).
+vr__life_fd_ok() {
     [ -n "${VR_LIFE_W:-}" ] && [ -p "$VR_LIFE" ] && [ "$VR_LIFE" -ef "/dev/fd/$VR_LIFE_W" ]
 }
 vr__bg_trap_shadow() {   # 하위 셸 안의 trap 함수 본체
@@ -279,12 +294,15 @@ vr_bg() {
     VR_BG_SEQ=$((VR_BG_SEQ + 1))
     local id="${BASHPID}_${VR_BG_SEQ}" pid
     ( VR_VIOLATED=0; VR_IOERR=0; VR_RUN_ERRS=(); VR_BG_PIDS=(); VR_BG_LABELS=(); VR_BG_IDS=(); VR_BG_ST=(); VR_BG_RC=(); VR_BG_FAILS=()
-      VR_BG_PATH=$label; vr__bg_id=$id; vr__bg_code=""; vr__bg_depth=0; vr__bg_reentered=""
+      VR_BG_PATH=$label; vr__bg_id=$id; vr__bg_code=""; vr__bg_depth=0; vr__bg_reentered=""; vr__bg_self=$BASHPID
       vr__bg_pend=""; vr__task_trap=""; vr__task_trap_ran=""; vr__in_task_trap=""; vr__bg_trapchk=""
       vr__bg_trap_code=""; vr__trap_natural=""; vr__bg_lifechk=""
       builtin trap 'vr__bg_on_exit $?' EXIT
-      exit() { vr__bg_exit_req "${1-$?}"; }
-      trap() { vr__bg_trap_shadow "$@"; }
+      # 가로채기는 이 하위 셸 자신에만 적용한다. 그 안의 하위 셸·명령 치환(함수는 상속된다)에서는 bash 본래 동작
+      # (그러지 않으면 x=$(exit 1) 같은 구문이 이 작업의 종료 처리를 대신 실행해 자식 표식을 처리하고 종료 기록을 미리 써 버린다)
+      exit() { local vr__xrc=$?    # 인자 없는 exit 는 직전 명령의 코드 — 비교 명령보다 먼저 저장
+               if [ "$BASHPID" = "$vr__bg_self" ]; then vr__bg_exit_req "${1-$vr__xrc}"; else builtin exit "${1-$vr__xrc}"; fi; }
+      trap() { if [ "$BASHPID" = "$vr__bg_self" ]; then vr__bg_trap_shadow "$@"; else builtin trap "$@"; fi; }
       "$@"
       vr__bg_on_exit $? ) &
     pid=$!

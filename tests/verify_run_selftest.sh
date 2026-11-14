@@ -327,6 +327,57 @@ scenario lfd_close s_lfd_close; check 'F-4: 작업이 생명주기 fd 를 닫음
 s_lfd_top() { vr_expect a; run a true; eval "exec $VR_LIFE_W>/dev/null"; }
 scenario lfd_top s_lfd_top; check 'F-4: 최상위 셸에서 생명주기 fd 가 덮어써짐 → 완료를 보장할 수 없으므로 기록 실패, 3' 3 $? '기록 실패: 후손 추적 fd 변경' "$TMP/lfd_top"
 
+# ── F-4 fd 할당: 동적 할당 → fd 목록 검증 → 200~249 의 빈 번호로 복제. 기존 fd 를 덮어쓰지 않고, 실패하면 vr_init 이 실패 ──
+fa_dir="$TMP/fa"; mkdir -p "$fa_dir"
+( exec 200>"$fa_dir/f200" 201>"$fa_dir/f201"; . "$HERE/lib/verify_run.sh"; vr_init "$fa_dir/o" || exit 9
+  [ "$VR_LIFE_W" = 202 ] && [ "$fa_dir/f200" -ef /dev/fd/200 ] && [ "$fa_dir/f201" -ef /dev/fd/201 ] && [ "$VR_LIFE" -ef "/dev/fd/$VR_LIFE_W" ] ) \
+  && ok 'F-4: 200·201 이 이미 열려 있으면 202 를 쓰고 200·201 은 원래 파일 그대로(덮어쓰지 않음)' || bad 'F-4: 기존 fd 보존'
+( . "$HERE/lib/verify_run.sh"; vr_init "$fa_dir/o2" || exit 9; c=0
+  for f in /proc/$BASHPID/fd/*; do [ "$VR_LIFE" -ef "$f" ] && c=$((c + 1)); done; [ "$c" = 1 ] ) \
+  && ok 'F-4: vr_init 뒤 FIFO 를 가리키는 fd 는 정확히 1개(임시 fd 를 닫음)' || bad 'F-4: 임시 fd 누수'
+( for n in {200..249}; do eval "exec $n>/dev/null"; done; . "$HERE/lib/verify_run.sh"; vr_init "$fa_dir/o3"; rc=$?
+  [ $rc -eq 2 ] && [ -z "$VR_LIFE_W" ] && [ "$(readlink /proc/$BASHPID/fd/200)" = /dev/null ] ) \
+  && ok 'F-4: 200~249 가 모두 차 있으면 vr_init 실패(2), 기존 fd 그대로' || bad 'F-4: 범위 가득 참'
+( . "$HERE/lib/verify_run.sh"; VR__FD_DIR="$fa_dir/nofd"; vr_init "$fa_dir/o4"; [ $? -eq 2 ] ) \
+  && ok 'F-4: fd 목록이 열린 fd 를 보여 주지 못하는 환경이면 vr_init 실패(2)' || bad 'F-4: fd 목록 검증'
+( . "$HERE/lib/verify_run.sh"; mkdir -p "$fa_dir/fakefd"; VR__FD_DIR="$fa_dir/fakefd"; : > "$fa_dir/fakefd/0"; vr_init "$fa_dir/o5"; [ $? -eq 2 ] ) \
+  && ok 'F-4: fd 목록이 방금 연 fd 를 보여 주지 않으면(가짜 목록) vr_init 실패(2)' || bad 'F-4: 가짜 fd 목록'
+mkdir -p "$fa_dir/p1"; ( for n in {200..249}; do eval "exec $n>/dev/null"; done; bash "$HERE/p1_verify.sh" "$fa_dir/p1/out" > /dev/null 2>&1; [ $? -eq 2 ] ) \
+  && ok 'F-4: fd 할당 실패 시 p1_verify.sh 는 준비 실패(2)로 끝남(진행하지 않음)' || bad 'F-4: p1_verify 준비 실패'
+
+# ── F-1 경계: 처리기 전체의 return 과, 처리기 안에서 호출한 함수만의 return 구분 ──────────────────────────────
+ex_case ufret      '처리기가 부른 함수의 return 7 뒤 처리기 계속 → 자연 종료(0)'      0 ''            "g() { return 7; }; trap 'g; :' EXIT; exit 0"
+ex_case ufretlast  '처리기의 마지막 명령이 return 7 하는 함수 → 자연 종료(0, bash 와 같음)' 0 ''       "g() { return 7; }; trap 'g' EXIT; exit 0"
+ex_case ufretex    '처리기가 부른 함수 안의 exit 7 → 7'                                1 'bg:B exit=7' "g() { exit 7; }; trap 'g; :' EXIT; exit 0"
+ex_case ifret      '처리기 if 안의 return 4'                                           1 'bg:B exit=4' "trap 'if true; then return 4; fi; exit 0' EXIT; exit 0"
+ex_case forret     '처리기 for 안의 return 6'                                          1 'bg:B exit=6' "trap 'for i in 1 2; do return 6; done; exit 0' EXIT; exit 0"
+ex_case whileret   '처리기 while 안의 return 2'                                        1 'bg:B exit=2' "trap 'while :; do return 2; done' EXIT; exit 0"
+ex_case caseret    '처리기 case 안의 return 8'                                         1 'bg:B exit=8' "trap 'case x in x) return 8 ;; esac' EXIT; exit 0"
+ex_case subret     '처리기 안 하위 셸의 return 3 은 처리기 코드에 영향 없음'               0 ''            "trap '( return 3 ) 2>/dev/null; :' EXIT; exit 0"
+ex_case subexit    '처리기 안 하위 셸의 exit 3 은 처리기 코드에 영향 없음'                0 ''            "trap '( exit 3 ); :' EXIT; exit 0"
+ex_case csexit     '처리기 안 명령 치환의 exit 3 은 처리기 코드에 영향 없음'              0 ''            "trap 'x=\$(exit 3); :' EXIT; exit 0"
+for init in 0 5; do for how in natural ret3 exit3; do
+    case $how in natural) h=':' ;; ret3) h='return 3' ;; exit3) h='exit 3' ;; esac
+    if [ $init = 5 ]; then exp=5; elif [ $how = natural ]; then exp=0; else exp=3; fi
+    if [ $exp = 0 ]; then ex_case "m_${init}_$how" "조합: 최초 $init / 처리기 $how" 0 '' "trap '$h' EXIT; exit $init"
+    else ex_case "m_${init}_$how" "조합: 최초 $init / 처리기 $how → $exp" 1 "bg:B exit=$exp" "trap '$h' EXIT; exit $init"; fi
+done; done
+# 처리기 안의 exit N 뒤 종료 기록·자식 회수가 한 번만(자식 C 가 있는 경우)
+s_once() { body() { vr_bg C run c true; run b true; trap 'exit 4' EXIT; exit 0; }; vr_expect a b c; run a true; vr_bg B body; vr_wait; }
+scenario once s_once; check 'F-1: 처리기 exit 4(자식 있음) → 4, 재진입·중복 회수 사유 없음' 1 $? 'bg:B exit=4' "$TMP/once"
+{ [ "$(ls -A "$TMP/once/bg" | grep -c '\.read$')" = 2 ] && [ "$(ls -A "$TMP/once/bg" | grep -c '\.done$')" = 2 ] && [ "$(ls -A "$TMP/once/bg" | grep -vc '\.\(read\|done\)$')" = 0 ]; } \
+  && ok 'F-1: 종료 기록 2개(B·C)와 실행 표식 2개가 각각 한 번씩 처리됨' || bad "F-1: 회수 상태 $(ls -A "$TMP/once/bg" | tr '\n' ' ')"
+
+# ── SUB-1: 작업 안의 하위 셸·명령 치환에서의 exit·trap 은 bash 본래 동작(작업의 종료 처리를 대신 실행하지 않음) ─────────
+sub_case() { eval "s_sub_$1() { body() { vr_bg C run c true; run b true; $4; }; vr_expect a b c; run a true; vr_bg B body; vr_wait; }"
+             scenario "sub_$1" "s_sub_$1" 2>/dev/null; checkn "SUB-1: $2" "$3" $? "$5" "$TMP/sub_$1"; }   # 작업 ID 정규화 대조
+sub_case subsh   '작업 안 하위 셸의 exit 3 → 작업은 정상(자식 표식을 대신 처리하지 않음)'  0 '( exit 3 ); :' ''
+sub_case cmdsub  '작업 안 명령 치환의 exit 4 → 작업은 정상'                          0 'x=$(exit 4); :' ''
+sub_case subtrap '하위 셸이 자기 EXIT trap 을 설치하고 exit 2 → 작업은 정상'           0 "( trap ': sub' EXIT; exit 2 ); :" ''
+sub_case subcode '하위 셸 exit 3 의 코드는 작업이 받아 쓸 수 있음(작업이 그 코드로 종료)' 1 '( exit 3 ); exit $?' 'bg:B exit=3'
+sub_case stale   '명령 치환이 종료 기록을 미리 쓰지 못하므로, 그 뒤 builtin 우회는 "종료 기록 없음"' 1 'x=$(exit 0); builtin trap - EXIT; builtin exit 0' 'bg:B 종료 기록 없음
+bg 종료 기록 미회수: <ID>'
+
 # ── RE-2 남은 위험: 실행 표식을 쓰기 전에 부모가 강제 종료 ─────────────────────────────────────────────
 s_win() { outer() { vr_hook_bg_before_mark() { kill -9 $BASHPID; }; vr_bg IN bash -c 'sleep 1; exit 5'; }; vr_expect a; run a true; vr_bg OUT outer; vr_wait; }
 scenario win s_win 2>/dev/null; checkn 'RE-2: 표식 전에 부모가 죽은 후손(1초 뒤 exit 5) → 생명주기 추적으로 기다려 흡수' 1 $? "bg:OUT exit=137${NL}bg:OUT/IN exit=5${NL}bg 종료 기록 미회수: <ID>" "$TMP/win"
