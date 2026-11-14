@@ -37,7 +37,7 @@
 #   "등록된 항목 없음"                          vr_expect 로 등록한 항목이 0개
 #   "기록 실패: <대상>"                         판정에 필요한 I/O 가 실패함(이 경우 종료 코드는 3)
 
-VR_OUT=""; VR_L=""; VR_ST=""; VR_TOKEN=""
+VR_OUT=""; VR_L=""; VR_ST=""; VR_TOKEN=""; VR_RUN_ID=""
 VR_FAILS=""; VR_EXPECTED=""; VR_NOTES=""; VR_STEPS=""; VR_DONE=""
 VR_EXP=(); declare -A VR_EXPN=()
 VR_VIOLATED=0; VR_IOERR=0; VR_RUN_ERRS=()
@@ -48,6 +48,19 @@ vr__life_reset() {
     if [ -n "${VR_LIFE_W:-}" ]; then exec {VR_LIFE_W}>&- 2>/dev/null; fi
     if [ -n "${VR_LIFE:-}" ] && [ -p "$VR_LIFE" ]; then rm -f "$VR_LIFE" 2>/dev/null; fi
     VR_LIFE_W=""; VR_LIFE=""
+}
+vr__inject() {   # 시험용 실패 주입(평소에는 정의되지 않음): vr_hook_fail <지점> 이 0 을 돌려주면 그 지점을 실패로 본다
+    declare -F vr_hook_fail > /dev/null && vr_hook_fail "$1"
+}
+# 배타 이동: 목적 경로가 이미 있으면(무엇이든) 실패하고 아무것도 덮어쓰지 않는다. ln 은 목적 경로가 있으면 실패하는 원자적 생성.
+# 옮긴 뒤 목적 경로가 일반 파일이고 원본이 없어야 성공.
+vr__mv_excl() {
+    local src=$1 dst=$2
+    [ -f "$src" ] && [ ! -L "$src" ] || return 1
+    if [ -e "$dst" ] || [ -L "$dst" ]; then return 1; fi
+    ln -- "$src" "$dst" 2>/dev/null || return 1
+    rm -f -- "$src" 2>/dev/null
+    [ -f "$dst" ] && [ ! -L "$dst" ] && [ ! -e "$src" ] && [ ! -L "$src" ]
 }
 vr__init_fail() {   # 시험용 실패 주입(평소에는 정의되지 않음): vr_hook_init_fail <단계> 가 0 을 돌려주면 그 단계를 실패로 본다
     declare -F vr_hook_init_fail > /dev/null && vr_hook_init_fail "$1"
@@ -69,6 +82,10 @@ vr_init() {
     : > "$VR_NOTES" || return 2
     VR_TOKEN=$(head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n') || return 2
     [ "${#VR_TOKEN}" -eq 48 ] || return 2
+    # 실행 ID: 작업 ID 에 넣는 비밀이 아닌 실행별 난수(토큰은 파일 이름에 넣지 않는다). 이전 실행의 bg 기록이 남은 출력 폴더는 받지 않는다.
+    VR_RUN_ID=$(head -c 6 /dev/urandom | od -An -tx1 | tr -d ' \n') || return 2
+    [[ "$VR_RUN_ID" =~ ^[0-9a-f]{12}$ ]] || return 2
+    if [ -n "$(ls -A "$VR_BGREC" 2>/dev/null)" ] || [ ! -d "$VR_BGREC" ]; then return 2; fi
     # 후손 생명주기 추적: FIFO 를 읽기·쓰기로 열어 두면, 그 fd 는 이후 만들어지는 모든 하위 셸에 커널이 자동으로 상속한다.
     # vr_finish 는 자기 fd 를 닫고 EOF 를 기다린다 = 그 fd 를 가진 후손이 모두 끝났다(실행 표식을 쓰기 전에 부모가 죽어도 빠지지 않음).
     # run 으로 실행하는 명령에는 이 fd 를 닫고 넘긴다(검사 대상 명령이 남긴 프로세스 때문에 기다리지 않도록).
@@ -208,7 +225,7 @@ vr__bg_mark_read() {
     local f=$1 label=$2 t="$1.read"
     if [ ! -f "$f" ] || [ -L "$f" ]; then vr__ioerr "bg:$label 회수 표시"; return 1; fi      # 일반 파일이 아닌 것은 옮기지 않는다(최종 검사에서 예상하지 못한 항목)
     if [ -e "$t" ] || [ -L "$t" ]; then vr__ioerr "bg:$label 회수 표시 대상이 이미 있음"; return 1; fi
-    if mv -f -T -- "$f" "$t" 2>/dev/null && [ -f "$t" ] && [ ! -L "$t" ] && [ ! -e "$f" ] && [ ! -L "$f" ]; then return 0; fi
+    vr__mv_excl "$f" "$t" && return 0
     vr__ioerr "bg:$label 회수 표시"; return 1
 }
 # ── 종료 경로 ───────────────────────────────────────────────────────────────────────────
@@ -299,16 +316,33 @@ vr__bg_finish() {   # vr__bg_finish <코드> : 자식을 회수하고, 종료 �
     code=$(vr__bg_policy_code "$eff") || code=2
     code=${code:-2}
     f="$VR_BGREC/$vr__bg_id"
-    if tag=$(vr_tag "bg:$vr__bg_id") && [ ${#tag} -eq 64 ] \
+    # 종료 기록 놓기: tmp 에 쓰고 배타 이동(같은 이름의 기록이 이미 있으면 덮어쓰지 않고 실패).
+    # 실패하면 2 로 끝나고(부모: "종료 기록 없음"), 원인을 기록 폴더와 무관한 경로 — 생명주기 FIFO — 로 최상위에 알린다:
+    # 한 줄 "E <작업 경로>"(PIPE_BUF 보다 작아 원자적으로 쓰임). 최상위는 이를 "기록 실패: bg:<경로> 종료 기록 쓰기"(3)로 판정한다.
+    if ! vr__inject recwrite && tag=$(vr_tag "bg:$vr__bg_id") && [ ${#tag} -eq 64 ] \
        && { printf 'v1 %s %s\n' "$tag" "$vr__bg_id"; vr__bg_record_lines "$code"; } 2>/dev/null > "$f.tmp" \
-       && mv -f -T "$f.tmp" "$f" 2>/dev/null && [ -f "$f" ]; then :; else code=2; fi
+       && vr__mv_excl "$f.tmp" "$f"; then :
+    else
+        code=2
+        if vr__life_fd_ok; then printf 'E %s\n' "$VR_BG_PATH" 2>/dev/null >&"$VR_LIFE_W"; fi
+    fi
     vr__bg_code=$code
     builtin exit "$vr__bg_code"
 }
 vr_bg() {
     local label=${VR_BG_PATH:+$VR_BG_PATH/}$1; shift
-    VR_BG_SEQ=$((VR_BG_SEQ + 1))
-    local id="${BASHPID}_${VR_BG_SEQ}" pid
+    # 작업 ID = <실행 ID>_<만든 셸 PID>_<순번>. 자식을 만들기 전에 실행 표식 <id>.run 을 배타 생성(noclobber)해 ID 를 예약한다.
+    # 그 ID 의 기록·.read·.done·.tmp 가 이미 있으면(비정상 종료 뒤 PID 재사용 등) 그 파일은 건드리지 않고 "작업 ID 충돌"로
+    # 실패를 남긴 뒤 다음 순번으로 다시 시도한다. 5번 안에 예약하지 못하면 작업을 시작하지 않고 기록 실패.
+    local id pid tries=0 x clash
+    while :; do
+        VR_BG_SEQ=$((VR_BG_SEQ + 1)); id="${VR_RUN_ID}_${BASHPID}_${VR_BG_SEQ}"; clash=""
+        for x in "" .run .read .done .tmp; do if [ -e "$VR_BGREC/$id$x" ] || [ -L "$VR_BGREC/$id$x" ]; then clash=1; fi; done
+        if [ -z "$clash" ] && ! vr__inject reserve && ( set -C; printf 'reserved\n' > "$VR_BGREC/$id.run" ) 2>/dev/null; then break; fi
+        [ -n "$clash" ] && VR_BG_FAILS+=("bg:$label 작업 ID 충돌: $id")
+        tries=$((tries + 1))
+        if [ "$tries" -ge 5 ]; then vr__ioerr "bg:$label 작업 ID 확보"; return 1; fi
+    done
     ( VR_VIOLATED=0; VR_IOERR=0; VR_RUN_ERRS=(); VR_BG_PIDS=(); VR_BG_LABELS=(); VR_BG_IDS=(); VR_BG_ST=(); VR_BG_RC=(); VR_BG_FAILS=()
       VR_BG_PATH=$label; vr__bg_id=$id; vr__bg_code=""; vr__bg_depth=0; vr__bg_reentered=""; vr__bg_self=$BASHPID
       vr__bg_pend=""; vr__task_trap=""; vr__task_trap_ran=""; vr__in_task_trap=""; vr__bg_trapchk=""
@@ -324,7 +358,7 @@ vr_bg() {
     pid=$!
     declare -F vr_hook_bg_before_mark > /dev/null && vr_hook_bg_before_mark "$pid"     # 시험용 주입 지점(평소에는 정의되지 않음)
     VR_BG_PIDS+=("$pid"); VR_BG_LABELS+=("$label"); VR_BG_IDS+=("$id")
-    { printf '%s\n' "$pid" > "$VR_BGREC/$id.run"; } 2>/dev/null || vr__ioerr "bg:$label 실행 표식"
+    { printf '%s\n' "$pid" > "$VR_BGREC/$id.run"; } 2>/dev/null || vr__ioerr "bg:$label 실행 표식"   # 예약한 자기 표식에 PID 를 적는다
 }
 vr_wait() {
     local i rc f id label
@@ -344,7 +378,7 @@ vr_wait() {
             vr__bg_mark_read "$f" "$label"
         elif [ "$rc" -lt 128 ]; then VR_BG_FAILS+=("bg:$label 종료 기록 없음")
         fi
-        { mv -f -T "$VR_BGREC/$id.run" "$VR_BGREC/$id.done" 2>/dev/null && [ -f "$VR_BGREC/$id.done" ]; } || vr__ioerr "bg:$label 실행 표식 정리"
+        vr__mv_excl "$VR_BGREC/$id.run" "$VR_BGREC/$id.done" || vr__ioerr "bg:$label 실행 표식 정리"
         VR_BG_ST[$i]=2
     done
     VR_BG_PIDS=(); VR_BG_LABELS=(); VR_BG_IDS=(); VR_BG_ST=(); VR_BG_RC=()
@@ -357,9 +391,21 @@ vr__bg_drain_descendants() {
     vr__life_fd_ok || { vr__ioerr "후손 추적 fd 변경"; return; }      # 최상위 셸에서 fd 가 덮어써지거나 닫혔으면 EOF 로 완료를 보장할 수 없다
     if ! exec {r}<"$VR_LIFE"; then vr__ioerr "후손 추적 열기"; return; fi
     exec {VR_LIFE_W}>&-; VR_LIFE_W=""
-    command cat <&"$r" > /dev/null 2>&1 || vr__ioerr "후손 추적 읽기"
+    local msgs line
+    if ! msgs=$(command cat <&"$r" 2>/dev/null); then vr__ioerr "후손 추적 읽기"; fi
     exec {r}<&-
-    rm -f "$VR_LIFE" 2>/dev/null
+    # 후손이 보낸 알림: "E <작업 경로>" = 그 작업이 종료 기록을 쓰지 못함. 그 밖의 내용은 신뢰할 수 없으므로 기록 실패로 본다.
+    while IFS= read -r line; do
+        case "$line" in
+            '') ;;
+            "E "?*) vr__ioerr "bg:${line#E } 종료 기록 쓰기" ;;
+            *) vr__ioerr "후손 추적 FIFO 에 알 수 없는 내용" ;;
+        esac
+    done <<< "$msgs"
+    # FIFO 삭제: 명령의 성공과 삭제 뒤 잔존 여부를 모두 확인한다
+    if vr__inject rmfifo || ! rm -f -- "$VR_LIFE" 2>/dev/null || [ -e "$VR_LIFE" ] || [ -L "$VR_LIFE" ]; then
+        vr__ioerr "후손 추적 FIFO 삭제"
+    fi
 }
 vr__bg_absorb() {   # vr__bg_absorb <id> : 부모가 회수하지 못한 종료 기록을 흡수
     local id=$1 f="$VR_BGREC/$1"
@@ -377,12 +423,12 @@ vr__bg_collect_orphans() {
         id=${m##*/}; id=${id%.run}; f="$VR_BGREC/$id"
         if [ -e "$f" ] || [ -L "$f" ]; then vr__bg_absorb "$id"
         else VR_BG_FAILS+=("bg 종료 기록 없음(회수되지 않은 작업): $id"); fi
-        { mv -f -T "$m" "$VR_BGREC/$id.done" 2>/dev/null && [ -f "$VR_BGREC/$id.done" ]; } || vr__ioerr "bg 실행 표식 정리: $id"
+        vr__mv_excl "$m" "$VR_BGREC/$id.done" || vr__ioerr "bg 실행 표식 정리: $id"
     done
     for f in "$VR_BGREC"/*; do       # 실행 표식 없이 남은 종료 기록(작업 ID 형식의 일반 파일)
         [ -f "$f" ] && [ ! -L "$f" ] || continue
         id=${f##*/}
-        [[ "$id" =~ ^[0-9]+_[0-9]+$ ]] || continue
+        [[ "$id" =~ ^[0-9a-f]{12}_[0-9]+_[0-9]+$ ]] || continue
         [ -e "$VR_BGREC/$id.done" ] || [ -e "$VR_BGREC/$id.run" ] || vr__bg_absorb "$id"   # 부모가 처리한 작업(.done)은 최종 검사에서 "미회수"로
     done
 }
