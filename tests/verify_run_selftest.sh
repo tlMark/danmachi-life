@@ -494,6 +494,49 @@ no_alldone "$TMP/rmf" && ok '결함 3: 그 경우 ALL_DONE 없음' || bad '결�
 s_rmf_ok() { vr_expect a; run a true; }
 scenario rmf_ok s_rmf_ok; { [ $? -eq 0 ] && [ ! -e "$TMP/rmf_ok/.vr_life" ]; } && ok '결함 3: 정상 경우 FIFO 삭제됨' || bad '결함 3: 정상 경우 FIFO 잔존'
 
+# ── FIFO 알림 경로의 버퍼 포화·교착(0555ede 추가 반려) ─────────────────────────────────────────────────────────
+recfail() { vr_hook_fail() { [ "$1" = recwrite ]; }; }        # 이 작업의 종료 기록 쓰기를 실패시킨다(주입)
+LONGP=$(printf 'p%.0s' $(seq 1 420))                          # 긴 작업 경로(알림 한 줄 약 460바이트)
+cnt_io() { grep -c '^기록 실패: bg:.* 종료 기록 쓰기$' "$1/failed_steps.txt"; }
+s_flood() { local k; vr_expect a; run a true; for k in $(seq 1 200); do vr_bg "${LONGP}_$k" recfail; done; vr_wait; }
+t0=$(date +%s%N); scenario flood s_flood; rc=$?; dt=$(( ($(date +%s%N) - t0) / 1000000 ))
+fbytes=$(( 200 * (${#LONGP} + 46) ))
+{ [ $rc -eq 3 ] && [ "$(cnt_io "$TMP/flood")" = 200 ] && ! grep -q '알 수 없는 내용\|알림 읽기\|알림 기록' "$TMP/flood/failed_steps.txt" && [ $dt -lt 60000 ]; } \
+  && ok "FIFO 포화: 실패 작업 200개 동시(알림 약 ${fbytes}바이트 > FIFO 64KiB) → 알림 200개 모두 전달, 교착 없음(${dt}ms), 3" \
+  || bad "FIFO 포화: rc=$rc 전달=$(cnt_io "$TMP/flood") ${dt}ms $(grep -c . "$TMP/flood/failed_steps.txt")줄"
+[ "$(grep -c ' exit=2$' "$TMP/flood/failed_steps.txt")" = 200 ] && [ "$(grep -c ' 종료 기록 없음$' "$TMP/flood/failed_steps.txt")" = 200 ] \
+  && ok 'FIFO 포화: 부모 쪽 실패(exit=2·종료 기록 없음)도 200개씩' || bad 'FIFO 포화: 부모 쪽 실패 수'
+s_mix() { local k; outer() { local j; for j in $(seq 1 80); do vr_bg "N${LONGP}_$j" recfail; done; }
+          vr_expect a; run a true; vr_bg OUT outer; for k in $(seq 1 80); do vr_bg "T${LONGP}_$k" recfail; done; vr_wait; }
+scenario mix s_mix; rc=$?
+okmix=1; for k in $(seq 1 80); do
+    [ "$(grep -cx "기록 실패: bg:T${LONGP}_$k 종료 기록 쓰기" "$TMP/mix/failed_steps.txt")" = 1 ] || okmix=0
+    [ "$(grep -cx "기록 실패: bg:OUT/N${LONGP}_$k 종료 기록 쓰기" "$TMP/mix/failed_steps.txt")" = 1 ] || okmix=0
+done
+{ [ $rc -eq 3 ] && [ $okmix = 1 ] && [ "$(cnt_io "$TMP/mix")" = 160 ] && ! grep -q '알 수 없는 내용' "$TMP/mix/failed_steps.txt"; } \
+  && ok 'FIFO 포화: 최상위 80 + 중첩 80 동시 실패 → 160개 알림이 각각 정확히 한 번 최상위까지 전달(줄 섞임 없음), 3' || bad "FIFO 포화: 중첩·동시 (rc=$rc, $(cnt_io "$TMP/mix"))"
+s_longp() { inner() { recfail; }; vr_expect a; run a true; VR_BG_PATH=$(printf 'q%.0s' $(seq 1 3000)); vr_bg IN inner; VR_BG_PATH=""; vr_wait; }
+scenario longp s_longp; rc=$?
+{ [ $rc -eq 3 ] && [ "$(grep -c '^기록 실패: bg:q*\.\.\.(생략) 종료 기록 쓰기$' "$TMP/longp/failed_steps.txt")" = 1 ] && ! grep -q '알 수 없는 내용' "$TMP/longp/failed_steps.txt"; } \
+  && ok 'FIFO 알림: 작업 경로 3000자 → 알림 한 줄을 500바이트 이하로 잘라 전달("...(생략)"), 3' || bad "FIFO 알림: 긴 경로 (rc=$rc)"
+s_rdead() { vr_expect a b; run a true; kill -9 "$VR_LIFE_RD"; sleep 0.2; vr_bg B recfail; run b true; vr_wait; }
+t0=$(date +%s%N); scenario rdead s_rdead; rc=$?; dt=$(( ($(date +%s%N) - t0) / 1000000 ))
+{ [ $rc -eq 3 ] && grep -qx '기록 실패: 후손 추적 알림 읽기(읽기 프로세스 비정상 종료)' "$TMP/rdead/failed_steps.txt" && no_alldone "$TMP/rdead"; } \
+  && ok "FIFO 알림: 읽기 프로세스가 죽음 → 멈추지 않고(${dt}ms) 기록 실패, 3, ALL_DONE 없음" || bad "FIFO 알림: 읽기 프로세스 사망 (rc=$rc ${dt}ms)"
+s_rdeadflood() { local k; VR__MSG_TIMEOUT=2; vr_expect a; run a true; kill -9 "$VR_LIFE_RD"; sleep 0.2; for k in $(seq 1 200); do vr_bg "${LONGP}_$k" recfail; done; vr_wait; }
+t0=$(date +%s%N); scenario rdeadflood s_rdeadflood; rc=$?; dt=$(( ($(date +%s%N) - t0) / 1000000 ))
+{ [ $rc -eq 3 ] && grep -qx '기록 실패: 후손 추적 알림 읽기(읽기 프로세스 비정상 종료)' "$TMP/rdeadflood/failed_steps.txt" && [ $dt -lt 90000 ]; } \
+  && ok "FIFO 포화: 읽기 프로세스가 죽은 채 200개 알림(버퍼 초과) → 쓰기 시간 제한으로 교착 없이 끝남(${dt}ms), 성공 아님(3)" || bad "FIFO 포화: 읽기 프로세스 사망 + 포화 (rc=$rc ${dt}ms)"
+( . "$HERE/lib/verify_run.sh"; vr_hook_fail() { [ "$1" = msgwrite ]; }; vr_init "$TMP/msgw" || exit 1; vr_expect a b; run a true; vr_bg B bash -c 'exit 0'; unset -f vr_hook_fail
+  body2() { recfail; run b true; }; vr_bg B2 body2; vr_wait; vr_finish > /dev/null 2>&1; [ $? -eq 3 ] && grep -qx '기록 실패: 후손 추적 알림 기록' "$TMP/msgw/failed_steps.txt" ) \
+  && ok 'FIFO 알림: 읽기 프로세스가 알림을 파일에 옮기지 못함 → 기록 실패, 3' || bad 'FIFO 알림: 알림 파일 기록 실패'
+( . "$HERE/lib/verify_run.sh"; vr_hook_init_fail() { [ "$1" = reader ]; }; vr_init "$TMP/rdr"; rc=$?
+  [ $rc -eq 2 ] && [ -z "$VR_LIFE_W" ] && [ -z "$VR_LDONE_R" ] && [ ! -e "$TMP/rdr/.vr_life" ] && [ ! -e "$TMP/rdr/.vr_done" ] && [ ! -e "$TMP/rdr/.vr_msgs" ] && [ "$(life_fds)" = 0 ] ) \
+  && ok 'FIFO 알림: 읽기 프로세스 준비 단계 실패 → vr_init 2, FIFO 두 개·알림 파일·fd 정리' || bad 'FIFO 알림: 읽기 프로세스 준비 실패 정리'
+s_ok_files() { vr_expect a; vr_bg A run a true; vr_wait; }
+scenario ok_files s_ok_files; { [ $? -eq 0 ] && [ ! -e "$TMP/ok_files/.vr_life" ] && [ ! -e "$TMP/ok_files/.vr_done" ] && [ ! -e "$TMP/ok_files/.vr_msgs" ]; } \
+  && ok 'FIFO 알림: 정상 경우 FIFO 두 개와 알림 파일이 모두 삭제됨' || bad 'FIFO 알림: 정상 경우 잔존'
+
 # ── 재현성: 처리기 return 3 + builtin exit 5 를 10번 반복(매번 5) ──────────────────────────────────────────────
 rep_ok=0; for k in 1 2 3 4 5 6 7 8 9 10; do
     eval "s_rep_$k() { body() { trap 'return 3' EXIT; builtin exit 5; }; vr_expect a; run a true; vr_bg B body; vr_wait; }"
