@@ -41,14 +41,14 @@ VR_OUT=""; VR_L=""; VR_ST=""; VR_TOKEN=""
 VR_FAILS=""; VR_EXPECTED=""; VR_NOTES=""; VR_STEPS=""; VR_DONE=""
 VR_EXP=(); declare -A VR_EXPN=()
 VR_VIOLATED=0; VR_IOERR=0; VR_RUN_ERRS=()
-VR_BG_PIDS=(); VR_BG_LABELS=(); VR_BG_FAILS=(); VR_BG_IDS=(); VR_BG_SEQ=0; VR_BGREC=""; VR_BG_PATH=""
+VR_BG_PIDS=(); VR_BG_LABELS=(); VR_BG_FAILS=(); VR_BG_IDS=(); VR_BG_ST=(); VR_BG_RC=(); VR_BG_SEQ=0; VR_BGREC=""; VR_BG_PATH=""
 
 vr_init() {
     VR_OUT=$1
     VR_L="$VR_OUT/logs"; VR_ST="$VR_OUT/status"
     VR_FAILS="$VR_OUT/failed_steps.txt"; VR_EXPECTED="$VR_OUT/expected_steps.txt"; VR_STEPS="$VR_OUT/step_status.txt"
     VR_NOTES="$VR_ST/_violations.txt"; VR_DONE="$VR_L/99_done.log"
-    VR_EXP=(); VR_EXPN=(); VR_VIOLATED=0; VR_IOERR=0; VR_RUN_ERRS=(); VR_BG_PIDS=(); VR_BG_LABELS=(); VR_BG_FAILS=(); VR_BG_IDS=(); VR_BG_SEQ=0; VR_BG_PATH=""
+    VR_EXP=(); VR_EXPN=(); VR_VIOLATED=0; VR_IOERR=0; VR_RUN_ERRS=(); VR_BG_PIDS=(); VR_BG_LABELS=(); VR_BG_FAILS=(); VR_BG_IDS=(); VR_BG_ST=(); VR_BG_RC=(); VR_BG_SEQ=0; VR_BG_PATH=""
     VR_BGREC="$VR_OUT/bg"
     mkdir -p "$VR_L" "$VR_ST" "$VR_BGREC" || return 2
     : > "$VR_FAILS" || return 2
@@ -103,13 +103,19 @@ run() {
 }
 
 # 백그라운드 작업(vr_bg / vr_wait).
-# 하위 셸은 끝나기 직전에 "종료 기록"을 남긴다: $VR_BGREC/<id> = 첫 줄 "v1 <태그> <id>", 이후 줄은 "<종류> <내용>".
-#   종류 V = 위반, I = 기록 실패("기록 실패: …"), B = 그 하위 셸이 회수한 자식 작업의 실패("bg:<경로> exit=N", 종료 기록 없음·손상).
-# 부모(vr_wait)는 자기가 만든 작업만(PID 목록은 셸마다 따로이며 하위 셸은 빈 목록으로 시작) PID 마다 wait 해 종료 코드를 모으고,
-# 종료 기록을 검증해 V·I 는 자기 위반·기록 실패로, B 는 자기 bg 실패로 옮긴 뒤 기록 이름을 "<id>.read" 로 바꿔 회수했음을 표시한다.
-# vr_finish 는 회수되지 않은 종료 기록(또는 임시 파일)이 남아 있으면 실패로 본다.
+# 파일($VR_BGREC = <출력>/bg):
+#   <id>.run   실행 표식. 부모가 작업을 만든 직후 그 PID 를 적는다. 부모가 회수를 마치면 <id>.done 으로 바꾼다.
+#   <id>       종료 기록. 하위 셸이 끝나기 직전에 쓴다(tmp → mv). 첫 줄 "v1 <태그> <id>", 이후 줄 "<종류> <내용>":
+#              L = 작업 이름(경로), C = 하위 셸이 끝낸 종료 코드, V = 위반, I = 기록 실패, B = 그 하위 셸이 회수한 자식 작업의 실패.
+#   <id>.read  회수한 종료 기록(부모가 읽고 반영한 뒤 이름을 바꾼다. 목적 경로가 이미 있으면 실패).
+# 부모(vr_wait)는 자기가 만든 작업만 PID 마다 wait 하고(PID 목록은 셸마다 따로이며 하위 셸은 빈 목록으로 시작), 종료 기록을 검증해
+# V·I 는 자기 위반·기록 실패로, B 는 자기 bg 실패로 옮긴다. 기록의 C 가 실제 종료 코드와 다르면(신호 종료 제외) 손상으로 본다.
+# 작업마다 회수 상태(0 대기 전 / 1 처리 중 / 2 완료)를 두어, 회수 도중 재진입해도 이미 끝난 작업은 다시 처리하지 않고 남은 작업을 이어서 회수한다.
 # 중첩: 하위 셸 안에서 만든 작업의 이름은 "<부모 경로>/<이름>"(최상위는 이름 그대로). 하위 셸은 끝날 때(vr__bg_finish) 먼저 자기 자식을
-# 모두 회수하므로, 작업 함수가 vr_wait 를 부르지 않아도 자식의 실패가 위로 전달된다.
+# 모두 회수한다. 회수 중 재진입하면 남은 자식을 한 번 더 이어서 회수하고 "회수 중 재진입"을 실패로 남긴다. 그래도 남은 자식이 있으면
+# "자식 회수 미완료". 어느 경우든 그 하위 셸은 2 로 끝난다.
+# 최상위 vr_finish 는 직접 자식을 회수한 뒤, 처리되지 않은 실행 표식(.run)이 남아 있으면(부모가 먼저 죽어 고아가 된 후손 등) 그 프로세스가
+# 끝날 때까지 기다리고 종료 기록을 흡수해 판정에 넣는다(그 후손의 실패 + "미회수"). 그다음 bg 폴더에 예상하지 못한 항목이 없는지 본다.
 # 하위 셸의 종료 코드(종료 상태 정책): 위반·기록 실패·자식 작업 실패가 있었거나 종료 기록을 쓰지 못했으면 2, 그 밖에는 작업 함수의
 # 반환 코드 또는 작업 함수가 직접 exit 한 코드. 모두 정상일 때만 0. 0 이 아니면 부모가 "bg:<경로> exit=N" 으로 실패 처리.
 # 정책은 모든 종료 경로에 적용된다: (1) 작업 함수가 반환, (2) 작업 함수가 exit 호출(하위 셸 안에서만 exit 를 함수로 가로챔),
@@ -122,65 +128,128 @@ vr__bg_policy_code() {   # vr__bg_policy_code <작업 종료 코드> → 출력:
     case "$rc" in ''|*[!0-9]*) printf '2'; return;; esac      # 숫자가 아닌 종료 코드는 2
     printf '%s' "$(( 10#$rc % 256 ))"
 }
-vr__bg_record_lines() {   # 종료 기록의 본문 줄(종류 표시 포함)
+vr__bg_record_lines() {   # 종료 기록의 본문 줄(종류 표시 포함). $1 = 종료 코드
     local e
+    printf 'L %s\nC %s\n' "$VR_BG_PATH" "$1"
     for e in "${VR_RUN_ERRS[@]}"; do case "$e" in "기록 실패: "*) printf 'I %s\n' "$e" ;; *) printf 'V %s\n' "$e" ;; esac; done
     for e in "${VR_BG_FAILS[@]}"; do printf 'B %s\n' "$e"; done
 }
+# 종료 기록을 읽어 검증하고, 유효하면 V·I·B 를 메모리에 반영한다. vr__bg_read_record <파일> <id> <이름(빈 값이면 기록의 L 을 씀)>
+# 반환: 0 = 유효(vr__rec_code, vr__rec_label 설정), 1 = 읽기 실패(기록 실패로 기억), 2 = 손상(bg 실패로 기억, 내용은 반영하지 않음)
+vr__bg_read_record() {
+    local f=$1 id=$2 label=$3 tag l; local -a lines=() pv=() pi=() pb=()
+    vr__rec_code=""; vr__rec_label=""
+    if [ ! -f "$f" ] || [ -L "$f" ] || ! mapfile -t lines < "$f" 2>/dev/null; then vr__ioerr "bg:${label:-$id} 종료 기록 읽기"; return 1; fi
+    tag=$(vr_tag "bg:$id") && [ ${#tag} -eq 64 ] || { vr__ioerr "bg:${label:-$id} 종료 기록 태그 계산"; return 1; }
+    if [ "${lines[0]:-}" != "v1 $tag $id" ]; then VR_BG_FAILS+=("bg:${label:-$id} 종료 기록 손상"); return 2; fi
+    for l in "${lines[@]:1}"; do
+        case "$l" in
+            "L "?*) [ -z "$vr__rec_label" ] || { VR_BG_FAILS+=("bg:${label:-$id} 종료 기록 손상"); return 2; }; vr__rec_label=${l#L } ;;
+            "C "?*) [ -z "$vr__rec_code" ] && [[ "${l#C }" =~ ^(0|[1-9][0-9]{0,2})$ ]] || { VR_BG_FAILS+=("bg:${label:-$id} 종료 기록 손상"); return 2; }
+                    vr__rec_code=${l#C } ;;
+            "V "?*) pv+=("${l#V }") ;;
+            "I "?*) pi+=("${l#I }") ;;
+            "B "?*) pb+=("${l#B }") ;;
+            *) VR_BG_FAILS+=("bg:${label:-$id} 종료 기록 손상"); return 2 ;;
+        esac
+    done
+    if [ -z "$vr__rec_code" ] || [ -z "$vr__rec_label" ] || { [ -n "$label" ] && [ "$vr__rec_label" != "$label" ]; }; then
+        VR_BG_FAILS+=("bg:${label:-$id} 종료 기록 손상"); return 2
+    fi
+    if [ ${#pv[@]} -gt 0 ]; then VR_VIOLATED=1; VR_RUN_ERRS+=("${pv[@]}"); fi
+    if [ ${#pi[@]} -gt 0 ]; then VR_IOERR=1; VR_RUN_ERRS+=("${pi[@]}"); fi
+    if [ ${#pb[@]} -gt 0 ]; then VR_BG_FAILS+=("${pb[@]}"); fi
+    return 0
+}
+# 회수 표시: <파일> → <파일>.read. 목적 경로가 이미 있으면(파일·디렉터리·링크 무엇이든) 실패. 옮긴 뒤 목적 경로가 일반 파일이고 원본이 없어야 한다.
+vr__bg_mark_read() {
+    local f=$1 label=$2 t="$1.read"
+    if [ ! -f "$f" ] || [ -L "$f" ]; then vr__ioerr "bg:$label 회수 표시"; return 1; fi      # 일반 파일이 아닌 것은 옮기지 않는다(최종 검사에서 예상하지 못한 항목)
+    if [ -e "$t" ] || [ -L "$t" ]; then vr__ioerr "bg:$label 회수 표시 대상이 이미 있음"; return 1; fi
+    if mv -f -T -- "$f" "$t" 2>/dev/null && [ -f "$t" ] && [ ! -L "$t" ] && [ ! -e "$f" ] && [ ! -L "$f" ]; then return 0; fi
+    vr__ioerr "bg:$label 회수 표시"; return 1
+}
+vr__alive() {   # 프로세스가 살아 있음(좀비는 죽은 것으로 본다)
+    kill -0 "$1" 2>/dev/null || return 1
+    local st; st=$(awk '{print $3}' "/proc/$1/stat" 2>/dev/null) || return 0
+    [ "$st" != Z ]
+}
 vr__bg_finish() {   # vr__bg_finish <작업 종료 코드> : 자식을 회수하고, 종료 기록을 한 번만 쓰고, 정책 코드로 하위 셸을 끝낸다
-    local rc=$1 code tag f
+    local rc=$1 code tag f i
     trap - EXIT
     if [ -n "${vr__bg_code:-}" ]; then builtin exit "$vr__bg_code"; fi
-    # 재진입 방지: 자식 회수는 한 번만(회수 도중 다시 들어오면 회수를 건너뛰고 지금까지의 상태로 코드를 정한다)
-    if [ -z "${vr__bg_finishing:-}" ]; then vr__bg_finishing=1; vr_wait; fi
+    vr__bg_depth=$(( ${vr__bg_depth:-0} + 1 ))
+    if [ "$vr__bg_depth" -eq 1 ]; then vr_wait
+    elif [ "$vr__bg_depth" -eq 2 ]; then vr__bg_reentered=1; vr_wait     # 회수 도중 재진입: 남은 자식을 이어서 회수(주입 지점은 부르지 않음)
+    fi
+    for i in "${!VR_BG_PIDS[@]}"; do
+        [ "${VR_BG_ST[$i]:-0}" = 2 ] || { VR_BG_FAILS+=("bg:$VR_BG_PATH 자식 회수 미완료"); break; }
+    done
     code=$(vr__bg_policy_code "$rc") || code=2
+    code=${code:-2}
     f="$VR_BGREC/$vr__bg_id"
     if tag=$(vr_tag "bg:$vr__bg_id") && [ ${#tag} -eq 64 ] \
-       && { printf 'v1 %s %s\n' "$tag" "$vr__bg_id"; vr__bg_record_lines; } 2>/dev/null > "$f.tmp" \
-       && mv -f "$f.tmp" "$f" 2>/dev/null && [ -f "$f" ]; then :; else code=2; fi
-    vr__bg_code=${code:-2}
+       && { printf 'v1 %s %s\n' "$tag" "$vr__bg_id"; vr__bg_record_lines "$code"; } 2>/dev/null > "$f.tmp" \
+       && mv -f -T "$f.tmp" "$f" 2>/dev/null && [ -f "$f" ]; then :; else code=2; fi
+    vr__bg_code=$code
     builtin exit "$vr__bg_code"
 }
 vr_bg() {
     local label=${VR_BG_PATH:+$VR_BG_PATH/}$1; shift
     VR_BG_SEQ=$((VR_BG_SEQ + 1))
-    local id="${BASHPID}_${VR_BG_SEQ}"
-    ( VR_VIOLATED=0; VR_IOERR=0; VR_RUN_ERRS=(); VR_BG_PIDS=(); VR_BG_LABELS=(); VR_BG_IDS=(); VR_BG_FAILS=()
-      VR_BG_PATH=$label; vr__bg_id=$id; vr__bg_code=""; vr__bg_finishing=""
+    local id="${BASHPID}_${VR_BG_SEQ}" pid
+    ( VR_VIOLATED=0; VR_IOERR=0; VR_RUN_ERRS=(); VR_BG_PIDS=(); VR_BG_LABELS=(); VR_BG_IDS=(); VR_BG_ST=(); VR_BG_RC=(); VR_BG_FAILS=()
+      VR_BG_PATH=$label; vr__bg_id=$id; vr__bg_code=""; vr__bg_depth=0; vr__bg_reentered=""
       trap 'vr__bg_finish $?' EXIT
       exit() { vr__bg_finish "${1-$?}"; }
       "$@"
       vr__bg_finish $? ) &
-    VR_BG_PIDS+=("$!"); VR_BG_LABELS+=("$label"); VR_BG_IDS+=("$id")
+    pid=$!
+    VR_BG_PIDS+=("$pid"); VR_BG_LABELS+=("$label"); VR_BG_IDS+=("$id")
+    { printf '%s\n' "$pid" > "$VR_BGREC/$id.run"; } 2>/dev/null || vr__ioerr "bg:$label 실행 표식"
 }
 vr_wait() {
-    local i rc f id label tag l; local -a lines
+    local i rc f id label
     for i in "${!VR_BG_PIDS[@]}"; do
-        wait "${VR_BG_PIDS[$i]}"; rc=$?
+        [ "${VR_BG_ST[$i]:-0}" = 2 ] && continue
         label=${VR_BG_LABELS[$i]}; id=${VR_BG_IDS[$i]}; f="$VR_BGREC/$id"
+        [ "${VR_BG_ST[$i]:-0}" = 1 ] && VR_BG_FAILS+=("bg:$label 회수 중 재진입")    # 앞선 회수가 이 작업을 처리하다 끊겼다
+        VR_BG_ST[$i]=1
+        if [ -z "${VR_BG_RC[$i]:-}" ]; then wait "${VR_BG_PIDS[$i]}"; VR_BG_RC[$i]=$?; fi
+        rc=${VR_BG_RC[$i]}
         [ "$rc" -eq 0 ] || VR_BG_FAILS+=("bg:$label exit=$rc")
-        declare -F vr_hook_bg_before_read > /dev/null && vr_hook_bg_before_read "$f"     # 시험용 주입 지점(평소에는 정의되지 않음)
-        if [ -e "$f" ]; then
-            lines=()
-            if [ ! -f "$f" ] || ! mapfile -t lines < "$f" 2>/dev/null; then vr__ioerr "bg:$label 종료 기록 읽기"
-            elif ! tag=$(vr_tag "bg:$id"); then vr__ioerr "bg:$label 종료 기록 태그 계산"
-            elif [ "${lines[0]:-}" != "v1 $tag $id" ]; then VR_BG_FAILS+=("bg:$label 종료 기록 손상")
-            else
-                for l in "${lines[@]:1}"; do
-                    case "$l" in
-                        "V "?*) VR_VIOLATED=1; VR_RUN_ERRS+=("${l#V }") ;;
-                        "I "?*) VR_IOERR=1;    VR_RUN_ERRS+=("${l#I }") ;;
-                        "B "?*) VR_BG_FAILS+=("${l#B }") ;;
-                        *) VR_BG_FAILS+=("bg:$label 종료 기록 손상") ;;
-                    esac
-                done
+        if [ -z "${vr__bg_reentered:-}" ] && declare -F vr_hook_bg_before_read > /dev/null; then vr_hook_bg_before_read "$f"; fi   # 시험용 주입 지점
+        if [ -e "$f" ] || [ -L "$f" ]; then
+            if vr__bg_read_record "$f" "$id" "$label"; then
+                [ "$rc" -ge 128 ] || [ "$vr__rec_code" = "$rc" ] || VR_BG_FAILS+=("bg:$label 종료 기록 손상")
             fi
-            # 회수 표시(검사 결과와 무관하게, 살펴본 기록은 회수한 것으로 표시)
-            mv -f "$f" "$f.read" 2>/dev/null || vr__ioerr "bg:$label 종료 기록 회수 표시"
+            vr__bg_mark_read "$f" "$label"
         elif [ "$rc" -lt 128 ]; then VR_BG_FAILS+=("bg:$label 종료 기록 없음")
         fi
+        { mv -f -T "$VR_BGREC/$id.run" "$VR_BGREC/$id.done" 2>/dev/null && [ -f "$VR_BGREC/$id.done" ]; } || vr__ioerr "bg:$label 실행 표식 정리"
+        VR_BG_ST[$i]=2
     done
-    VR_BG_PIDS=(); VR_BG_LABELS=(); VR_BG_IDS=()
+    VR_BG_PIDS=(); VR_BG_LABELS=(); VR_BG_IDS=(); VR_BG_ST=(); VR_BG_RC=()
+}
+# 최상위 전용: 처리되지 않은 실행 표식(.run) = 부모가 회수하지 못한 후손. 그 프로세스가 끝날 때까지 기다린 뒤 종료 기록을 흡수한다.
+vr__bg_collect_orphans() {
+    local m id pid f
+    for m in "$VR_BGREC"/*.run; do
+        [ -e "$m" ] || [ -L "$m" ] || continue
+        id=${m##*/}; id=${id%.run}; f="$VR_BGREC/$id"
+        if [ ! -f "$m" ] || [ -L "$m" ] || ! pid=$(cat "$m" 2>/dev/null); then vr__ioerr "bg 실행 표식 읽기: $id"; continue; fi
+        if ! [[ "$pid" =~ ^[1-9][0-9]*$ ]]; then VR_BG_FAILS+=("bg 실행 표식 손상: $id"); continue; fi
+        while [ ! -e "$f" ] && vr__alive "$pid"; do sleep 0.1; done
+        while vr__alive "$pid"; do sleep 0.1; done      # 기록을 쓴 뒤 끝나기까지(그 후손은 이미 그 작업이 회수했다)
+        if [ -e "$f" ] || [ -L "$f" ]; then
+            if vr__bg_read_record "$f" "$id" ""; then
+                [ "$vr__rec_code" = 0 ] || VR_BG_FAILS+=("bg:$vr__rec_label exit=$vr__rec_code")
+            fi
+            VR_BG_FAILS+=("bg 종료 기록 미회수: $id")
+            vr__bg_mark_read "$f" "$id"
+        else VR_BG_FAILS+=("bg 종료 기록 없음(회수되지 않은 작업): $id"); fi
+        { mv -f -T "$m" "$VR_BGREC/$id.done" 2>/dev/null && [ -f "$VR_BGREC/$id.done" ]; } || vr__ioerr "bg 실행 표식 정리: $id"
+    done
 }
 
 # 상태 기록을 검증해 종료 코드를 출력한다. 반환: 0 = 유효(코드를 출력), 1 = 없음, 2 = 손상 또는 읽기 실패
@@ -200,6 +269,7 @@ vr_status_code() {
 
 vr_finish() {
     vr_wait                                    # 남은 백그라운드 작업이 있으면 여기서 수집한다
+    [ -d "$VR_BGREC" ] && vr__bg_collect_orphans   # 부모가 회수하지 못한 후손이 끝날 때까지 기다려 흡수한다(판정 뒤에 늦게 생기는 기록이 없도록)
     local -a fails=() ioerrs=()
     local e name code rc base f l notes steps=""
     local total=${#VR_EXP[@]}
@@ -241,11 +311,13 @@ vr_finish() {
         [ "$f" = "$VR_DONE" ] && continue
         [ -n "${VR_EXPN[$base]+x}" ] || fails+=("$base 등록되지 않은 로그")
     done
-    # (3b) 회수되지 않은 백그라운드 종료 기록(또는 임시 파일): 그것을 만든 작업의 부모가 끝까지 회수하지 못했다는 뜻
+    # (3b) bg 폴더에는 회수한 기록(.read)과 처리한 실행 표식(.done) 일반 파일만 있어야 한다.
+    #      그 밖의 파일은 회수되지 않은 종료 기록·임시 파일, 디렉터리·링크 등은 예상하지 못한 항목(하위 경로를 성공으로 보지 않는다).
     if [ -d "$VR_BGREC" ]; then
         for f in "$VR_BGREC"/* "$VR_BGREC"/.[!.]*; do
-            [ -e "$f" ] || continue
-            case "$f" in *.read) ;; *) fails+=("bg 종료 기록 미회수: ${f##*/}") ;; esac
+            [ -e "$f" ] || [ -L "$f" ] || continue
+            if [ ! -f "$f" ] || [ -L "$f" ]; then fails+=("bg 폴더에 예상하지 못한 항목: ${f##*/}"); continue; fi
+            case "$f" in *.read|*.done) ;; *.run) fails+=("bg 실행 표식 미처리: ${f##*/}") ;; *) fails+=("bg 종료 기록 미회수: ${f##*/}") ;; esac
         done
     else ioerrs+=("기록 실패: bg 기록 폴더 없음"); fi
     # (4) 메모리에서 중복을 없앤 실패 목록(판정은 이 목록과 ioerrs 로 한다)

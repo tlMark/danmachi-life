@@ -17,6 +17,12 @@ check() {   # check <설명> <기대 종료 코드> <실제 종료 코드> <기�
     if [ "$2" = "$3" ] && same_list "$4" "$5/failed_steps.txt"; then ok "$1"
     else bad "$1  | 종료 코드 $3(기대 $2), 실제 실패 목록: $(tr '\n' ';' < "$5/failed_steps.txt" 2>/dev/null) / 기대: $(printf '%s' "$4" | tr '\n' ';')"; fi
 }
+# 작업 ID(<PID>_<순번>)는 실행마다 달라지므로, 정규화 대조에서는 양쪽 모두 "<ID>" 로 바꿔 비교한다(그 밖의 글자는 정확 대조)
+same_list_n() { diff <(printf '%s' "$1" | grep . | sed -E 's/[0-9]+_[0-9]+/<ID>/g' | sort) <(grep . "$2" | sed -E 's/[0-9]+_[0-9]+/<ID>/g' | sort) > /dev/null; }
+checkn() {   # check 와 같되 작업 ID 를 정규화해 대조(중복 줄 수까지 대조하도록 sort -u 대신 sort)
+    if [ "$2" = "$3" ] && same_list_n "$4" "$5/failed_steps.txt"; then ok "$1"
+    else bad "$1  | 종료 코드 $3(기대 $2), 실제 실패 목록: $(tr '\n' ';' < "$5/failed_steps.txt" 2>/dev/null) / 기대: $(printf '%s' "$4" | tr '\n' ';')"; fi
+}
 no_alldone() { ! grep -q '^ALL_DONE' "$1/logs/99_done.log" 2>/dev/null; }
 scenario() {   # scenario <이름> <본문 함수> : 새 하위 셸에서 라이브러리를 읽고 본문을 실행한 뒤 vr_finish 의 종료 코드를 돌려준다
     local dir="$TMP/$1"
@@ -199,22 +205,63 @@ scenario n_sib s_n_sib; check 'NESTED: 형제 작업들의 서로 다른 실패(
 s_n_kill() { inner() { run b true; kill -9 $BASHPID; }; outer() { vr_bg IN inner; }; vr_expect a b; run a true; vr_bg OUT outer; vr_wait; }
 scenario n_kill s_n_kill 2>/dev/null; check 'NESTED: 안쪽 작업 강제 종료 → "bg:OUT/IN exit=137"(종료 기록 없음은 덧붙이지 않음)' 1 $? "bg:OUT/IN exit=137${NL}bg:OUT exit=2" "$TMP/n_kill"
 s_n_rd() { outer() { vr_hook_bg_before_read() { rm -f "$1"; mkdir "$1"; }; vr_bg IN run b true; }; vr_expect a b; run a true; vr_bg OUT outer; vr_wait; }
-scenario n_rd s_n_rd; check 'NESTED: 바깥 작업이 안쪽의 종료 기록을 읽지 못함 → 기록 실패로 최상위까지, 3' 3 $? "기록 실패: bg:OUT/IN 종료 기록 읽기${NL}bg:OUT exit=2" "$TMP/n_rd"
+scenario n_rd s_n_rd; checkn 'NESTED: 바깥 작업이 안쪽의 종료 기록을 읽지 못함(기록 자리에 디렉터리) → 기록 실패로 최상위까지 + 남은 디렉터리는 예상하지 못한 항목, 3' 3 $? "기록 실패: bg:OUT/IN 종료 기록 읽기${NL}기록 실패: bg:OUT/IN 회수 표시${NL}bg:OUT exit=2${NL}bg 폴더에 예상하지 못한 항목: <ID>" "$TMP/n_rd"
 s_top_rd() { vr_hook_bg_before_read() { rm -f "$1"; mkdir "$1"; }; vr_expect a b; run a true; vr_bg B run b true; vr_wait; }
-scenario top_rd s_top_rd; check 'NESTED: 최상위가 종료 기록을 읽지 못함 → 기록 실패, 3' 3 $? '기록 실패: bg:B 종료 기록 읽기' "$TMP/top_rd"
+scenario top_rd s_top_rd; checkn 'NESTED: 최상위가 종료 기록을 읽지 못함(기록 자리에 디렉터리) → 기록 실패 + 예상하지 못한 항목, 3' 3 $? "기록 실패: bg:B 종료 기록 읽기${NL}기록 실패: bg:B 회수 표시${NL}bg 폴더에 예상하지 못한 항목: <ID>" "$TMP/top_rd"
 s_n_ok() { na() { vr_bg B nb; vr_bg B2 run d true; }; nb() { vr_bg C run c true; }
            vr_expect a b c d; run a true; vr_bg A na; vr_bg T run b true; printf '%s\n' "${#VR_BG_PIDS[@]}" > "$TMP/n_ok_pids"; vr_wait; }
 scenario n_ok s_n_ok; check 'NESTED: 2·3단계 중첩이 모두 정상 → 실패 없음, 0' 0 $? '' "$TMP/n_ok"
-{ [ "$(cat "$TMP/n_ok_pids")" = 2 ] && [ "$(ls -A "$TMP/n_ok/bg" | grep -c '\.read$')" = 5 ] && [ "$(ls -A "$TMP/n_ok/bg" | grep -vc '\.read$')" = 0 ]; } \
-  && ok 'NESTED: 최상위 목록에는 직접 자식 2개만, 작업 5개의 종료 기록이 모두 한 번씩 회수됨(중복 회수 없음)' || bad "NESTED: 회수 상태 (pids=$(cat "$TMP/n_ok_pids"), $(ls -A "$TMP/n_ok/bg" | tr '\n' ' '))"
+{ [ "$(cat "$TMP/n_ok_pids")" = 2 ] && [ "$(ls -A "$TMP/n_ok/bg" | grep -c '\.read$')" = 5 ] && [ "$(ls -A "$TMP/n_ok/bg" | grep -c '\.done$')" = 5 ] && [ "$(ls -A "$TMP/n_ok/bg" | grep -vc '\.\(read\|done\)$')" = 0 ]; } \
+  && ok 'NESTED: 최상위 목록에는 직접 자식 2개만, 작업 5개의 종료 기록(.read)과 실행 표식(.done)이 모두 한 번씩 처리됨(중복 회수 없음)' || bad "NESTED: 회수 상태 (pids=$(cat "$TMP/n_ok_pids"), $(ls -A "$TMP/n_ok/bg" | tr '\n' ' '))"
 s_n_stray() { vr_expect a; run a true; echo x > "$VR_BGREC/fake"; echo x > "$VR_BGREC/x.tmp"; }
 scenario n_stray s_n_stray; check 'NESTED: 회수되지 않은 종료 기록·임시 파일 → "bg 종료 기록 미회수"' 1 $? "bg 종료 기록 미회수: fake${NL}bg 종료 기록 미회수: x.tmp" "$TMP/n_stray"
 s_n_reent() { outer() { vr_bg IN run b true; trap 'exit 0' EXIT; exit 4; }; vr_expect a b; run a true; vr_bg OUT outer; vr_wait; }
 scenario n_reent s_n_reent; check 'NESTED: 자식이 있는 작업이 trap 으로 다시 exit 0 → 처음 코드 4 유지, 자식은 한 번만 회수' 1 $? 'bg:OUT exit=4' "$TMP/n_reent"
 s_n_reent2() { outer() { vr_hook_bg_before_read() { exit 9; }; vr_bg IN run b true; }; vr_expect a b; run a true; vr_bg OUT outer; vr_wait; }
-scenario n_reent2 s_n_reent2; rc=$?
-{ [ $rc -eq 1 ] && [ "$(grep -c . "$TMP/n_reent2/failed_steps.txt")" = 2 ] && grep -qx 'bg:OUT exit=9' "$TMP/n_reent2/failed_steps.txt" && grep -q '^bg 종료 기록 미회수: [0-9]*_[0-9]*$' "$TMP/n_reent2/failed_steps.txt"; } \
-  && ok 'NESTED: 회수 도중 exit 로 재진입 → 무한 대기 없이 끝남, 읽지 못한 자식 기록은 "미회수"로 잡힘' || bad "NESTED: 회수 중 재진입 (rc=$rc, $(tr '\n' ';' < "$TMP/n_reent2/failed_steps.txt"))"
+scenario n_reent2 s_n_reent2; check 'NESTED: 자식 1개, 회수 도중 exit 로 재진입 → 남은 회수를 이어서 하고 "회수 중 재진입" + 2' 1 $? "bg:OUT/IN 회수 중 재진입${NL}bg:OUT exit=2" "$TMP/n_reent2"
+
+# ── 회수 도중 재진입 + 늦게 끝나는 형제(RE-1), 판정 뒤에 생기는 후손 기록(RE-2), 회수 표시 충돌(RE-3) ─────────
+# 공통: 바깥 OUT 이 형제 자식을 만들고, 첫 번째 자식의 기록을 읽기 직전 exit 0 으로 재진입한다.
+re_hook() { vr_hook_bg_before_read() { exit 0; }; }
+re_bg_dir_ok() { [ -z "$(ls -A "$1/bg" | grep -v '\.\(read\|done\)$')" ]; }   # 모든 기록·표식이 처리됨
+for d in 0 3; do
+    eval "s_re2_$d() { outer() { re_hook; vr_bg IN1 run b true; vr_bg IN2 bash -c 'sleep $d; exit 5'; }; vr_expect a b; run a true; vr_bg OUT outer; vr_wait; }"
+    scenario re2_$d s_re2_$d; check "RE-1: 형제 2개, 첫 번째 회수 직전 exit 0 재진입, 두 번째는 ${d}초 뒤 exit 5 → 두 번째까지 회수, 부모 2" 1 $? "bg:OUT/IN1 회수 중 재진입${NL}bg:OUT/IN2 exit=5${NL}bg:OUT exit=2" "$TMP/re2_$d"
+    re_bg_dir_ok "$TMP/re2_$d" && ok "RE-1: 지연 ${d}초 — 판정 시점에 모든 기록·표식 처리 완료(미회수 0)" || bad "RE-1: 지연 ${d}초 — bg: $(ls -A "$TMP/re2_$d/bg" | tr '\n' ' ')"
+done
+s_re3() { outer() { re_hook; vr_bg IN1 run b true; vr_bg IN2 run c sh -c 'exit 3'; vr_bg IN3 bash -c 'sleep 1; exit 4'; vr_bg IN4 run d true; }; vr_expect a b c d; run a true; vr_bg OUT outer; vr_wait; }
+scenario re3 s_re3; check 'RE-1: 형제 4개, 첫 번째 회수 중 재진입 → 나머지 3개(종료 코드 3 / 지연 exit 4 / 정상) 모두 회수' 1 $? "bg:OUT/IN1 회수 중 재진입${NL}c exit=3${NL}bg:OUT/IN2 exit=3${NL}bg:OUT/IN3 exit=4${NL}bg:OUT exit=2" "$TMP/re3"
+re_bg_dir_ok "$TMP/re3" && ok 'RE-1: 형제 4개 — 미회수 0' || bad "RE-1: 형제 4개 — bg: $(ls -A "$TMP/re3/bg" | tr '\n' ' ')"
+s_re_viol() { outer() { re_hook; vr_bg IN1 run b true; vr_bg IN2 slow_viol; }; slow_viol() { sleep 1; run zzz true; }; vr_expect a b; run a true; vr_bg OUT outer; vr_wait; }
+scenario re_viol s_re_viol; check 'RE-1: 늦게 끝나는 자식의 위반 → 위반 원문까지 전달' 1 $? "bg:OUT/IN1 회수 중 재진입${NL}zzz 등록되지 않은 항목${NL}bg:OUT/IN2 exit=2${NL}bg:OUT exit=2" "$TMP/re_viol"
+if [ $HAVE_FULL -eq 1 ]; then
+    s_re_io() { outer() { re_hook; vr_bg IN1 run b true; vr_bg IN2 slow_io; }; slow_io() { sleep 1; VR_NOTES=/dev/full; run zzz true; }; vr_expect a b; run a true; vr_bg OUT outer; vr_wait; }
+    scenario re_io s_re_io; check 'RE-1: 늦게 끝나는 자식의 기록 실패 → 위반과 기록 실패를 각각, 3' 3 $? "bg:OUT/IN1 회수 중 재진입${NL}zzz 등록되지 않은 항목${NL}기록 실패: _violations.txt${NL}bg:OUT/IN2 exit=2${NL}bg:OUT exit=2" "$TMP/re_io"
+else skp 'RE-1: 늦게 끝나는 자식의 기록 실패' '/dev/full 없음'; fi
+s_re_deep() { outer() { vr_bg IN1 run b true; vr_bg IN2 mid; re_hook; };   # 주입 함수는 자식을 만든 뒤 정의(손자 셸에 상속되지 않게)
+              mid() { vr_bg X bash -c 'sleep 1; exit 6'; }; vr_expect a b; run a true; vr_bg OUT outer; vr_wait; }
+scenario re_deep s_re_deep; check 'RE-1: 늦게 끝나는 형제가 자기 자식(손자)을 가짐 → 손자 실패까지 전달' 1 $? "bg:OUT/IN1 회수 중 재진입${NL}bg:OUT/IN2/X exit=6${NL}bg:OUT/IN2 exit=2${NL}bg:OUT exit=2" "$TMP/re_deep"
+# RE-2: 부모가 강제 종료돼 고아가 된 후손. 최상위 vr_finish 가 그 후손이 끝날 때까지 기다려 기록을 흡수해야 한다.
+s_orph() { outer() { vr_bg IN bash -c 'sleep 2; exit 5'; kill -9 $BASHPID; }; vr_expect a; run a true; vr_bg OUT outer; vr_wait; }
+scenario orph s_orph 2>/dev/null; checkn 'RE-2: 부모가 죽은 뒤 2초 뒤에 끝나는 후손의 exit 5 → 최상위 판정에 반영 + 미회수' 1 $? "bg:OUT exit=137${NL}bg:OUT/IN exit=5${NL}bg 종료 기록 미회수: <ID>" "$TMP/orph"
+re_bg_dir_ok "$TMP/orph" && ok 'RE-2: 판정 뒤에 늦게 생기는 기록 없음(판정 시점에 모두 처리)' || bad "RE-2: bg: $(ls -A "$TMP/orph/bg" | tr '\n' ' ')"
+s_orph_v() { outer() { vr_bg IN slowv; kill -9 $BASHPID; }; slowv() { sleep 1; run zzz true; }; vr_expect a; run a true; vr_bg OUT outer; vr_wait; }
+scenario orph_v s_orph_v 2>/dev/null; checkn 'RE-2: 고아 후손의 위반 → 위반 원문까지 반영' 1 $? "bg:OUT exit=137${NL}zzz 등록되지 않은 항목${NL}bg:OUT/IN exit=2${NL}bg 종료 기록 미회수: <ID>" "$TMP/orph_v"
+s_orph_k() { outer() { vr_bg IN selfkill; kill -9 $BASHPID; }; selfkill() { sleep 1; kill -9 $BASHPID; }; vr_expect a; run a true; vr_bg OUT outer; vr_wait; }
+scenario orph_k s_orph_k 2>/dev/null; checkn 'RE-2: 고아 후손이 기록 없이 강제 종료 → "종료 기록 없음(회수되지 않은 작업)"' 1 $? "bg:OUT exit=137${NL}bg 종료 기록 없음(회수되지 않은 작업): <ID>" "$TMP/orph_k"
+# RE-3: 회수 표시(.read) 목적 경로가 이미 있음 — 일반 파일 / 디렉터리 / 중첩 디렉터리
+for kind in file dir nested; do
+    eval "s_rd_$kind() { local id=\"\${BASHPID}_\$((VR_BG_SEQ + 1))\" t; t=\"\$VR_BGREC/\$id.read\"
+        case $kind in file) : > \"\$t\" ;; dir) mkdir \"\$t\" ;; nested) mkdir -p \"\$t/sub/deep\"; : > \"\$t/sub/deep/x\" ;; esac
+        vr_expect a b; run a true; vr_bg B run b true; vr_wait; }"
+done
+scenario rd_file s_rd_file;     checkn 'RE-3: .read 목적 경로에 일반 파일이 이미 있음 → 회수 표시 실패 + 원래 기록은 미회수, 3' 3 $? "기록 실패: bg:B 회수 표시 대상이 이미 있음${NL}bg 종료 기록 미회수: <ID>" "$TMP/rd_file"
+scenario rd_dir s_rd_dir;       checkn 'RE-3: .read 목적 경로에 디렉터리가 이미 있음 → 기록을 그 안으로 옮기지 않음 + 예상하지 못한 항목, 3' 3 $? "기록 실패: bg:B 회수 표시 대상이 이미 있음${NL}bg 종료 기록 미회수: <ID>${NL}bg 폴더에 예상하지 못한 항목: <ID>.read" "$TMP/rd_dir"
+scenario rd_nested s_rd_nested; checkn 'RE-3: .read 목적 경로에 중첩 디렉터리가 이미 있음 → 같은 판정' 3 $? "기록 실패: bg:B 회수 표시 대상이 이미 있음${NL}bg 종료 기록 미회수: <ID>${NL}bg 폴더에 예상하지 못한 항목: <ID>.read" "$TMP/rd_nested"
+s_rd_extra() { vr_expect a; run a true; mkdir -p "$VR_BGREC/zz.done/sub"; }
+scenario rd_extra s_rd_extra; check 'RE-3: 이름이 .done 이어도 디렉터리면 예상하지 못한 항목(하위 경로를 성공으로 보지 않음)' 1 $? 'bg 폴더에 예상하지 못한 항목: zz.done' "$TMP/rd_extra"
+s_rec_code() { body() { run b true; trap - EXIT; local id=$vr__bg_id; printf 'v1 %s %s\nL B\nC 0\n' "$(vr_tag "bg:$id")" "$id" > "$VR_BGREC/$id"; builtin exit 4; }; vr_expect a b; run a true; vr_bg B body; vr_wait; }
+scenario rec_code s_rec_code; check 'RE: 종료 기록의 C(0)가 실제 종료 코드(4)와 다름 → 종료 기록 손상' 1 $? "bg:B exit=4${NL}bg:B 종료 기록 손상" "$TMP/rec_code"
 
 # ── 동시 중복 실행(VR-002) ───────────────────────────────────────────────────────────────
 s_race() { vr_expect a b; run a true; local i; for i in 1 2 3 4 5 6; do vr_bg R run b sh -c 'echo x >> "$1"; sleep 1' _ "$TMP/race_counter"; done; vr_wait; }
