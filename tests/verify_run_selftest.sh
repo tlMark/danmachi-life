@@ -23,6 +23,10 @@ checkn() {   # check 와 같되 작업 ID 를 정규화해 대조(중복 줄 수
     if [ "$2" = "$3" ] && same_list_n "$4" "$5/failed_steps.txt"; then ok "$1"
     else bad "$1  | 종료 코드 $3(기대 $2), 실제 실패 목록: $(tr '\n' ';' < "$5/failed_steps.txt" 2>/dev/null) / 기대: $(printf '%s' "$4" | tr '\n' ';')"; fi
 }
+life_fds() { local f c=0; for f in /proc/$BASHPID/fd/*; do case "$(readlink "$f" 2>/dev/null)" in *.vr_life*) c=$((c + 1)) ;; esac; done; echo $c; }
+# 생명주기 FIFO 를 가리키는 fd 중 쓰기 가능한 것(접근 모드가 읽기 전용이 아닌 것)의 수
+life_wfds() { local f n c=0 fl; for f in /proc/$BASHPID/fd/*; do case "$(readlink "$f" 2>/dev/null)" in *.vr_life*) n=${f##*/}
+    fl=$(awk '/^flags:/{print $2}' "/proc/$BASHPID/fdinfo/$n" 2>/dev/null); [ $(( 8#$fl & 3 )) -ne 0 ] && c=$((c + 1)) ;; esac; done; echo $c; }
 no_alldone() { ! grep -q '^ALL_DONE' "$1/logs/99_done.log" 2>/dev/null; }
 scenario() {   # scenario <이름> <본문 함수> : 새 하위 셸에서 라이브러리를 읽고 본문을 실행한 뒤 vr_finish 의 종료 코드를 돌려준다
     local dir="$TMP/$1"
@@ -334,8 +338,8 @@ fa_dir="$TMP/fa"; mkdir -p "$fa_dir"
   [ "$VR_LIFE_W" = 202 ] && [ "$fa_dir/f200" -ef /dev/fd/200 ] && [ "$fa_dir/f201" -ef /dev/fd/201 ] && [ "$VR_LIFE" -ef "/dev/fd/$VR_LIFE_W" ] ) \
   && ok 'F-4: 200·201 이 이미 열려 있으면 202 를 쓰고 200·201 은 원래 파일 그대로(덮어쓰지 않음)' || bad 'F-4: 기존 fd 보존'
 ( . "$HERE/lib/verify_run.sh"; vr_init "$fa_dir/o2" || exit 9; c=0
-  for f in /proc/$BASHPID/fd/*; do [ "$VR_LIFE" -ef "$f" ] && c=$((c + 1)); done; [ "$c" = 1 ] ) \
-  && ok 'F-4: vr_init 뒤 FIFO 를 가리키는 fd 는 정확히 1개(임시 fd 를 닫음)' || bad 'F-4: 임시 fd 누수'
+  for f in /proc/$BASHPID/fd/*; do [ "$VR_LIFE" -ef "$f" ] && c=$((c + 1)); done; [ "$c" = 2 ] && [ "$(life_wfds)" = 1 ] ) \
+  && ok 'F-4: vr_init 뒤 FIFO 를 가리키는 fd 는 쓰기 가능 1개(생명주기)·읽기 전용 1개(대체 대기용)뿐(임시 fd 를 닫음)' || bad 'F-4: 임시 fd 누수'
 ( for n in {200..249}; do eval "exec $n>/dev/null"; done; . "$HERE/lib/verify_run.sh"; vr_init "$fa_dir/o3"; rc=$?
   [ $rc -eq 2 ] && [ -z "$VR_LIFE_W" ] && [ "$(readlink /proc/$BASHPID/fd/200)" = /dev/null ] ) \
   && ok 'F-4: 200~249 가 모두 차 있으면 vr_init 실패(2), 기존 fd 그대로' || bad 'F-4: 범위 가득 참'
@@ -380,14 +384,13 @@ sub_case stale   '명령 치환이 종료 기록을 미리 쓰지 못하므로, 
 bg 종료 기록 미회수: <ID>'
 
 # ── 보완 A: vr_init 실패·재호출 시 상태 정리(임시 fd·생명주기 fd·FIFO 파일·VR_LIFE·VR_LIFE_W) ───────────────────
-life_fds() { local f c=0; for f in /proc/$BASHPID/fd/*; do case "$(readlink "$f" 2>/dev/null)" in *.vr_life*) c=$((c + 1)) ;; esac; done; echo $c; }
 ia_dir="$TMP/ia"; mkdir -p "$ia_dir"
 for stage in fifo open list range dup; do
     ( . "$HERE/lib/verify_run.sh"; vr_hook_init_fail() { [ "$1" = "$stage" ]; }
       vr_init "$ia_dir/f_$stage"; rc=$?
       [ $rc -eq 2 ] && [ -z "$VR_LIFE_W" ] && [ -z "$VR_LIFE" ] && [ ! -e "$ia_dir/f_$stage/.vr_life" ] && [ "$(life_fds)" = 0 ] || exit 1
       unset -f vr_hook_init_fail; vr_init "$ia_dir/f_${stage}_retry" || exit 2
-      [ "$(life_fds)" = 1 ] && [ "$VR_LIFE_W" -ge 200 ] && [ "$VR_LIFE" -ef "/dev/fd/$VR_LIFE_W" ] || exit 3
+      [ "$(life_fds)" = 2 ] && [ "$(life_wfds)" = 1 ] && [ "$VR_LIFE_W" -ge 200 ] && [ "$VR_LIFE" -ef "/dev/fd/$VR_LIFE_W" ] || exit 3
       vr_expect a; run a true; vr_finish > /dev/null 2>&1 ) ; rc=$?
     [ $rc -eq 0 ] && ok "보완 A: '$stage' 단계 실패 → 2, fd·FIFO·변수 모두 정리, 재호출은 정상 초기화·정상 판정" || bad "보완 A: '$stage' 단계 실패 정리 (rc=$rc)"
 done
@@ -398,7 +401,7 @@ done
   [ $? -eq 2 ] && [ -z "$VR_LIFE_W" ] && [ ! -e "$ia_dir/nolist/.vr_life" ] && [ "$(life_fds)" = 0 ] ) \
   && ok '보완 A: 실제 fd 목록 검증 실패 → 2, 임시 fd·FIFO 정리' || bad '보완 A: 실제 fd 목록 실패 정리'
 ( . "$HERE/lib/verify_run.sh"; vr_init "$ia_dir/r1" || exit 1; first=$VR_LIFE; vr_init "$ia_dir/r2" || exit 2
-  [ ! -e "$first" ] && [ "$(life_fds)" = 1 ] && [ "$VR_LIFE" = "$ia_dir/r2/.vr_life" ] && [ "$VR_LIFE" -ef "/dev/fd/$VR_LIFE_W" ] ) \
+  [ ! -e "$first" ] && [ "$(life_fds)" = 2 ] && [ "$(life_wfds)" = 1 ] && [ "$VR_LIFE" = "$ia_dir/r2/.vr_life" ] && [ "$VR_LIFE" -ef "/dev/fd/$VR_LIFE_W" ] ) \
   && ok '보완 A: 성공한 뒤 재호출 → 이전 FIFO 삭제·이전 fd 닫힘, 새 FIFO 하나만' || bad '보완 A: 성공 뒤 재호출'
 ( . "$HERE/lib/verify_run.sh"; vr_init "$ia_dir/e1" || exit 1; first=$VR_LIFE; vr_init /dev/null/x 2>/dev/null; rc=$?
   [ $rc -eq 2 ] && [ ! -e "$first" ] && [ "$(life_fds)" = 0 ] && [ -z "$VR_LIFE_W" ] ) \
@@ -536,6 +539,93 @@ t0=$(date +%s%N); scenario rdeadflood s_rdeadflood; rc=$?; dt=$(( ($(date +%s%N)
 s_ok_files() { vr_expect a; vr_bg A run a true; vr_wait; }
 scenario ok_files s_ok_files; { [ $? -eq 0 ] && [ ! -e "$TMP/ok_files/.vr_life" ] && [ ! -e "$TMP/ok_files/.vr_done" ] && [ ! -e "$TMP/ok_files/.vr_msgs" ]; } \
   && ok 'FIFO 알림: 정상 경우 FIFO 두 개와 알림 파일이 모두 삭제됨' || bad 'FIFO 알림: 정상 경우 잔존'
+
+# ── 알림 읽기 프로세스 생명주기·완료 FIFO·알림 파일 무결성(bb19f6a 반려) ──────────────────────────────────────────
+# fdn <PID> <이름 패턴> <any|ro|w> : 그 프로세스에서 패턴에 맞는 대상을 가리키는 fd 수(ro = 읽기 전용, w = 쓰기 가능)
+fdn() { local f n c=0 fl m; for f in /proc/$1/fd/*; do case "$(readlink "$f" 2>/dev/null)" in *$2*) n=${f##*/}
+        fl=$(awk '/^flags:/{print $2}' "/proc/$1/fdinfo/$n" 2>/dev/null); m=$(( 8#${fl:-0} & 3 ))
+        case $3 in any) c=$((c + 1)) ;; ro) [ $m -eq 0 ] && c=$((c + 1)) ;; w) [ $m -ne 0 ] && c=$((c + 1)) ;; esac ;; esac; done; echo $c; }
+lc_fail() {   # lc_fail <이름> <설명> <기대 사유(정확한 한 줄)> : 종료 코드 3, 그 사유 있음, ALL_DONE 없음
+    local rc=$4
+    { [ "$rc" -eq 3 ] && grep -qxF "$3" "$TMP/$1/failed_steps.txt" && no_alldone "$TMP/$1"; } && ok "$2" || bad "$2 (rc=$rc, $(tr '\n' ';' < "$TMP/$1/failed_steps.txt" | cut -c1-200))"
+}
+DEAD='기록 실패: 후손 추적 알림 읽기(읽기 프로세스 비정상 종료)'
+# 1. 시작 전(S 전) 사망·지연 → vr_init 실패(2)·정리
+( . "$HERE/lib/verify_run.sh"; vr_hook_reader() { [ "$1" = start ] && kill -9 $BASHPID; }; VR__READER_START_TIMEOUT=2; vr_init "$TMP/lc_pre"; rc=$?
+  [ $rc -eq 2 ] && [ -z "$VR_LIFE_W" ] && [ -z "$VR_LDONE_R" ] && [ -z "$VR_MSGS_R" ] && [ -z "$VR_LIFE_R" ] && [ "$(life_fds)" = 0 ] \
+  && [ "$(fdn $BASHPID .vr_done any)" = 0 ] && [ "$(fdn $BASHPID .vr_msgs any)" = 0 ] && [ ! -e "$TMP/lc_pre/.vr_life" ] && [ ! -e "$TMP/lc_pre/.vr_done" ] && [ ! -e "$TMP/lc_pre/.vr_msgs" ] ) \
+  && ok '읽기 프로세스: "S" 전에 사망 → vr_init 2(시작 제한 시간 안에), fd·FIFO·알림 파일 정리' || bad '읽기 프로세스: S 전 사망'
+( . "$HERE/lib/verify_run.sh"; vr_hook_reader() { [ "$1" = start ] && sleep 3; }; VR__READER_START_TIMEOUT=1; t0=$SECONDS; vr_init "$TMP/lc_slow"; rc=$?
+  [ $rc -eq 2 ] && [ $((SECONDS - t0)) -le 2 ] && [ "$(life_fds)" = 0 ] ) \
+  && ok '읽기 프로세스: "S" 가 제한 시간 안에 오지 않음 → vr_init 2, 무한 대기 없음' || bad '읽기 프로세스: S 지연'
+# 2. S 직후 사망(작업은 모두 정상이어도 성공 아님)
+s_lc_post() { kill -9 "$VR_LIFE_RD"; sleep 0.2; vr_expect a; vr_bg A run a true; vr_wait; }
+scenario lc_post s_lc_post; lc_fail lc_post '읽기 프로세스: "S" 직후 사망(작업은 모두 정상) → 비정상 종료로 기록 실패, 3, ALL_DONE 없음' "$DEAD" $?
+# 3. 알림 처리 도중 사망(실패 작업 200개, 50번째 알림에서) → 교착 없이 대체 대기로 남은 알림 수거
+mid_hook() { vr_hook_reader() { [ "$1" = line ] && [ "$2" = 50 ] && kill -9 $BASHPID; }; }
+( . "$HERE/lib/verify_run.sh"; mid_hook; vr_init "$TMP/lc_mid" || exit 9; unset -f vr_hook_reader; vr_expect a; run a true
+  for k in $(seq 1 200); do vr_bg "${LONGP}_$k" recfail; done; vr_wait; t0=$SECONDS; vr_finish > "$TMP/lc_mid.finish_out" 2>&1; rc=$?
+  n=$(cnt_io "$TMP/lc_mid"); echo "$rc $n $((SECONDS - t0))" > "$TMP/lc_mid.res"; [ $rc -eq 3 ] && grep -qxF "$DEAD" "$TMP/lc_mid/failed_steps.txt" && [ "$n" -ge 49 ] && no_alldone "$TMP/lc_mid" )
+# 사망 전에 옮긴 49개 + 대체 대기가 FIFO 버퍼(64KiB)에서 읽은 것. 사망 뒤 vr_wait 동안 버퍼를 넘은 알림은 쓰기 시간 제한 뒤 버려진다(판정은 3).
+ok_mid=$?; [ $ok_mid -eq 0 ] && ok "읽기 프로세스: 알림 200개 처리 중 50번째에서 사망 → 교착 없음, 대체 대기로 버퍼에 남은 알림 수거(전달 $(cut -d' ' -f2 "$TMP/lc_mid.res")/200 — 사망 뒤 버퍼 초과분은 시간 제한 뒤 유실), 3" || bad "읽기 프로세스: 처리 중 사망 ($(cat "$TMP/lc_mid.res" 2>/dev/null))"
+# 4. R 직전 사망
+( . "$HERE/lib/verify_run.sh"; vr_hook_reader() { [ "$1" = end ] && kill -9 $BASHPID; }; vr_init "$TMP/lc_end" || exit 9; unset -f vr_hook_reader
+  vr_expect a; vr_bg A run a true; vr_wait; vr_finish > /dev/null 2>&1; rc=$?; [ $rc -eq 3 ] && grep -qxF "$DEAD" "$TMP/lc_end/failed_steps.txt" && no_alldone "$TMP/lc_end" ) \
+  && ok '읽기 프로세스: "R" 을 쓰기 직전 사망 → R 없이 EOF, 기록 실패, 3' || bad '읽기 프로세스: R 직전 사망'
+# 5. 완료 FIFO 의 잘못된 내용·중복 R·엉뚱한 S
+for kind in dupR junk lateS; do
+    case $kind in dupR) w='R 0' ;; junk) w='XYZ' ;; lateS) w='S 1' ;; esac
+    eval "s_lc_$kind() { body() { run b true; printf '%s\n' '$w' > \"\$VR_LDONE\"; }; vr_expect a b; run a true; vr_bg B body; vr_wait; }"
+    scenario "lc_$kind" "s_lc_$kind"; lc_fail "lc_$kind" "완료 FIFO: 작업이 '$w' 를 써 넣음 → 내용 이상(정확히 R 0/R 1 한 줄만 허용), 3" '기록 실패: 후손 추적 완료 FIFO 내용 이상' $?
+done
+# 6. 읽기 프로세스가 죽고, 생명주기 fd 를 가진 후손이 남아 있음 → 제한된 대체 대기
+s_lc_hold() { VR__FALLBACK_WAIT=1; kill -9 "$VR_LIFE_RD"; sleep 0.2; holder() { ( sleep 4; : ) & }; vr_expect a; vr_bg A run a true; vr_bg H holder; vr_wait; }
+t0=$(date +%s%N); scenario lc_hold s_lc_hold; rc=$?; dt=$(( ($(date +%s%N) - t0) / 1000000 ))
+{ [ $rc -eq 3 ] && grep -qxF '기록 실패: 후손 종료 확인 시간 초과' "$TMP/lc_hold/failed_steps.txt" && grep -qxF "$DEAD" "$TMP/lc_hold/failed_steps.txt" && [ $dt -lt 3500 ]; } \
+  && ok "읽기 프로세스 사망 + 생명주기 fd 를 가진 후손이 남음, 대체 대기 1초 → 시간 초과로 끝남(${dt}ms, 무한 대기 없음), 3" || bad "읽기 프로세스 사망 + 남은 후손 (rc=$rc ${dt}ms)"
+sleep 4
+s_lc_hold2() { VR__FALLBACK_WAIT=10; kill -9 "$VR_LIFE_RD"; sleep 0.2; holder() { ( sleep 2; : ) & }; vr_expect a; vr_bg A run a true; vr_bg H holder; vr_wait; }
+t0=$(date +%s%N); scenario lc_hold2 s_lc_hold2; rc=$?; dt=$(( ($(date +%s%N) - t0) / 1000000 ))
+{ [ $rc -eq 3 ] && ! grep -q '시간 초과' "$TMP/lc_hold2/failed_steps.txt" && grep -qxF "$DEAD" "$TMP/lc_hold2/failed_steps.txt" && [ $dt -ge 1500 ]; } \
+  && ok "읽기 프로세스 사망 + 2초 뒤 끝나는 후손, 대체 대기 10초 → 후손 종료까지 기다려 끝남(${dt}ms), 3" || bad "읽기 프로세스 사망 + 남은 후손 대기 (rc=$rc ${dt}ms)"
+# 7. 알림 파일 삭제·교체·링크·다른 종류 — 알림은 fd 로 읽혀 보존되고, 바뀐 대상은 지우지 않으며, 기록 실패(3)
+for kind in del repl link dir fifo; do
+    case $kind in
+        del)  t='rm -f "$VR_MSGS"' ;;
+        repl) t='rm -f "$VR_MSGS"; printf "E 000000000000_1_1 fake\n" > "$VR_MSGS"' ;;
+        link) t='rm -f "$VR_MSGS"; ln -s "$TMP/lc_target_link" "$VR_MSGS"' ;;
+        dir)  t='rm -f "$VR_MSGS"; mkdir "$VR_MSGS"' ;;
+        fifo) t='rm -f "$VR_MSGS"; mkfifo "$VR_MSGS"' ;;
+    esac
+    eval "s_lm_$kind() { : > \"\$TMP/lc_target_link\"; tam() { run b true; $t; }; vr_expect a b; run a true; vr_bg F recfail; vr_wait; vr_bg T tam; vr_wait; }"
+    scenario "lm_$kind" "s_lm_$kind"; rc=$?
+    { [ $rc -eq 3 ] && grep -qxF '기록 실패: 후손 추적 알림 파일 변경' "$TMP/lm_$kind/failed_steps.txt" && grep -qxF '기록 실패: bg:F 종료 기록 쓰기' "$TMP/lm_$kind/failed_steps.txt" \
+      && ! grep -q 'bg:fake' "$TMP/lm_$kind/failed_steps.txt" && no_alldone "$TMP/lm_$kind" \
+      && { [ $kind = del ] || [ -e "$TMP/lm_$kind/.vr_msgs" ] || [ -L "$TMP/lm_$kind/.vr_msgs" ]; }; } \
+      && ok "알림 파일: $kind → 변경 검출, 원래 알림은 fd 로 읽어 보존(가짜 알림 무시), 바뀐 대상은 지우지 않음, 3" || bad "알림 파일: $kind (rc=$rc, $(tr '\n' ';' < "$TMP/lm_$kind/failed_steps.txt" | cut -c1-160))"
+done
+# 8. 알림 일부만 기록되고 파일 쓰기 실패(두 번째 알림부터 실패)
+( . "$HERE/lib/verify_run.sh"; vr_hook_fail() { [ "$1" = msgwrite ] && [ -s "$VR_MSGS" ]; }; vr_init "$TMP/lc_part" || exit 9
+  vr_expect a; run a true; vr_bg F1 recfail; vr_wait; vr_bg F2 recfail; vr_wait; vr_finish > /dev/null 2>&1; rc=$?
+  [ $rc -eq 3 ] && grep -qxF '기록 실패: 후손 추적 알림 기록' "$TMP/lc_part/failed_steps.txt" && grep -qxF '기록 실패: bg:F1 종료 기록 쓰기' "$TMP/lc_part/failed_steps.txt" ) \
+  && ok '알림 파일: 첫 알림만 기록되고 이후 쓰기 실패 → 기록된 알림은 판정에 들어가고 "알림 기록" 실패, 3' || bad '알림 파일: 일부만 기록'
+# 9. fd 위생: 최상위·읽기 프로세스·vr_bg 자식·run 외부 명령이 가진 fd
+( . "$HERE/lib/verify_run.sh"; vr_init "$TMP/lc_fd" || exit 9; me=$BASHPID; rd=$VR_LIFE_RD
+  [ "$(fdn $me .vr_done any)" = 1 ] && [ "$(fdn $me .vr_done ro)" = 1 ] && [ "$(fdn $me .vr_msgs any)" = 1 ] && [ "$(fdn $me .vr_msgs ro)" = 1 ] \
+  && [ "$(fdn $me .vr_life w)" = 1 ] && [ "$(fdn $me .vr_life ro)" = 1 ] || exit 1
+  [ "$(fdn $rd .vr_done any)" = 1 ] && [ "$(fdn $rd .vr_done w)" = 1 ] && [ "$(fdn $rd .vr_msgs any)" = 1 ] && [ "$(fdn $rd .vr_msgs w)" = 1 ] \
+  && [ "$(fdn $rd .vr_life any)" = 1 ] && [ "$(fdn $rd .vr_life ro)" = 1 ] || exit 2
+  chk() { local p=$BASHPID; echo "$(fdn $p .vr_done any) $(fdn $p .vr_msgs any) $(fdn $p .vr_life w) $(fdn $p .vr_life ro)" > "$TMP/lc_fd.child"; }
+  vr_expect a b; vr_bg C chk; vr_wait
+  run a sh -c 'c=0; for f in /proc/$$/fd/*; do case "$(readlink "$f")" in *.vr_*) c=$((c+1));; esac; done; echo $c > "$0"' "$TMP/lc_fd.ext"
+  run b true; vr_finish > /dev/null 2>&1 || exit 3
+  [ "$(cat "$TMP/lc_fd.child")" = "0 0 1 0" ] && [ "$(cat "$TMP/lc_fd.ext")" = 0 ] || exit 4
+  k=0; while kill -0 "$rd" 2>/dev/null && [ $k -lt 20 ]; do sleep 0.1; k=$((k + 1)); done   # EOF(fd 닫힘) 직후 프로세스가 사라지기까지의 짧은 틈
+  ! kill -0 "$rd" 2>/dev/null || exit 5 ) ; rc=$?
+[ $rc -eq 0 ] && ok 'fd 위생: 최상위(완료 FIFO 읽기 1·알림 읽기 1·생명주기 쓰기 1·읽기 1), 읽기 프로세스(완료 FIFO 쓰기 1·알림 쓰기 1·생명주기 읽기 1, 쓰기 0), vr_bg 자식(생명주기 쓰기 1만), run 외부 명령(0), 판정 뒤 읽기 프로세스 종료' || bad "fd 위생 (단계 $rc)"
+# 10. 읽기 프로세스 PID 값은 판단에 쓰지 않음(재사용돼도 무관)
+s_lc_pid() { VR_LIFE_RD=1; vr_expect a; vr_bg A run a true; vr_wait; }
+scenario lc_pid s_lc_pid; check '읽기 프로세스: 기록된 PID 값을 바꿔도 판정 무관(상태는 완료 FIFO 로만 판단), 0' 0 $? '' "$TMP/lc_pid"
 
 # ── 재현성: 처리기 return 3 + builtin exit 5 를 10번 반복(매번 5) ──────────────────────────────────────────────
 rep_ok=0; for k in 1 2 3 4 5 6 7 8 9 10; do
