@@ -43,7 +43,20 @@ VR_EXP=(); declare -A VR_EXPN=()
 VR_VIOLATED=0; VR_IOERR=0; VR_RUN_ERRS=()
 VR_BG_PIDS=(); VR_BG_LABELS=(); VR_BG_FAILS=(); VR_BG_IDS=(); VR_BG_ST=(); VR_BG_RC=(); VR_BG_SEQ=0; VR_BGREC=""; VR_BG_PATH=""
 
+# 생명주기 FIFO 상태 정리: 열린 fd 를 닫고, 이 라이브러리가 만든 FIFO 를 지우고, 변수를 비운다(실패·재호출 공통).
+vr__life_reset() {
+    if [ -n "${VR_LIFE_W:-}" ]; then exec {VR_LIFE_W}>&- 2>/dev/null; fi
+    if [ -n "${VR_LIFE:-}" ] && [ -p "$VR_LIFE" ]; then rm -f "$VR_LIFE" 2>/dev/null; fi
+    VR_LIFE_W=""; VR_LIFE=""
+}
+vr__init_fail() {   # 시험용 실패 주입(평소에는 정의되지 않음): vr_hook_init_fail <단계> 가 0 을 돌려주면 그 단계를 실패로 본다
+    declare -F vr_hook_init_fail > /dev/null && vr_hook_init_fail "$1"
+}
+# 계약: vr_init 은 다시 호출할 수 있다. 호출할 때마다 이전 생명주기 상태(fd·FIFO)를 먼저 정리하고 새로 만든다.
+# 실패하면(반환 2) 임시 fd·생명주기 fd·FIFO 파일·VR_LIFE·VR_LIFE_W 를 모두 정리한 상태로 돌아온다(이후 vr_finish 는
+# "후손 추적 준비 안 됨"으로 실패). 이전에 실행한 vr_bg 작업이 남아 있는 상태에서의 재호출은 지원하지 않는다.
 vr_init() {
+    vr__life_reset
     VR_OUT=$1
     VR_L="$VR_OUT/logs"; VR_ST="$VR_OUT/status"
     VR_FAILS="$VR_OUT/failed_steps.txt"; VR_EXPECTED="$VR_OUT/expected_steps.txt"; VR_STEPS="$VR_OUT/step_status.txt"
@@ -59,25 +72,28 @@ vr_init() {
     # 후손 생명주기 추적: FIFO 를 읽기·쓰기로 열어 두면, 그 fd 는 이후 만들어지는 모든 하위 셸에 커널이 자동으로 상속한다.
     # vr_finish 는 자기 fd 를 닫고 EOF 를 기다린다 = 그 fd 를 가진 후손이 모두 끝났다(실행 표식을 쓰기 전에 부모가 죽어도 빠지지 않음).
     # run 으로 실행하는 명령에는 이 fd 를 닫고 넘긴다(검사 대상 명령이 남긴 프로세스 때문에 기다리지 않도록).
-    if [ -n "${VR_LIFE_W:-}" ]; then exec {VR_LIFE_W}>&-; fi
     VR_LIFE="$VR_OUT/.vr_life"; VR_LIFE_W=""
-    rm -f "$VR_LIFE" && mkfifo "$VR_LIFE" || return 2
+    if ! rm -f "$VR_LIFE" || ! mkfifo "$VR_LIFE" || vr__init_fail fifo; then vr__life_reset; return 2; fi
     # fd 할당. 목표: 이미 열린 fd 를 덮어쓰지 않으면서, 작업 코드가 번호를 직접 쓰는 fd(보통 3~10)와 겹치지 않는 높은 번호(200~249).
     #  (1) 먼저 bash 동적 할당({var})으로 연다 — 커널이 비어 있는 번호를 골라 주므로 기존 fd 를 덮어쓰지 않는다.
-    #  (2) fd 목록(VR__FD_DIR, 기본 /dev/fd = 이 셸의 fd 표)이 열린 fd 를 실제로 보여 주는지, 방금 연 fd 와 0·1·2 로 확인한다.
+    #  (2) fd 목록(VR__FD_DIR, 기본 /dev/fd = 이 셸의 fd 표)이 열린 fd 를 실제로 보여 주는지, 방금 연 fd 와 0 으로 확인한다.
     #      보여 주지 못하는 환경이면 "비어 있음" 판단을 믿을 수 없으므로 실패(2)한다.
     #  (3) 200~249 중 목록에 없는 번호로 복제한다. fd 표는 이 프로세스 전용이고 bash 는 단일 스레드라, 확인과 복제 사이에
     #      다른 주체가 그 번호를 열 수 없다(이 사이에 이 셸이 실행하는 명령이 없다).
-    #  (4) 복제한 번호가 FIFO 를 가리키는지 확인하고 임시 fd 를 닫는다. 어느 단계든 실패하면 fd 를 정리하고 2.
+    #  (4) 복제한 번호가 FIFO 를 가리키는지 확인하고 임시 fd 를 닫는다.
+    # 어느 단계든 실패하면 임시 fd 를 닫고 vr__life_reset(생명주기 fd·FIFO·변수 정리) 후 2.
     local tmpfd="" n d=${VR__FD_DIR:-/dev/fd}
-    exec {tmpfd}<>"$VR_LIFE" || return 2
-    if ! [ -e "$d/$tmpfd" ] || ! [ -e "$d/0" ] || ! [ "$VR_LIFE" -ef "$d/$tmpfd" ]; then exec {tmpfd}>&-; return 2; fi
-    for n in {200..249}; do
-        if ! [ -e "$d/$n" ] && ! [ -L "$d/$n" ]; then VR_LIFE_W=$n; break; fi
-    done
-    if [ -z "$VR_LIFE_W" ]; then exec {tmpfd}>&-; return 2; fi
-    if ! eval "exec $VR_LIFE_W>&$tmpfd" 2>/dev/null || ! [ "$VR_LIFE" -ef "$d/$VR_LIFE_W" ]; then
-        exec {tmpfd}>&-; VR_LIFE_W=""; return 2
+    vr__init_cleanup() { if [ -n "$tmpfd" ]; then exec {tmpfd}>&- 2>/dev/null; fi; vr__life_reset; }
+    if vr__init_fail open || ! exec {tmpfd}<>"$VR_LIFE"; then tmpfd=""; vr__init_cleanup; return 2; fi
+    if vr__init_fail list || ! [ -e "$d/$tmpfd" ] || ! [ -e "$d/0" ] || ! [ "$VR_LIFE" -ef "$d/$tmpfd" ]; then vr__init_cleanup; return 2; fi
+    if ! vr__init_fail range; then
+        for n in {200..249}; do
+            if ! [ -e "$d/$n" ] && ! [ -L "$d/$n" ]; then VR_LIFE_W=$n; break; fi
+        done
+    fi
+    if [ -z "$VR_LIFE_W" ]; then vr__init_cleanup; return 2; fi
+    if vr__init_fail dup || ! eval "exec $VR_LIFE_W>&$tmpfd" 2>/dev/null || ! [ "$VR_LIFE" -ef "$d/$VR_LIFE_W" ]; then
+        vr__init_cleanup; return 2
     fi
     exec {tmpfd}>&-
 }

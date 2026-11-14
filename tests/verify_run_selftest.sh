@@ -378,6 +378,62 @@ sub_case subcode '하위 셸 exit 3 의 코드는 작업이 받아 쓸 수 있�
 sub_case stale   '명령 치환이 종료 기록을 미리 쓰지 못하므로, 그 뒤 builtin 우회는 "종료 기록 없음"' 1 'x=$(exit 0); builtin trap - EXIT; builtin exit 0' 'bg:B 종료 기록 없음
 bg 종료 기록 미회수: <ID>'
 
+# ── 보완 A: vr_init 실패·재호출 시 상태 정리(임시 fd·생명주기 fd·FIFO 파일·VR_LIFE·VR_LIFE_W) ───────────────────
+life_fds() { local f c=0; for f in /proc/$BASHPID/fd/*; do case "$(readlink "$f" 2>/dev/null)" in *.vr_life*) c=$((c + 1)) ;; esac; done; echo $c; }
+ia_dir="$TMP/ia"; mkdir -p "$ia_dir"
+for stage in fifo open list range dup; do
+    ( . "$HERE/lib/verify_run.sh"; vr_hook_init_fail() { [ "$1" = "$stage" ]; }
+      vr_init "$ia_dir/f_$stage"; rc=$?
+      [ $rc -eq 2 ] && [ -z "$VR_LIFE_W" ] && [ -z "$VR_LIFE" ] && [ ! -e "$ia_dir/f_$stage/.vr_life" ] && [ "$(life_fds)" = 0 ] || exit 1
+      unset -f vr_hook_init_fail; vr_init "$ia_dir/f_${stage}_retry" || exit 2
+      [ "$(life_fds)" = 1 ] && [ "$VR_LIFE_W" -ge 200 ] && [ "$VR_LIFE" -ef "/dev/fd/$VR_LIFE_W" ] || exit 3
+      vr_expect a; run a true; vr_finish > /dev/null 2>&1 ) ; rc=$?
+    [ $rc -eq 0 ] && ok "보완 A: '$stage' 단계 실패 → 2, fd·FIFO·변수 모두 정리, 재호출은 정상 초기화·정상 판정" || bad "보완 A: '$stage' 단계 실패 정리 (rc=$rc)"
+done
+( for n in {200..249}; do eval "exec $n>/dev/null"; done; . "$HERE/lib/verify_run.sh"; vr_init "$ia_dir/full"
+  [ $? -eq 2 ] && [ -z "$VR_LIFE_W" ] && [ -z "$VR_LIFE" ] && [ ! -e "$ia_dir/full/.vr_life" ] && [ "$(life_fds)" = 0 ] ) \
+  && ok '보완 A: 실제 범위 포화(200~249 모두 열림) → 2, 임시 fd·FIFO 정리' || bad '보완 A: 실제 범위 포화 정리'
+( . "$HERE/lib/verify_run.sh"; VR__FD_DIR="$ia_dir/none"; vr_init "$ia_dir/nolist"
+  [ $? -eq 2 ] && [ -z "$VR_LIFE_W" ] && [ ! -e "$ia_dir/nolist/.vr_life" ] && [ "$(life_fds)" = 0 ] ) \
+  && ok '보완 A: 실제 fd 목록 검증 실패 → 2, 임시 fd·FIFO 정리' || bad '보완 A: 실제 fd 목록 실패 정리'
+( . "$HERE/lib/verify_run.sh"; vr_init "$ia_dir/r1" || exit 1; first=$VR_LIFE; vr_init "$ia_dir/r2" || exit 2
+  [ ! -e "$first" ] && [ "$(life_fds)" = 1 ] && [ "$VR_LIFE" = "$ia_dir/r2/.vr_life" ] && [ "$VR_LIFE" -ef "/dev/fd/$VR_LIFE_W" ] ) \
+  && ok '보완 A: 성공한 뒤 재호출 → 이전 FIFO 삭제·이전 fd 닫힘, 새 FIFO 하나만' || bad '보완 A: 성공 뒤 재호출'
+( . "$HERE/lib/verify_run.sh"; vr_init "$ia_dir/e1" || exit 1; first=$VR_LIFE; vr_init /dev/null/x 2>/dev/null; rc=$?
+  [ $rc -eq 2 ] && [ ! -e "$first" ] && [ "$(life_fds)" = 0 ] && [ -z "$VR_LIFE_W" ] ) \
+  && ok '보완 A: 성공한 뒤 재호출이 앞 단계(폴더 생성)에서 실패 → 이전 fd·FIFO 도 정리' || bad '보완 A: 앞 단계 실패 재호출'
+( . "$HERE/lib/verify_run.sh"; vr_hook_init_fail() { [ "$1" = dup ]; }; vr_init "$ia_dir/fin"; vr_expect a; run a true; vr_finish > /dev/null 2>&1; [ $? -eq 3 ] ) \
+  && ok '보완 A: 초기화 실패 상태에서 vr_finish → 성공 아님(3)' || bad '보완 A: 초기화 실패 뒤 vr_finish'
+
+# ── 보완 B: SUB-1 가로채기 경계. 정상 완료 여부와 함께 상태 기록·bg 종료 기록이 한 번씩만 생기는지 확인 ─────────────
+printf 'exit 7\n' > "$TMP/src_exit7.sh"
+printf "trap 'exit 0' EXIT; exit 5\n" > "$TMP/src_trap5.sh"
+rec_once() {   # rec_once <폴더> : 항목 a·b·c 의 상태 기록 3개, 작업 B·C 의 종료 기록(.read)·실행 표식(.done) 각 2개, 그 밖 0
+    local d=$1
+    [ "$(ls "$d/status" | grep -c '\.status$')" = 3 ] && [ "$(ls "$d/status" | grep -c 'tmp')" = 0 ] \
+    && [ "$(ls -A "$d/bg" | grep -c '\.read$')" = 2 ] && [ "$(ls -A "$d/bg" | grep -c '\.done$')" = 2 ] \
+    && [ "$(ls -A "$d/bg" | grep -vc '\.\(read\|done\)$')" = 0 ]
+}
+sb_case() {   # sb_case <이름> <설명> <기대 종료 코드> <기대 실패 목록> <작업 본문(자식 C 와 항목 b 뒤에 실행)>
+    eval "s_sb_$1() { body() { vr_bg C run c true; run b true; $5; }; vr_expect a b c; run a true; vr_bg B body; vr_wait; }"
+    scenario "sb_$1" "s_sb_$1" 2>/dev/null; local rc=$?
+    check "보완 B: $2" "$3" "$rc" "$4" "$TMP/sb_$1"
+    rec_once "$TMP/sb_$1" && ok "보완 B: $2 — 상태 기록·bg 기록 각 한 번" || bad "보완 B: $2 — 기록 수 $(ls "$TMP/sb_$1/status" | tr '\n' ' ') / $(ls -A "$TMP/sb_$1/bg" | tr '\n' ' ')"
+}
+sb_case fnexit   '작업 함수가 부른 함수 안의 함수에서 exit 6'                1 'bg:B exit=6' 'f2() { exit 6; }; f1() { f2; }; f1'
+sb_case fntrap   '작업 함수가 부른 함수 안에서 trap 설치 후 builtin exit 5'   1 'bg:B exit=5' "f1() { trap 'exit 0' EXIT; }; f1; builtin exit 5"
+sb_case ncs      '함수 안 중첩 명령 치환의 exit 3(값은 바깥이 받음)'          0 ''            'f() { x=$( y=$(exit 3); echo $? ); [ "$x" = 3 ] || exit 9; }; f'
+sb_case npar     '함수 안 중첩 괄호 하위 셸의 exit 3·4(코드는 바깥이 받음)'   0 ''            'f() { ( ( exit 3 ); exit 4 ); [ $? = 4 ] || exit 9; }; f'
+sb_case psub     '함수 안 프로세스 치환의 exit 5·6'                          0 ''            'f() { cat <( exit 5 ) > /dev/null; : > >(exit 6); sleep 0.2; }; f'
+sb_case csfn     '명령 치환 안에서 부른 함수의 exit'                          0 ''            'g() { exit 2; }; v=$(g; echo no); [ -z "$v" ] || exit 9'
+sb_case src7     'source 한 스크립트의 exit 7'                               1 'bg:B exit=7' ". \"\$TMP/src_exit7.sh\""
+sb_case srctrap  "source 한 스크립트의 trap 'exit 0' EXIT; exit 5"           1 'bg:B exit=5' ". \"\$TMP/src_trap5.sh\""
+sb_case srcsub   '하위 셸 안에서 source 한 스크립트의 exit 7 → 작업 정상'      0 ''            "( . \"\$TMP/src_exit7.sh\" ); [ \$? = 7 ] || exit 9"
+sb_case csnoarg  '명령 치환(exit 3) 뒤 인자 없는 exit → 3'                    1 'bg:B exit=3' 'x=$(exit 3); exit'
+sb_case parnoarg '괄호 하위 셸(exit 4) 뒤 인자 없는 exit → 4'                 1 'bg:B exit=4' '( exit 4 ); exit'
+sb_case cs0noarg 'false 뒤 명령 치환(true) 뒤 인자 없는 exit → 0'             0 ''            'false; x=$(true); exit'
+sb_case fnnoarg  '함수 안: 명령 치환(exit 3) 뒤 인자 없는 exit → 3'           1 'bg:B exit=3' 'f() { x=$(exit 3); exit; }; f'
+
 # ── RE-2 남은 위험: 실행 표식을 쓰기 전에 부모가 강제 종료 ─────────────────────────────────────────────
 s_win() { outer() { vr_hook_bg_before_mark() { kill -9 $BASHPID; }; vr_bg IN bash -c 'sleep 1; exit 5'; }; vr_expect a; run a true; vr_bg OUT outer; vr_wait; }
 scenario win s_win 2>/dev/null; checkn 'RE-2: 표식 전에 부모가 죽은 후손(1초 뒤 exit 5) → 생명주기 추적으로 기다려 흡수' 1 $? "bg:OUT exit=137${NL}bg:OUT/IN exit=5${NL}bg 종료 기록 미회수: <ID>" "$TMP/win"
