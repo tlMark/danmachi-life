@@ -41,15 +41,16 @@ VR_OUT=""; VR_L=""; VR_ST=""; VR_TOKEN=""
 VR_FAILS=""; VR_EXPECTED=""; VR_NOTES=""; VR_STEPS=""; VR_DONE=""
 VR_EXP=(); declare -A VR_EXPN=()
 VR_VIOLATED=0; VR_IOERR=0; VR_RUN_ERRS=()
-VR_BG_PIDS=(); VR_BG_LABELS=(); VR_BG_FAILS=()
+VR_BG_PIDS=(); VR_BG_LABELS=(); VR_BG_FAILS=(); VR_BG_IDS=(); VR_BG_SEQ=0; VR_BGREC=""
 
 vr_init() {
     VR_OUT=$1
     VR_L="$VR_OUT/logs"; VR_ST="$VR_OUT/status"
     VR_FAILS="$VR_OUT/failed_steps.txt"; VR_EXPECTED="$VR_OUT/expected_steps.txt"; VR_STEPS="$VR_OUT/step_status.txt"
     VR_NOTES="$VR_ST/_violations.txt"; VR_DONE="$VR_L/99_done.log"
-    VR_EXP=(); VR_EXPN=(); VR_VIOLATED=0; VR_IOERR=0; VR_RUN_ERRS=(); VR_BG_PIDS=(); VR_BG_LABELS=(); VR_BG_FAILS=()
-    mkdir -p "$VR_L" "$VR_ST" || return 2
+    VR_EXP=(); VR_EXPN=(); VR_VIOLATED=0; VR_IOERR=0; VR_RUN_ERRS=(); VR_BG_PIDS=(); VR_BG_LABELS=(); VR_BG_FAILS=(); VR_BG_IDS=(); VR_BG_SEQ=0
+    VR_BGREC="$VR_OUT/bg"
+    mkdir -p "$VR_L" "$VR_ST" "$VR_BGREC" || return 2
     : > "$VR_FAILS" || return 2
     : > "$VR_EXPECTED" || return 2
     : > "$VR_NOTES" || return 2
@@ -101,24 +102,65 @@ run() {
     return $code
 }
 
-# 백그라운드 작업. 하위 셸의 종료 코드: 위반·기록 실패가 있었으면 2(부모는 하위 셸의 메모리를 볼 수 없으므로),
-# 그 밖에는 작업 함수의 반환 코드를 그대로 전달한다(0 이 아니면 부모가 "bg:<이름> exit=N" 으로 실패 처리). 모두 정상일 때만 0.
-# 작업 안의 run 이 항목 실패를 상태 기록으로 남기고 작업도 0 이 아닌 코드로 끝나면, 항목 실패와 bg 실패가 함께 기록된다(서로 다른 사유).
+# 백그라운드 작업(vr_bg / vr_wait).
+# 하위 셸은 끝나기 직전에 "종료 기록"을 남긴다: $VR_BGREC/<id> = 첫 줄 "v1 <태그> <id>", 이후 줄은 그 하위 셸이 메모리에 기억한 위반·기록 실패.
+# 부모(vr_wait)는 PID 마다 wait 해 종료 코드를 모으고, 종료 기록을 읽어 하위 셸의 위반·기록 실패를 자기 메모리로 옮긴다
+# (그래서 하위 셸 안에서 _violations.txt 기록이 유실돼도 위반과 기록 실패가 각각 판정된다. 기록 실패가 있으면 최종 종료 코드 3).
+# 하위 셸의 종료 코드(종료 상태 정책): 위반·기록 실패가 있었거나 종료 기록을 쓰지 못했으면 2, 그 밖에는 작업 함수의 반환 코드 또는
+# 작업 함수가 직접 exit 한 코드. 모두 정상일 때만 0. 0 이 아니면 부모가 "bg:<이름> exit=N" 으로 실패 처리.
+# 정책은 모든 종료 경로에 적용된다: (1) 작업 함수가 반환, (2) 작업 함수가 exit 호출(하위 셸 안에서만 exit 를 함수로 가로챔),
+# (3) 그 밖의 종료(builtin exit 등) — EXIT trap. 작업이 trap 을 바꾸고 builtin exit 로 끝내 정책을 건너뛰면 종료 기록이 없으므로,
+# 부모는 "종료 기록 없음"으로 실패 처리한다(종료 코드가 0 이어도). 신호로 죽은 경우(코드 128 이상)는 종료 코드만으로 이미 실패다.
+vr__bg_policy_code() {   # vr__bg_policy_code <작업 종료 코드> → 출력: 하위 셸이 끝낼 코드
+    local rc=$1
+    # 플래그가 정확히 "0" 이 아니면(비었거나 숫자가 아니어도) 위반·기록 실패로 본다: 검사 자체의 오류로 성공 쪽으로 빠지지 않게
+    if [ "${VR_VIOLATED:-0}" != 0 ] || [ "${VR_IOERR:-0}" != 0 ]; then printf '2'; return; fi
+    case "$rc" in ''|*[!0-9]*) printf '2'; return;; esac      # 숫자가 아닌 종료 코드는 2
+    printf '%s' "$(( 10#$rc % 256 ))"
+}
+vr__bg_finish() {   # vr__bg_finish <작업 종료 코드> : 종료 기록을 한 번만 쓰고 정책 코드로 하위 셸을 끝낸다(재진입 방지)
+    local rc=$1 code tag f
+    trap - EXIT
+    if [ -n "${vr__bg_code:-}" ]; then builtin exit "$vr__bg_code"; fi
+    code=$(vr__bg_policy_code "$rc") || code=2
+    f="$VR_BGREC/$vr__bg_id"
+    if tag=$(vr_tag "bg:$vr__bg_id") && [ ${#tag} -eq 64 ] \
+       && { printf 'v1 %s %s\n' "$tag" "$vr__bg_id"; if [ ${#VR_RUN_ERRS[@]} -gt 0 ]; then printf '%s\n' "${VR_RUN_ERRS[@]}"; fi; } 2>/dev/null > "$f.tmp" \
+       && mv -f "$f.tmp" "$f" 2>/dev/null && [ -f "$f" ]; then :; else code=2; fi
+    vr__bg_code=${code:-2}
+    builtin exit "$vr__bg_code"
+}
 vr_bg() {
     local label=$1; shift
-    ( VR_VIOLATED=0; VR_IOERR=0; VR_RUN_ERRS=()
-      "$@"; vr__task_rc=$?
-      if [ "$VR_VIOLATED" -ne 0 ] || [ "$VR_IOERR" -ne 0 ]; then exit 2; fi
-      exit "$vr__task_rc" ) &
-    VR_BG_PIDS+=("$!"); VR_BG_LABELS+=("$label")
+    VR_BG_SEQ=$((VR_BG_SEQ + 1))
+    local id="${BASHPID}_${VR_BG_SEQ}"
+    ( VR_VIOLATED=0; VR_IOERR=0; VR_RUN_ERRS=(); VR_BG_PIDS=(); VR_BG_LABELS=(); VR_BG_IDS=(); vr__bg_id=$id; vr__bg_code=""
+      trap 'vr__bg_finish $?' EXIT
+      exit() { vr__bg_finish "${1-$?}"; }
+      "$@"
+      vr__bg_finish $? ) &
+    VR_BG_PIDS+=("$!"); VR_BG_LABELS+=("$label"); VR_BG_IDS+=("$id")
 }
 vr_wait() {
-    local i rc
+    local i rc f id label tag l; local -a lines
     for i in "${!VR_BG_PIDS[@]}"; do
         wait "${VR_BG_PIDS[$i]}"; rc=$?
-        [ "$rc" -eq 0 ] || VR_BG_FAILS+=("bg:${VR_BG_LABELS[$i]} exit=$rc")
+        label=${VR_BG_LABELS[$i]}; id=${VR_BG_IDS[$i]}; f="$VR_BGREC/$id"
+        [ "$rc" -eq 0 ] || VR_BG_FAILS+=("bg:$label exit=$rc")
+        if [ -f "$f" ]; then
+            lines=()
+            if ! mapfile -t lines < "$f" 2>/dev/null; then vr__ioerr "bg:$label 종료 기록 읽기"; continue; fi
+            tag=$(vr_tag "bg:$id") || { vr__ioerr "bg:$label 종료 기록 태그 계산"; continue; }
+            if [ "${lines[0]:-}" != "v1 $tag $id" ]; then VR_BG_FAILS+=("bg:$label 종료 기록 손상"); continue; fi
+            for l in "${lines[@]:1}"; do
+                [ -n "$l" ] || continue
+                case "$l" in "기록 실패: "*) VR_IOERR=1 ;; *) VR_VIOLATED=1 ;; esac
+                VR_RUN_ERRS+=("$l")
+            done
+        elif [ "$rc" -lt 128 ]; then VR_BG_FAILS+=("bg:$label 종료 기록 없음")
+        fi
     done
-    VR_BG_PIDS=(); VR_BG_LABELS=()
+    VR_BG_PIDS=(); VR_BG_LABELS=(); VR_BG_IDS=()
 }
 
 # 상태 기록을 검증해 종료 코드를 출력한다. 반환: 0 = 유효(코드를 출력), 1 = 없음, 2 = 손상 또는 읽기 실패
@@ -184,10 +226,19 @@ vr_finish() {
     for e in "${fails[@]}"; do [ -n "$e" ] || continue; [ -n "${uniq[$e]+x}" ] && continue; uniq[$e]=1; list+=("$e"); done
     # (5) 보고 파일 쓰기. 쓴 뒤 일반 파일인지·내용이 같은지 다시 읽어 확인한다(0바이트 쓰기는 장치가 가득 차도 실패하지 않으므로).
     vr__write_verified "$VR_STEPS" "$steps" || ioerrs+=("기록 실패: step_status.txt")
-    local sorted=""; local -a sorted_list=()
+    # 정렬 결과는 명령 치환이 아니라 임시 파일로 받는다(명령 치환은 끝의 빈 줄을 지우므로). 임시 파일의 생성·읽기·정리 실패도 기록 실패.
+    local -a sorted_list=(); local stmp="${VR_SORT_TMP:-$VR_OUT/.sort_out.$BASHPID}" sort_ok=0
     if [ ${#list[@]} -gt 0 ]; then
-        if sorted=$(set -o pipefail; printf '%s\n' "${list[@]}" | sort -u); then
-            mapfile -t sorted_list <<< "$sorted"
+        if ! : > "$stmp" 2>/dev/null || [ ! -f "$stmp" ]; then ioerrs+=("기록 실패: sort 임시 파일 생성")
+        elif ! (set -o pipefail; printf '%s\n' "${list[@]}" | sort -u > "$stmp") 2>/dev/null; then ioerrs+=("기록 실패: sort")
+        else
+            declare -F vr_hook_sort_after_write > /dev/null && vr_hook_sort_after_write "$stmp"     # 시험용 주입 지점
+            if [ ! -f "$stmp" ] || ! mapfile -t sorted_list < "$stmp" 2>/dev/null; then ioerrs+=("기록 실패: sort 임시 파일 읽기"); sorted_list=()
+            else sort_ok=1; fi
+        fi
+        declare -F vr_hook_sort_before_cleanup > /dev/null && vr_hook_sort_before_cleanup "$stmp"   # 시험용 주입 지점
+        { rm -f -- "$stmp" 2>/dev/null && [ ! -e "$stmp" ]; } || ioerrs+=("기록 실패: sort 임시 파일 정리")
+        if [ $sort_ok -eq 1 ]; then
             # 정렬 결과는 원래 목록과 같은 집합이어야 한다. list 는 (4)에서 중복을 없앴으므로, 다음 네 조건이 모두 맞으면 집합이 같다:
             # 원소 수가 같음, 결과에 빈 줄·중복이 없음, 결과의 모든 원소가 원래 목록에 있음(추가 없음), 원래 목록의 모든 원소가 결과에 있음(누락 없음).
             local okset=1; local -A inl=() ins=()
@@ -201,7 +252,7 @@ vr_finish() {
             done
             for e in "${list[@]}"; do [ -n "${ins[$e]+x}" ] || okset=0; done   # 누락 항목
             [ $okset -eq 1 ] || { ioerrs+=("기록 실패: sort 결과 불일치"); sorted_list=("${list[@]}"); }
-        else ioerrs+=("기록 실패: sort"); sorted_list=("${list[@]}"); fi
+        else sorted_list=("${list[@]}"); fi      # 정렬하지 못했으면 원래 목록을 그대로 쓴다(사유는 위에서 기록)
     fi
     local body=""
     [ ${#sorted_list[@]} -gt 0 ] && body=$(printf '%s\n' "${sorted_list[@]}")$'\n'

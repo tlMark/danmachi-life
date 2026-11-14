@@ -69,7 +69,7 @@ scenario loopkill s_loopkill 2>/dev/null; check '여러 항목을 도는 하위 
 s_bg_one() { cbody() { run c true; kill -9 $BASHPID; }; vr_expect a b c; vr_bg A run a true; vr_bg B run b true; vr_bg C cbody; vr_wait; }
 scenario bg_one s_bg_one 2>/dev/null; check 'D: 백그라운드 작업 3개 중 하나만 비정상 종료(항목 상태는 모두 정상) → 그 작업 하나로 실패' 1 $? 'bg:C exit=137' "$TMP/bg_one"
 s_bg_viol_lost() { body() { VR_NOTES=/dev/full; run zzz true; }; vr_expect a; run a true; vr_bg V body; vr_wait; }
-if [ $HAVE_FULL -eq 1 ]; then scenario bg_viol_lost s_bg_viol_lost; check 'D: 백그라운드에서 run 이 위반을 반환했지만 _violations.txt 기록이 유실 → 작업 종료 코드 2 로 실패' 1 $? 'bg:V exit=2' "$TMP/bg_viol_lost"
+if [ $HAVE_FULL -eq 1 ]; then scenario bg_viol_lost s_bg_viol_lost; check 'D: 백그라운드에서 _violations.txt 기록이 유실 → 작업 종료 코드 2 + 종료 기록으로 위반과 기록 실패가 각각 판정, 3' 3 $? "bg:V exit=2${NL}zzz 등록되지 않은 항목${NL}기록 실패: _violations.txt" "$TMP/bg_viol_lost"
 else skp 'D: 위반 기록 유실' '/dev/full 없음'; fi
 s_bg_viol() { vr_expect a; run a true; vr_bg V run zzz true; vr_wait; }
 scenario bg_viol s_bg_viol; check '백그라운드 위반(기록 정상) → 기록과 작업 종료 코드 두 경로 모두' 1 $? "zzz 등록되지 않은 항목${NL}bg:V exit=2" "$TMP/bg_viol"
@@ -79,6 +79,34 @@ scenario bg_rc7 s_bg_rc7; check 'D-1: 항목 상태는 모두 0, 백그라운드
 [ "$(cat "$TMP/bg_rc7/step_status.txt")" = "a 0${NL}b 0" ] && ok 'D-1: 그 경우 항목 상태는 실제로 모두 0' || bad 'D-1: 항목 상태'
 s_bg_rc0() { body() { run b true; return 0; }; vr_expect a b; run a true; vr_bg B body; vr_wait; }
 scenario bg_rc0 s_bg_rc0; check 'D-1: 작업 함수가 0 을 반환 → 실패 없음, 종료 코드 0' 0 $? '' "$TMP/bg_rc0"
+# D-1(f8d28f8 재검수): 작업 함수가 직접 exit 하는 경로도 종료 상태 정책을 통과한다
+if [ $HAVE_FULL -eq 1 ]; then
+    s_bx_lost() { body() { VR_NOTES=/dev/full; run zzz true; exit 0; }; vr_expect a; run a true; vr_bg V body; vr_wait; }
+    scenario bx_lost s_bx_lost; rc=$?; check 'D-1: 백그라운드에서 _violations.txt 기록 실패 + 미등록 위반 + 직접 exit 0 → "bg:V exit=2", 위반·기록 실패 각각, 3' 3 $rc "bg:V exit=2${NL}zzz 등록되지 않은 항목${NL}기록 실패: _violations.txt" "$TMP/bx_lost"
+    no_alldone "$TMP/bx_lost" && ok 'D-1: 그 경우 ALL_DONE 없음' || bad 'D-1: ALL_DONE 있음'
+    s_bx_trap() { body() { trap 'echo replaced' EXIT; VR_NOTES=/dev/full; run zzz true; exit 0; }; vr_expect a; run a true; vr_bg V body; vr_wait; }
+    scenario bx_trap s_bx_trap; check 'D-1: 작업이 EXIT trap 을 바꾸고 exit 0 → exit 가로채기로 같은 판정' 3 $? "bg:V exit=2${NL}zzz 등록되지 않은 항목${NL}기록 실패: _violations.txt" "$TMP/bx_trap"
+    s_bx_builtin() { body() { VR_NOTES=/dev/full; run zzz true; builtin exit 0; }; vr_expect a; run a true; vr_bg V body; vr_wait; }
+    scenario bx_builtin s_bx_builtin; check 'D-1: 작업이 builtin exit 0 → EXIT trap 으로 같은 판정' 3 $? "bg:V exit=2${NL}zzz 등록되지 않은 항목${NL}기록 실패: _violations.txt" "$TMP/bx_builtin"
+    s_bx_bypass() { body() { trap - EXIT; VR_NOTES=/dev/full; run zzz true; builtin exit 0; }; vr_expect a; run a true; vr_bg V body; vr_wait; }
+    scenario bx_bypass s_bx_bypass; check 'D-1: trap 을 지우고 builtin exit 0(의도적 우회) → 종료 코드 0 이어도 "종료 기록 없음"으로 실패' 1 $? 'bg:V 종료 기록 없음' "$TMP/bx_bypass"
+else for n in 'exit 0 + 기록 유실' 'ALL_DONE' 'trap 교체' 'builtin exit' '의도적 우회'; do skp "D-1: $n" '/dev/full 없음'; done; fi
+s_bx_ok() { body() { run b true; exit 0; }; vr_expect a b; run a true; vr_bg B body; vr_wait; }
+scenario bx_ok s_bx_ok; check 'D-1: 위반 없이 직접 exit 0 → 실패 없음, 0' 0 $? '' "$TMP/bx_ok"
+s_bx7() { body() { run b true; exit 7; }; vr_expect a b; run a true; vr_bg B body; vr_wait; }
+scenario bx7 s_bx7; check 'D-1: 위반 없이 직접 exit 7 → "bg:B exit=7", 1' 1 $? 'bg:B exit=7' "$TMP/bx7"
+s_bx_noarg() { body() { run b true; false; exit; }; vr_expect a b; run a true; vr_bg B body; vr_wait; }
+scenario bx_noarg s_bx_noarg; check 'D-1: 인자 없는 exit(직전 코드 1) → "bg:B exit=1"' 1 $? 'bg:B exit=1' "$TMP/bx_noarg"
+s_bx_badflag() { body() { run b true; VR_VIOLATED=abc; exit 0; }; vr_expect a b; run a true; vr_bg B body; vr_wait; }
+scenario bx_badflag s_bx_badflag; check 'D-1: 위반 플래그가 숫자가 아님(검사 오류) → 성공 쪽으로 빠지지 않고 2' 1 $? 'bg:B exit=2' "$TMP/bx_badflag"
+s_bx_badcode() { body() { run b true; exit abc; }; vr_expect a b; run a true; vr_bg B body; vr_wait; }
+scenario bx_badcode s_bx_badcode 2>/dev/null; check 'D-1: 숫자가 아닌 exit 인자 → 2' 1 $? 'bg:B exit=2' "$TMP/bx_badcode"
+s_bx_twice() { body() { run b true; trap 'exit 0' EXIT; exit 5; }; vr_expect a b; run a true; vr_bg B body; vr_wait; }
+scenario bx_twice s_bx_twice; check 'D-1: 작업의 EXIT trap 이 다시 exit 0 을 부름(재진입) → 처음 정한 코드 5 유지' 1 $? 'bg:B exit=5' "$TMP/bx_twice"
+s_bx_norec() { body() { VR_BGREC=/nonexistent_vr_dir; run b true; }; vr_expect a b; run a true; vr_bg B body; vr_wait; }
+scenario bx_norec s_bx_norec; check 'D-1: 종료 기록을 쓰지 못함 → 2 + "종료 기록 없음"' 1 $? "bg:B exit=2${NL}bg:B 종료 기록 없음" "$TMP/bx_norec"
+s_bx_forge() { body() { trap - EXIT; printf 'v1 0000 x\n' > "$VR_BGREC/$vr__bg_id"; builtin exit 0; }; vr_expect a; run a true; vr_bg F body; vr_wait; }
+scenario bx_forge s_bx_forge; check 'D-1: 작업이 가짜 종료 기록을 쓰고 우회 종료 → "종료 기록 손상"' 1 $? 'bg:F 종료 기록 손상' "$TMP/bx_forge"
 s_nowait() { vr_expect a b; run a true; vr_bg B run b sh -c 'sleep 1'; }
 scenario nowait s_nowait; check 'vr_wait 를 부르지 않아도 vr_finish 가 남은 작업을 기다려 판정' 0 $? '' "$TMP/nowait"
 
@@ -102,7 +130,7 @@ if [ $HAVE_FULL -eq 1 ]; then
     s_exp_w() { VR_EXPECTED=/dev/full; vr_expect a; run a true; }
     scenario exp_w s_exp_w; check 'D: expected_steps.txt 쓰기 실패 → 성공 아님(3)' 3 $? '기록 실패: expected_steps.txt' "$TMP/exp_w"
     s_status_w() { body() { VR_ST_SAVE=$VR_ST; vr_hook_before_status() { ln -sf /dev/full "$VR_ST_SAVE/b.status.tmp.$BASHPID"; }; run b true; }; vr_expect a b; run a true; vr_bg B body; vr_wait; rm -f "$VR_ST"/b.status.tmp.*; }
-    scenario status_w s_status_w; check 'D: 상태 임시 파일 쓰기 실패 → 상태 없음 + 작업 종료 코드 2' 1 $? "b 시작했으나 상태 기록 없음${NL}bg:B exit=2" "$TMP/status_w"
+    scenario status_w s_status_w; check 'D: 상태 임시 파일 쓰기 실패 → 상태 없음 + 작업 종료 코드 2 + 하위 셸의 기록 실패, 3' 3 $? "b 시작했으나 상태 기록 없음${NL}bg:B exit=2${NL}기록 실패: b 상태 임시 파일" "$TMP/status_w"
 else for n in failed_steps 'failed_steps(실패 없음)' _violations step_status 99_done '99_done(실패 있음)' expected_steps status_tmp; do skp "D: $n 쓰기 실패" '/dev/full 없음'; done; fi
 s_sort() { vr_expect a b; run a true; run b sh -c 'exit 3'; sort() { return 1; }; }
 scenario sort_fail s_sort; check 'D: sort 실패 → 정렬 없이 실패 목록을 쓰고 기록 실패로 3' 3 $? "b exit=3${NL}기록 실패: sort" "$TMP/sort_fail"
@@ -119,6 +147,17 @@ scenario sort_aa s_sort_aa;     check 'D-2: 원본 a,b / 출력 a,a(중복 + 누
 scenario sort_ba s_sort_ba;     check 'D-2: 원본 a,b / 출력 b,a → 일치, 기록 실패 없음(1)' 1 $? "a exit=3${NL}b exit=3" "$TMP/sort_ba"
 [ "$(cat "$TMP/sort_ba/failed_steps.txt")" = "b exit=3${NL}a exit=3" ] && ok 'D-2: 일치하면 sort 의 출력 순서를 그대로 씀' || bad 'D-2: sort 출력 순서'
 scenario sort_none s_sort_none; check 'D-2: 원본 a,b / 출력 빈 결과 → 불일치, 3' 3 $? "a exit=3${NL}b exit=3${NL}기록 실패: sort 결과 불일치" "$TMP/sort_none"
+s_sort_ab()   { s_sort_base; }
+s_sort_trail(){ s_sort_base; sort() { cat > /dev/null; printf '%s\n' 'a exit=3' 'b exit=3' ''; }; }
+scenario sort_ab s_sort_ab;       check 'D-2: 원본 a,b / 실제 sort 결과 a,b → 일치(1)' 1 $? "a exit=3${NL}b exit=3" "$TMP/sort_ab"
+scenario sort_trail s_sort_trail; check 'D-2: 원본 a,b / 출력 a,b 뒤에 빈 줄 → 불일치, 3' 3 $? "a exit=3${NL}b exit=3${NL}기록 실패: sort 결과 불일치" "$TMP/sort_trail"
+s_sort_tmpc() { s_sort_base; VR_SORT_TMP=/nonexistent_vr_dir/x; }
+scenario sort_tmpc s_sort_tmpc; check 'D-2: sort 임시 파일 생성 실패 → 원래 목록 + 기록 실패, 3' 3 $? "a exit=3${NL}b exit=3${NL}기록 실패: sort 임시 파일 생성" "$TMP/sort_tmpc"
+s_sort_tmpr() { s_sort_base; vr_hook_sort_after_write() { rm -f "$1"; }; }
+scenario sort_tmpr s_sort_tmpr; check 'D-2: sort 임시 파일 읽기 실패 → 원래 목록 + 기록 실패, 3' 3 $? "a exit=3${NL}b exit=3${NL}기록 실패: sort 임시 파일 읽기" "$TMP/sort_tmpr"
+s_sort_tmpx() { s_sort_base; vr_hook_sort_before_cleanup() { rm -f "$1"; mkdir "$1"; }; }
+scenario sort_tmpx s_sort_tmpx; check 'D-2: sort 임시 파일 정리 실패 → 기록 실패, 3' 3 $? "a exit=3${NL}b exit=3${NL}기록 실패: sort 임시 파일 정리" "$TMP/sort_tmpx"
+[ -z "$(ls -A "$TMP/sort_ab" | grep '^\.sort_out')" ] && ok 'D-2: 정상 경우 sort 임시 파일이 남지 않음' || bad 'D-2: sort 임시 파일 잔존'
 scenario sort_abc s_sort_abc;   check 'D-2: 원본 a,b / 출력 a,b,c(추가) → 불일치, 3(추가 항목은 쓰지 않음)' 3 $? "a exit=3${NL}b exit=3${NL}기록 실패: sort 결과 불일치" "$TMP/sort_abc"
 
 # D-3(8d18369 재검수): vr__write_verified 의 읽기 실패. cat 을 함수로 바꿔 지정한 일반 파일의 읽기만 실패시킨다(모의).
