@@ -43,7 +43,7 @@
 #   "등록된 항목 없음"                          vr_expect 로 등록한 항목이 0개
 #   "기록 실패: <대상>"                         판정에 필요한 I/O 가 실패함(이 경우 종료 코드는 3)
 
-VR_OUT=""; VR_L=""; VR_ST=""; VR_TOKEN=""; VR_RUN_ID=""; VR_LIFE=""; VR_LIFE_W=""; VR_LDONE=""; VR_LDONE_R=""; VR_MSGS=""; VR_LIFE_RD=""; VR_MSGS_R=""; VR_LIFE_R=""; VR__READER_STATE=""; VR__INIT_ERR=""
+VR_OUT=""; VR_L=""; VR_ST=""; VR_TOKEN=""; VR_RUN_ID=""; VR_LIFE=""; VR_LIFE_W=""; VR_LDONE=""; VR_LDONE_R=""; VR_MSGS=""; VR_LIFE_RD=""; VR_MSGS_R=""; VR_LIFE_R=""; VR__READER_STATE=""; VR__INIT_ERR=""; VR__INIT_PID=""; VR__WV_LEFT=""
 VR_FAILS=""; VR_EXPECTED=""; VR_NOTES=""; VR_STEPS=""; VR_DONE=""
 VR_EXP=(); declare -A VR_EXPN=()
 VR_VIOLATED=0; VR_IOERR=0; VR_RUN_ERRS=()
@@ -259,7 +259,7 @@ vr_init() {
     # 이전 초기화의 읽기 프로세스가 남아 있으면(running: 판정 없이 다시 부름, stuck: 이전에 종료를 확인하지 못함) 먼저 끝내고 확인한다.
     # 확인하지 못하면 새 초기화를 하지 않는다(이전 실행의 자원을 가진 프로세스가 남은 상태에서 성공하지 않음).
     if [ -n "${VR__READER_STATE:-}" ]; then vr__reader_stop || return 2; fi
-    VR__INIT_ERR=""
+    VR__INIT_ERR=""; VR__INIT_PID=$BASHPID
     vr__life_reset || return 2
     vr__platform_check || return 2
     VR_OUT=$1
@@ -377,7 +377,10 @@ vr__read_fd_bytes() {   # vr__read_fd_bytes <변수> <fd> : 그 fd 에서 EOF �
     __r=$(command od -An -v -tx1 <&"$2" 2>/dev/null) || return 1
     vr__hex_to_var "$1" "$__r"
 }
-# 보고 파일을 쓰고 확인한다: vr__write_verified <경로> <내용> [철회 내용]. 반환: 0 = 기록·확인 성공, 1 = 실패, 2 = 실패 + 철회 실패.
+# 보고 파일을 쓰고 확인한다: vr__write_verified <경로> <내용> [철회 내용].
+# 반환: 0 = 기록·확인 성공, 1 = 실패(우리 임시 객체는 남지 않음), 2 = 실패 + 철회 실패,
+#       3 = 실패 + 임시 객체 정리 실패(우리 객체가 남았거나 남았는지 확인 못 함 — 남은 경로는 VR__WV_LEFT. 소유를 입증하지 못한 것은 지우지 않음).
+# 단일 작성자 전제: 이 함수는 vr_finish 안에서만, 같은 셸에서 차례로 불린다(vr_finish 는 vr_init 을 부른 셸에서만 동작 — 아래 vr_finish 참고).
 # **보고 파일 경로는 쓰기용으로 열지 않는다**(열기는 심볼릭 링크를 따라가므로, 검사와 열기 사이에 경로가 링크로 바뀌면 남의 파일을
 # 자를 수 있다 — bash 리다이렉션에는 O_NOFOLLOW 가 없다). 대신:
 #  1. 경로의 현재 객체를 lstat(링크를 따라가지 않음)으로 기록한다. 없거나 링크 아닌 일반 파일일 때만 진행(링크·장치·FIFO·폴더면 1).
@@ -396,27 +399,37 @@ vr__read_fd_bytes() {   # vr__read_fd_bytes <변수> <fd> : 그 fd 에서 EOF �
 #   bash noclobber 가 그것을 자르지 않고 열 수 있으나, 일반 파일 확인에서 걸려 쓰지 않는다(FIFO 열기에서 멈출 수는 있음).
 vr__lid() { stat -c '%d:%i:%F' -- "$1" 2>/dev/null || echo none; }      # lstat 식별자(링크를 따라가지 않음). 없으면 none
 vr__write_verified() {
-    local f=$1 content=$2 retract=${3-} back w="" id0 id1 tmp hc=0 r
+    local f=$1 content=$2 retract=${3-} back w="" id0 id1 tmp hc=0 r hs
+    VR__WV_LEFT=""
     case "$f" in */*) ;; *) return 1 ;; esac
     if [ -L "$f" ]; then return 1; fi
     id0=$(vr__lid "$f")
     case "$id0" in none|*":regular file"|*":regular empty file") ;; *) return 1 ;; esac
     # 이름만 만든다(mktemp -u: 파일을 만들지 않음, 난수 16자리). 안전성은 이름이 아니라 아래 O_EXCL 생성에서 나온다.
-    tmp=$(mktemp -u "${f%/*}/.vr.rep.XXXXXXXXXXXXXXXX" 2>/dev/null) || return 1
+    tmp=$(mktemp -u "${f%/*}/.vr.rep.XXXXXXXXXXXXXXXX" 2>/dev/null) || return 1      # 이름 생성 실패: 만든 것이 없으므로 1
     [ "${tmp%/*}" = "${f%/*}" ] && [[ "${tmp##*/}" =~ ^\.vr\.rep\.[A-Za-z0-9]{16}$ ]] && [ "${tmp##*.}" != XXXXXXXXXXXXXXXX ] || return 1
     declare -F vr_hook_report_preopen > /dev/null && vr_hook_report_preopen "$f" "$tmp"     # 시험용 주입 지점(첫 확인 뒤·열기 직전)
     [[ $- == *C* ]] && hc=1
     set -C; { exec {w}>"$tmp"; } 2>/dev/null; r=$?; [ $hc -eq 1 ] || set +C
+    # 열기 실패(O_EXCL: 그 이름에 무엇이든 이미 있음) — 아무것도 만들지 않았으므로 지울 것도 없다(선점된 것은 남의 것으로 보고 그대로 둔다).
     if [ $r -ne 0 ] || [ -z "$w" ]; then return 1; fi
-    if [ -L "$tmp" ] || [ ! -f "/dev/fd/$w" ] || ! [ "$tmp" -ef "/dev/fd/$w" ] || [ "$(stat -L -c '%h:%s' "/dev/fd/$w" 2>/dev/null)" != 1:0 ]; then
-        eval "exec $w>&-"; return 1      # 우리가 만든 객체가 아님 — 쓰지도 지우지도 않는다
+    declare -F vr_hook_report_opened > /dev/null && vr_hook_report_opened "$tmp" "$w" "$f"   # 시험용 주입 지점(만든 직후·확인 전)
+    # 만든 객체 확인. bash noclobber 는 일반 파일을 O_EXCL 로만 연다(이미 있는 일반 파일은 거부, 열기 사이에 일반 파일로 바뀌면 닫고 실패)
+    # → fd 가 일반 파일이면 우리가 만든 객체다. fd 가 일반 파일이 아니면 미리 있던 남의 FIFO·장치를 연 것 → 쓰지도 지우지도 않는다(1).
+    if [ ! -f "/dev/fd/$w" ]; then eval "exec $w>&-" 2>/dev/null; return 1; fi
+    if [ -L "$tmp" ] || ! [ "$tmp" -ef "/dev/fd/$w" ]; then
+        # 우리 객체인데 그 이름에 다른 것이 있음(이름이 바뀜) — 그 이름의 것은 지우지 않는다. 우리 객체가 아직 어딘가 남았는지는 fd 로 본다.
+        hs=$(stat -L -c %h "/dev/fd/$w" 2>/dev/null); eval "exec $w>&-" 2>/dev/null
+        if [ "$hs" = 0 ]; then return 1; fi
+        VR__WV_LEFT="$tmp(우리 임시 객체가 다른 이름으로 남음 — 위치 미확인)"; return 3
     fi
+    if [ "$(stat -L -c '%h:%s' "/dev/fd/$w" 2>/dev/null)" != 1:0 ]; then vr__wv_drop "$tmp" "$w"; return $?; fi   # 우리 객체가 변조됨
     declare -F vr_hook_report_write > /dev/null && vr_hook_report_write "$f"     # 시험용 주입 지점(쓰기 전 경로 교체)
-    if ! printf '%s' "$content" 2>/dev/null >&"$w"; then vr__wv_drop "$tmp" "$w"; return 1; fi
+    if vr__inject report_content || ! printf '%s' "$content" 2>/dev/null >&"$w"; then vr__wv_drop "$tmp" "$w"; return $?; fi
     id1=$(vr__lid "$f")
-    if [ "$id1" != "$id0" ] || [ -L "$f" ]; then vr__wv_drop "$tmp" "$w"; return 1; fi      # 시작 뒤 경로가 바뀜 — 그 자리를 건드리지 않음
+    if [ "$id1" != "$id0" ] || [ -L "$f" ]; then vr__wv_drop "$tmp" "$w"; return $?; fi      # 시작 뒤 경로가 바뀜 — 그 자리를 건드리지 않음
     declare -F vr_hook_report_prerename > /dev/null && vr_hook_report_prerename "$f"   # 시험용 주입 지점(마지막 확인 뒤·rename 직전)
-    if ! mv -T -- "$tmp" "$f" 2>/dev/null; then vr__wv_drop "$tmp" "$w"; return 1; fi
+    if ! mv -T -- "$tmp" "$f" 2>/dev/null; then vr__wv_drop "$tmp" "$w"; return $?; fi
     declare -F vr_hook_report_written > /dev/null && vr_hook_report_written "$f"   # 시험용 주입 지점(놓은 뒤 같은 파일에 바이트 추가 등)
     # 읽기 실패는 "빈 내용"으로 오인하지 않는다. 바이트 보존 읽기(NUL 이 있으면 불일치)로 다시 읽고, 성공한 뒤에만 비교한다.
     if [ -L "$f" ] || [ ! -f "$f" ] || ! [ "$f" -ef "/dev/fd/$w" ] || ! vr__read_path_bytes back "$f" || [ -L "$f" ] || ! [ "$f" -ef "/dev/fd/$w" ] || [ "$back" != "$content" ]; then
@@ -425,10 +438,23 @@ vr__write_verified() {
     eval "exec $w>&-"
     return 0
 }
-vr__wv_drop() {   # vr__wv_drop <임시 이름> <fd> : 경로에 놓기 전 실패 — 우리 임시 파일을 소유 확인 삭제하고 fd 를 닫는다
-    vr__rm_owned "$1" "$2" > /dev/null 2>&1
-    [[ "$2" =~ ^[0-9]+$ ]] && eval "exec $2>&-" 2>/dev/null
-    return 0
+vr__wv_drop() {   # vr__wv_drop <임시 이름> <fd> : 경로에 놓기 전 실패 — 우리 임시 객체를 소유 확인 삭제하고 fd 를 닫는다
+    # 반환(= vr__write_verified 의 반환): 1 = 정리됨(우리 객체의 링크 수 0 을 fd 로 확인), 3 = 정리 실패(VR__WV_LEFT 에 경로·사유).
+    #  vr__rm_owned 0(지움) → 링크 수 0 확인 → 1 / 2(이름 없음) → 링크 수가 0 이면 1, 아니면 다른 이름으로 남음 → 3
+    #  1(보존: 남의 것이거나 링크가 여럿 — 소유를 입증 못 함) → 지우지 않고 3 / 3(삭제 결과 미확인) → 3 / fd 닫기 실패 → 3
+    local t=$1 fd=$2 r h c=0
+    [[ "$fd" =~ ^[0-9]+$ ]] || { VR__WV_LEFT="$t(fd 없음)"; return 3; }
+    vr__rm_owned "$t" "$fd" > /dev/null 2>&1; r=$?
+    h=$(stat -L -c %h "/dev/fd/$fd" 2>/dev/null)
+    eval "exec $fd>&-" 2>/dev/null || c=1
+    [ -e "/dev/fd/$fd" ] && c=1                    # 닫히지 않음
+    case $r in
+        0|2) if [ "$h" != 0 ]; then VR__WV_LEFT="$t(우리 임시 객체가 남음: 링크 수 ${h:-?}, vr__rm_owned=$r)"; return 3; fi ;;
+        1)   VR__WV_LEFT="$t(소유를 입증하지 못해 지우지 않음: vr__rm_owned=1)"; return 3 ;;
+        *)   VR__WV_LEFT="$t(삭제 결과 미확인: vr__rm_owned=$r)"; return 3 ;;
+    esac
+    [ $c -eq 0 ] || { VR__WV_LEFT="$t(fd $fd 닫기 실패)"; return 3; }
+    return 1
 }
 # 확인 실패 처리: vr__wv_fail <fd> <철회 내용>. 반환(= vr__write_verified 의 반환): 1 = 확인 실패(철회 내용이 없거나, 철회해서 그
 # 객체의 내용이 철회 내용과 바이트 단위로 같음을 다시 읽어 확인함), 2 = 확인 실패 + 철회 실패(쓰기 실패 또는 다시 읽은 내용 불일치).
@@ -833,11 +859,24 @@ vr_status_code() {   # 상태 기록은 바이트 단위로 정확히 "v1 <태�
     printf '%s\n' "${BASH_REMATCH[1]}"
 }
 
+vr__wv_note() {   # vr__wv_note <vr__write_verified 반환> <보고 파일 이름> : vr_finish 의 지역 배열 ioerrs 에 기록 실패를 더한다(동적 범위)
+    [ "$1" -eq 0 ] && return 0
+    ioerrs+=("기록 실패: $2")
+    [ "$1" -eq 3 ] && ioerrs+=("기록 실패: 임시 파일 정리 $VR__WV_LEFT")
+    return 0
+}
+# 단일 작성자: 보고 파일은 vr_finish 만 쓰고, vr_finish 는 vr_init 을 부른 셸(VR__INIT_PID)에서만 동작한다. 백그라운드 작업(vr_bg 하위 셸)이나
+# 명령 치환 같은 다른 셸에서 부르면 보고 파일을 쓰지 않고 3. 같은 출력 폴더에 동시에 두 번째 vr_init 이 성공하지 못하는 것은
+# 생명주기 FIFO 의 배타적 생성(mkfifo — 이미 있으면 실패)이 보장한다.
 vr_finish() {
+    if [ -z "${VR__INIT_PID:-}" ] || [ "$BASHPID" != "$VR__INIT_PID" ]; then
+        echo "vr_finish: vr_init 을 부른 셸(${VR__INIT_PID:-없음})이 아닌 셸($BASHPID)에서 불림 — 보고 파일을 쓰지 않음, 성공으로 판정하지 않음" >&2
+        return 3
+    fi
     vr_wait                                    # 남은 백그라운드 작업이 있으면 여기서 수집한다
     [ -d "$VR_BGREC" ] && vr__bg_collect_orphans   # 모든 후손이 끝날 때까지 기다리고, 부모가 회수하지 못한 기록을 흡수한다(판정 뒤에 늦게 생기는 기록이 없도록)
     local -a fails=() ioerrs=()
-    local e name code rc base f l notes steps=""
+    local e name code rc base f l notes steps="" r
     local total=${#VR_EXP[@]}
     # (1) 실행 중 메모리에 기억한 위반·기록 실패, 백그라운드 작업 실패
     for e in "${VR_RUN_ERRS[@]}"; do case "$e" in "기록 실패: "*) ioerrs+=("$e") ;; *) fails+=("$e") ;; esac; done
@@ -890,7 +929,7 @@ vr_finish() {
     local -A uniq=(); local -a list=()
     for e in "${fails[@]}"; do [ -n "$e" ] || continue; [ -n "${uniq[$e]+x}" ] && continue; uniq[$e]=1; list+=("$e"); done
     # (5) 보고 파일 쓰기. 쓴 뒤 일반 파일인지·내용이 같은지 다시 읽어 확인한다(0바이트 쓰기는 장치가 가득 차도 실패하지 않으므로).
-    vr__write_verified "$VR_STEPS" "$steps" || ioerrs+=("기록 실패: step_status.txt")
+    vr__write_verified "$VR_STEPS" "$steps"; vr__wv_note $? step_status.txt
     # 정렬 결과는 명령 치환이 아니라 임시 파일로 받는다(명령 치환은 끝의 빈 줄을 지우므로). 임시 파일의 생성·읽기·정리 실패도 기록 실패.
     local -a sorted_list=(); local stmp="${VR_SORT_TMP:-$VR_OUT/.sort_out.$BASHPID}" sort_ok=0
     if [ ${#list[@]} -gt 0 ]; then
@@ -930,21 +969,25 @@ vr_finish() {
     local body=""
     [ ${#sorted_list[@]} -gt 0 ] && body=$(printf '%s\n' "${sorted_list[@]}")$'\n'
     [ ${#ioerrs[@]} -gt 0 ] && body+=$(printf '%s\n' "${ioerrs[@]}")$'\n'
-    vr__write_verified "$VR_FAILS" "$body" || ioerrs+=("기록 실패: failed_steps.txt")
+    vr__write_verified "$VR_FAILS" "$body"; vr__wv_note $? failed_steps.txt
     local -a report=("${sorted_list[@]}" "${ioerrs[@]}")      # 99_done.log 와 표준 출력에는 failed_steps.txt 기록 실패까지 포함
     # (6) 최종 판정
     if [ ${#list[@]} -eq 0 ] && [ ${#ioerrs[@]} -eq 0 ]; then
         local msg="ALL_DONE: 모든 항목 종료 코드 0 ($total 개 항목)"
         vr__write_verified "$VR_DONE" "$msg"$'\n' "NOT_DONE: 99_done.log 에 ALL_DONE 을 기록하거나 확인하지 못함 — 성공으로 판정하지 않음"$'\n'
-        case $? in
+        r=$?
+        case $r in
             0) echo "$msg"; return 0 ;;
+            3) echo "기록 실패: 99_done.log (ALL_DONE 을 기록하거나 확인하지 못함 — 성공으로 판정하지 않음. 임시 파일 정리 실패: $VR__WV_LEFT)" >&2 ;;
             1) echo "기록 실패: 99_done.log (ALL_DONE 을 기록하거나 확인하지 못함 — 성공으로 판정하지 않음. 그 파일의 ALL_DONE 은 철회함(NOT_DONE))" >&2 ;;
             *) echo "기록 실패: 99_done.log (ALL_DONE 을 기록하거나 확인하지 못함 — 성공으로 판정하지 않음. ALL_DONE 철회도 실패 — 그 파일에 ALL_DONE 이 남았을 수 있음)" >&2 ;;
         esac
         return 3
     fi
     local head="FAILED_STEPS: ${#list[@]} (등록 항목 $total 개, 기록 실패 ${#ioerrs[@]} 건)"
-    vr__write_verified "$VR_DONE" "$head"$'\n'"$(printf '%s\n' "${report[@]}")"$'\n' || { ioerrs+=("기록 실패: 99_done.log"); report+=("기록 실패: 99_done.log"); }
+    vr__write_verified "$VR_DONE" "$head"$'\n'"$(printf '%s\n' "${report[@]}")"$'\n'; r=$?
+    if [ $r -ne 0 ]; then ioerrs+=("기록 실패: 99_done.log"); report+=("기록 실패: 99_done.log"); fi
+    if [ $r -eq 3 ]; then ioerrs+=("기록 실패: 임시 파일 정리 $VR__WV_LEFT"); report+=("기록 실패: 임시 파일 정리 $VR__WV_LEFT"); fi
     echo "$head"; printf '%s\n' "${report[@]}"
     [ ${#ioerrs[@]} -eq 0 ] && return 1
     return 3

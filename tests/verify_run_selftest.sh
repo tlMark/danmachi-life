@@ -1026,6 +1026,84 @@ mkext "$TMP/post_ext.ext"; scenario post_ext s_post_ext; rc=$?
 ( . "$HERE/lib/verify_run.sh"; vr__write_verified /dev/full x; [ $? -eq 1 ] && [ -c /dev/full ] && [ -z "$(ls -A /dev | grep '\.vr\.rep\.')" ] ); rc=$?
 [ $rc -eq 0 ] && ok '보고 파일 쓰기: 장치 파일 경로 → 1, 장치 노드 그대로, /dev 에 임시 이름 없음' || bad '보고 파일 쓰기: 장치 파일'
 
+# ── eab4a3c 보완(임시 객체 정리 실패 전파·분기·단일 작성자) — 합성 주입. 외부 파일은 사전 사본과 cmp·sha256 대조 ──────────────
+# 22. vr__wv_drop 단위: 정상 정리 → 1 / 소유 입증 실패(삭제 직전 링크 수 2) → 3·경로 진단·파일 보존 / vr__rm_owned 3 → 3 / 2 인데 남음 → 3
+( . "$HERE/lib/verify_run.sh"; D="$TMP/wd22"; mkdir -p "$D"; e=0
+  printf '' > "$D/a"; exec {fa}<"$D/a"; vr__wv_drop "$D/a" "$fa"; [ $? -eq 1 ] && [ ! -e "$D/a" ] || { echo '  정상 정리'; e=1; }
+  printf '' > "$D/b"; exec {fb}<"$D/b"; vr_hook_rm_stage() { [ "$1" = verified ] && ln "$2" "$D/b.extra"; return 0; }
+  vr__wv_drop "$D/b" "$fb"; r=$?; unset -f vr_hook_rm_stage
+  [ $r -eq 3 ] && [ -e "$D/b" ] && [[ "$VR__WV_LEFT" == "$D/b("*"vr__rm_owned=1"* ]] || { echo "  소유 입증 실패 r=$r [$VR__WV_LEFT]"; e=1; }
+  printf '' > "$D/c"; exec {fc}<"$D/c"; ( vr__rm_owned() { return 3; }; vr__wv_drop "$D/c" "$fc"; [ $? -eq 3 ] && [[ "$VR__WV_LEFT" == *"vr__rm_owned=3"* ]] ) || { echo '  rm_owned 3'; e=1; }
+  printf '' > "$D/d"; exec {fd2}<"$D/d"; ( vr__rm_owned() { return 2; }; vr__wv_drop "$D/d" "$fd2"; [ $? -eq 3 ] && [ -e "$D/d" ] && [[ "$VR__WV_LEFT" == *"링크 수 1"* ]] ) || { echo '  rm_owned 2 인데 남음'; e=1; }
+  vr__wv_drop "$D/x" ""; [ $? -eq 3 ] || { echo '  fd 없음'; e=1; }
+  exit $e ) > "$TMP/wd22.out" 2>&1; rc=$?
+[ $rc -eq 0 ] && ok '임시 객체 정리(vr__wv_drop): 정상 → 1 / 삭제 직전 링크 수 2(소유 입증 실패) → 3·경로 진단·보존 / vr__rm_owned 3 → 3 / 2 인데 남음 → 3 / fd 없음 → 3' || bad "임시 객체 정리 $(tr '\n' ';' < "$TMP/wd22.out")"
+# 23. vr__write_verified 분기별: 외부 파일 불변, 우리 객체만 소유 확인 정리, 정리 실패는 3, 성공으로 가지 않음
+wvb() {   # wvb <이름> <준비·주입 코드> <기대 반환> <추가 확인 코드>
+  ( . "$HERE/lib/verify_run.sh"; W="$TMP/wvb_$1"; mkdir -p "$W"; X="$TMP/wvb_$1.ext"; mkext "$X"; printf old > "$W/r.txt"; cp "$W/r.txt" "$W/r.orig"
+    eval "$2"; vr__write_verified "$W/r.txt" $'NEW\n' $'NOT_DONE\n'; r=$?
+    [ $r -eq "$3" ] || { echo "반환 $r(기대 $3) [$VR__WV_LEFT]"; exit 1; }
+    extsame "$X" || { echo '외부 파일 바뀜'; exit 2; }
+    eval "$4" || { echo "추가 확인 실패 [$VR__WV_LEFT]"; exit 3; } ) > "$TMP/wvb_$1.out" 2>&1
+}
+wvb mkfail 'mktemp() { return 1; }; vr_hook_report_preopen() { rm -f "$1"; ln -s "$X" "$1"; }' 1 'cmp -s "$W/r.txt" "$W/r.orig" && norep "$W"' \
+  && ok '분기 mktemp -u 실패 → 1, 원래 파일·외부 파일 그대로, 만든 것 없음' || bad "분기 mktemp 실패 $(cat "$TMP/wvb_mkfail.out")"
+wvb badname 'mktemp() { echo "$W/bad name"; }' 1 'cmp -s "$W/r.txt" "$W/r.orig" && [ ! -e "$W/bad name" ]' \
+  && ok '분기 임시 이름 형식 이상 → 1, 그 이름으로 아무것도 만들지 않음' || bad "분기 이름 형식 $(cat "$TMP/wvb_badname.out")"
+wvb prelink 'vr_hook_report_preopen() { ln -s "$X" "$2"; rm -f "$1"; ln -s "$X" "$1"; PRE=$2; }' 1 '[ -L "$PRE" ] && [ "$(readlink "$PRE")" = "$X" ]' \
+  && ok '분기 임시 이름을 외부 파일 링크가 선점(경로도 링크로) → O_EXCL 실패 1, 선점 링크를 지우지 않음, 외부 파일 그대로' || bad "분기 선점 링크 $(cat "$TMP/wvb_prelink.out")"
+wvb prereg 'vr_hook_report_preopen() { printf PRE > "$2"; PRE=$2; }' 1 '[ "$(cat "$PRE")" = PRE ] && cmp -s "$W/r.txt" "$W/r.orig"' \
+  && ok '분기 임시 이름을 남의 일반 파일이 선점 → O_EXCL 실패 1, 선점 파일(내용 PRE)을 지우지도 쓰지도 않음' || bad "분기 선점 일반 파일 $(cat "$TMP/wvb_prereg.out")"
+wvb opensize 'vr_hook_report_opened() { printf z >> "$1"; rm -f "$3"; ln -s "$X" "$3"; }' 1 'norep "$W" && [ -L "$W/r.txt" ]' \
+  && ok '분기 fd 확인 실패(만든 객체에 1바이트 — 크기 ≠ 0, 경로도 외부 링크로) → 우리 객체를 소유 확인 정리 1, 외부 파일 그대로' || bad "분기 크기 변조 $(cat "$TMP/wvb_opensize.out")"
+wvb openlink 'vr_hook_report_opened() { ln "$1" "$W/keep"; TMPN=$1; }' 3 '[ -e "$TMPN" ] && [[ "$VR__WV_LEFT" == "$TMPN("* ]] && cmp -s "$W/r.txt" "$W/r.orig"' \
+  && ok '분기 fd 확인 실패(만든 객체에 하드 링크 — 링크 수 2) → 소유 입증 실패로 지우지 않음, 3, 남은 경로를 진단에 남김' || bad "분기 링크 수 변조 $(cat "$TMP/wvb_openlink.out")"
+wvb openswap 'vr_hook_report_opened() { rm -f "$1"; printf FOREIGN > "$1"; TMPN=$1; }' 1 '[ "$(cat "$TMPN")" = FOREIGN ]' \
+  && ok '분기 만든 직후 임시 이름이 남의 파일로 바뀜(우리 객체 링크 수 0) → 남의 파일을 지우지 않음, 1' || bad "분기 이름 교체 $(cat "$TMP/wvb_openswap.out")"
+wvb openmove 'vr_hook_report_opened() { mv "$1" "$W/moved"; printf FOREIGN > "$1"; TMPN=$1; }' 3 '[ "$(cat "$TMPN")" = FOREIGN ] && [ -e "$W/moved" ] && [[ "$VR__WV_LEFT" == "$TMPN("* ]]' \
+  && ok '분기 만든 직후 우리 객체가 다른 이름으로 옮겨지고 그 자리에 남의 파일 → 남의 파일을 지우지 않음, 우리 객체가 남았으므로 3·진단' || bad "분기 이름 이동 $(cat "$TMP/wvb_openmove.out")"
+wvb content 'vr_hook_fail() { [ "$1" = report_content ]; }' 1 'norep "$W" && cmp -s "$W/r.txt" "$W/r.orig"' \
+  && ok '분기 내용 쓰기 실패 → 우리 객체 정리 1, 원래 파일 그대로' || bad "분기 내용 쓰기 $(cat "$TMP/wvb_content.out")"
+wvb contentleft 'vr_hook_fail() { [ "$1" = report_content ]; }; vr_hook_rm_stage() { [ "$1" = verified ] && ln "$2" "$W/keep2"; return 0; }' 3 '[ -n "$VR__WV_LEFT" ] && [ -e "${VR__WV_LEFT%%(*}" ] && cmp -s "$W/r.txt" "$W/r.orig"' \
+  && ok '분기 내용 쓰기 실패 + 정리 실패(삭제 직전 링크 수 2) → 3, 남은 임시 경로가 실제로 있고 진단에 포함' || bad "분기 내용 쓰기+정리 실패 $(cat "$TMP/wvb_contentleft.out")"
+wvb idchg 'vr_hook_report_write() { rm -f "$1"; ln -s "$X" "$1"; }' 1 'norep "$W" && [ -L "$W/r.txt" ]' \
+  && ok '분기 쓰는 동안 출력 경로 식별자 변경(외부 링크로) → 우리 객체 정리 1, 링크·외부 파일 그대로' || bad "분기 식별자 변경 $(cat "$TMP/wvb_idchg.out")"
+wvb renfail 'vr_hook_report_prerename() { rm -f "$1"; mkdir "$1"; }' 1 'norep "$W" && [ -d "$W/r.txt" ] && [ -z "$(ls -A "$W/r.txt")" ]' \
+  && ok '분기 rename 실패(경로가 폴더로 바뀜) → 우리 객체 정리 1, 폴더 그대로(비어 있음)' || bad "분기 rename 실패 $(cat "$TMP/wvb_renfail.out")"
+# 24. vr_finish 까지 전파: 정리 실패 → 기록 실패(3), 남은 경로가 보고에, ALL_DONE 없음
+fin_left() {   # fin_left <이름> <보고 파일 이름>
+  eval "s_fl_$1() { vr_hook_report_opened() { case \"\$3\" in */$2) ln \"\$1\" \"\$1.keep\" ;; esac; }; vr_expect a; run a true; }"
+  scenario "fl_$1" "s_fl_$1"
+}
+fin_left done 99_done.log; rc=$?
+{ [ $rc -eq 3 ] && no_alldone "$TMP/fl_done" && grep -q '임시 파일 정리 실패: .*\.vr\.rep\.' "$TMP/fl_done.finish_out" && [ -n "$(ls -A "$TMP/fl_done/logs" | grep '\.vr\.rep\.')" ]; } \
+  && ok 'vr_finish 전파(99_done.log·ALL_DONE): 임시 객체 정리 실패 → 3, ALL_DONE 없음, 진단에 남은 .vr.rep 경로, 그 파일은 보존' || bad "vr_finish 전파 99_done (rc=$rc)"
+fin_left fails failed_steps.txt; rc=$?
+{ [ $rc -eq 3 ] && no_alldone "$TMP/fl_fails" && grep -q '^기록 실패: 임시 파일 정리 .*\.vr\.rep\.' "$TMP/fl_fails/logs/99_done.log" && grep -qx '기록 실패: failed_steps.txt' "$TMP/fl_fails/logs/99_done.log"; } \
+  && ok 'vr_finish 전파(failed_steps.txt): 정리 실패 → 3, 99_done.log 에 "기록 실패: failed_steps.txt"와 남은 경로' || bad "vr_finish 전파 failed_steps (rc=$rc)"
+fin_left steps step_status.txt; rc=$?
+{ [ $rc -eq 3 ] && no_alldone "$TMP/fl_steps" && grep -q '^기록 실패: 임시 파일 정리 .*\.vr\.rep\.' "$TMP/fl_steps/failed_steps.txt"; } \
+  && ok 'vr_finish 전파(step_status.txt): 정리 실패 → 3, failed_steps.txt 에 남은 경로' || bad "vr_finish 전파 step_status (rc=$rc)"
+s_fl_mk() { mktemp() { [ "$1" = -u ] && return 1; command mktemp "$@"; }; vr_expect a; run a true; }
+scenario fl_mk s_fl_mk; rc=$?
+{ [ $rc -ne 0 ] && no_alldone "$TMP/fl_mk"; } && ok 'vr_finish 전파: 임시 이름 생성(mktemp -u) 실패 → 성공 아님, ALL_DONE 없음' || bad "vr_finish 전파 mktemp (rc=$rc)"
+s_fl_ct() { vr_hook_fail() { [ "$1" = report_content ]; }; vr_expect a; run a true; }
+scenario fl_ct s_fl_ct; rc=$?
+{ [ $rc -ne 0 ] && no_alldone "$TMP/fl_ct"; } && ok 'vr_finish 전파: 보고 내용 쓰기 실패 → 성공 아님, ALL_DONE 없음' || bad "vr_finish 전파 내용 쓰기 (rc=$rc)"
+# 25. 단일 작성자: vr_finish 는 vr_init 을 부른 셸에서만 — 백그라운드 작업·명령 치환에서 부르면 3, 보고 파일을 쓰지 않음
+s_cc_bg() { body() { run b true; vr_finish > "$TMP/cc_bg.out" 2>&1; echo $? > "$TMP/cc_bg.rc"; [ -e "$VR_DONE" ] && : > "$TMP/cc_bg.wrote"; return 0; }; vr_expect a b; run a true; vr_bg B body; vr_wait; }
+scenario cc_bg s_cc_bg; rc=$?
+{ [ $rc -eq 0 ] && [ "$(cat "$TMP/cc_bg.rc")" = 3 ] && grep -q 'vr_init 을 부른 셸' "$TMP/cc_bg.out" && [ ! -e "$TMP/cc_bg.wrote" ] && grep -qx 'ALL_DONE: 모든 항목 종료 코드 0 (2 개 항목)' "$TMP/cc_bg/logs/99_done.log"; } \
+  && ok '단일 작성자: 백그라운드 작업 안에서 vr_finish → 3·보고 파일 쓰지 않음, 최상위 vr_finish 는 정상(보고 유실 없음)' || bad "단일 작성자: 백그라운드 (rc=$rc)"
+( . "$HERE/lib/verify_run.sh"; vr_init "$TMP/cc_cs" || exit 9; vr_expect a; run a true; out=$(vr_finish 2>&1); r=$?; [ $r -eq 3 ] && [ ! -e "$TMP/cc_cs/logs/99_done.log" ] || exit 1
+  vr_finish > /dev/null 2>&1 ) ; rc=$?
+{ [ $rc -eq 0 ] && grep -qx 'ALL_DONE: 모든 항목 종료 코드 0 (1 개 항목)' "$TMP/cc_cs/logs/99_done.log"; } && ok '단일 작성자: 명령 치환 안의 vr_finish → 3·보고 파일 없음, 이어서 최상위 vr_finish 는 정상' || bad "단일 작성자: 명령 치환 (rc=$rc)"
+( . "$HERE/lib/verify_run.sh"; vr_init "$TMP/cc_two" || exit 9; vr_expect a; run a true
+  ( . "$HERE/lib/verify_run.sh"; vr_init "$TMP/cc_two" 2>/dev/null; echo $? > "$TMP/cc_two.second" )
+  vr_finish > /dev/null 2>&1 ); rc=$?
+{ [ $rc -eq 0 ] && [ "$(cat "$TMP/cc_two.second")" = 2 ] && grep -qx 'ALL_DONE: 모든 항목 종료 코드 0 (1 개 항목)' "$TMP/cc_two/logs/99_done.log" && [ -s "$TMP/cc_two/step_status.txt" ]; } \
+  && ok '단일 작성자: 실행 중인 출력 폴더에 다른 프로세스의 두 번째 vr_init → 2(생명주기 FIFO 배타 생성), 첫 실행의 보고는 그대로' || bad "단일 작성자: 두 번째 vr_init (rc=$rc)"
+
 # ── 재현성: 처리기 return 3 + builtin exit 5 를 10번 반복(매번 5) ──────────────────────────────────────────────
 rep_ok=0; for k in 1 2 3 4 5 6 7 8 9 10; do
     eval "s_rep_$k() { body() { trap 'return 3' EXIT; builtin exit 5; }; vr_expect a; run a true; vr_bg B body; vr_wait; }"
