@@ -555,9 +555,9 @@ DEAD='기록 실패: 후손 추적 알림 읽기(읽기 프로세스 비정상 �
   [ $rc -eq 2 ] && [ -z "$VR_LIFE_W" ] && [ -z "$VR_LDONE_R" ] && [ -z "$VR_MSGS_R" ] && [ -z "$VR_LIFE_R" ] && [ "$(life_fds)" = 0 ] \
   && [ "$(fdn $BASHPID .vr_done any)" = 0 ] && [ "$(fdn $BASHPID .vr_msgs any)" = 0 ] && [ ! -e "$TMP/lc_pre/.vr_life" ] && [ ! -e "$TMP/lc_pre/.vr_done" ] && [ ! -e "$TMP/lc_pre/.vr_msgs" ] ) \
   && ok '읽기 프로세스: "S" 전에 사망 → vr_init 2(시작 제한 시간 안에), fd·FIFO·알림 파일 정리' || bad '읽기 프로세스: S 전 사망'
-( . "$HERE/lib/verify_run.sh"; vr_hook_reader() { [ "$1" = start ] && sleep 3; }; VR__READER_START_TIMEOUT=1; t0=$SECONDS; vr_init "$TMP/lc_slow"; rc=$?
-  [ $rc -eq 2 ] && [ $((SECONDS - t0)) -le 2 ] && [ "$(life_fds)" = 0 ] ) \
-  && ok '읽기 프로세스: "S" 가 제한 시간 안에 오지 않음 → vr_init 2, 무한 대기 없음' || bad '읽기 프로세스: S 지연'
+( . "$HERE/lib/verify_run.sh"; vr_hook_reader() { [ "$1" = start ] && sleep 3; }; VR__READER_START_TIMEOUT=1; VR__READER_STOP_TIMEOUT=5; t0=$SECONDS; vr_init "$TMP/lc_slow"; rc=$?
+  [ $rc -eq 2 ] && [ $((SECONDS - t0)) -le 7 ] && [ "$(life_fds)" = 0 ] && [ -z "$VR__READER_STATE" ] && [ ! -e "$TMP/lc_slow/.vr_done" ] && [ ! -e "$TMP/lc_slow/.vr_msgs" ] ) \
+  && ok '읽기 프로세스: "S" 가 시작 제한 시간 안에 오지 않음 → 그 프로세스의 종료를 확인한 뒤(종료 확인 제한 안) vr_init 2, 자원 정리, 무한 대기 없음' || bad '읽기 프로세스: S 지연'
 # 2. S 직후 사망(작업은 모두 정상이어도 성공 아님)
 s_lc_post() { kill -9 "$VR_LIFE_RD"; sleep 0.2; vr_expect a; vr_bg A run a true; vr_wait; }
 scenario lc_post s_lc_post; lc_fail lc_post '읽기 프로세스: "S" 직후 사망(작업은 모두 정상) → 비정상 종료로 기록 실패, 3, ALL_DONE 없음' "$DEAD" $?
@@ -626,6 +626,99 @@ done
 # 10. 읽기 프로세스 PID 값은 판단에 쓰지 않음(재사용돼도 무관)
 s_lc_pid() { VR_LIFE_RD=1; vr_expect a; vr_bg A run a true; vr_wait; }
 scenario lc_pid s_lc_pid; check '읽기 프로세스: 기록된 PID 값을 바꿔도 판정 무관(상태는 완료 FIFO 로만 판단), 0' 0 $? '' "$TMP/lc_pid"
+
+# ── 초기화 실패 뒤 읽기 프로세스 종료·회수와 재호출(eebeeec 반려) ────────────────────────────────────────────
+# holders <폴더> : 그 폴더의 .vr_* (생명주기 FIFO·완료 FIFO·알림 파일)를 가리키는 fd 를 가진 프로세스 수(/proc 직접 확인)
+holders() { local p c=0; for p in /proc/[0-9]*; do ls -l "$p/fd" 2>/dev/null | grep -qF "$1/.vr_" && c=$((c + 1)); done; echo $c; }
+gone() { local k=0; while kill -0 "$1" 2>/dev/null && [ $k -lt 30 ]; do sleep 0.1; k=$((k + 1)); done; ! kill -0 "$1" 2>/dev/null; }
+novr() { [ -z "$(ls -A "$1" 2>/dev/null | grep '^\.vr_')" ]; }
+# 같은 출력 경로로 즉시 재호출: 새 읽기 프로세스가 이전 FIFO·알림 파일을 참조하지 않고(지워진 대상 없음, 현재 경로와 같은 파일), 정상 완료·정리
+recall_ok() {   # recall_ok <폴더>   (vr_init 직후에 부른다)
+    local d=$1 rd=$VR_LIFE_RD f t
+    for f in /proc/$rd/fd/*; do t=$(readlink "$f"); case "$t" in *"(deleted)"*) return 11 ;; "$d"/.vr_*) [ "$t" -ef "$f" ] || return 12 ;; esac; done
+    [ "$(fdn $rd "$d/.vr_life" ro)" = 1 ] && [ "$(fdn $rd "$d/.vr_done" w)" = 1 ] && [ "$(fdn $rd "$d/.vr_msgs" w)" = 1 ] || return 13
+    vr_expect a; run a true; vr_finish > /dev/null 2>&1 || return 14
+    gone "$rd" && novr "$d" && [ "$(holders "$d")" = 0 ] || return 15
+}
+for st in ldone msgsr msgsid; do
+    ( . "$HERE/lib/verify_run.sh"; vr_hook_reader() { [ "$1" = after_s ] && printf '%s' "$BASHPID" > "$TMP/if_$st.rpid"; }
+      vr_hook_init_fail() { [ "$1" = "$st" ]; }; d="$TMP/if_$st"
+      vr_init "$d"; rc=$?; rp=$(cat "$TMP/if_$st.rpid")
+      [ $rc -eq 2 ] && [ -n "$rp" ] && gone "$rp" && [ "$(holders "$d")" = 0 ] && novr "$d" && [ -z "$VR__READER_STATE" ] \
+        && [ -z "$VR_LIFE_W$VR_LDONE_R$VR_MSGS_R$VR_LIFE_R" ] || exit 1
+      unset -f vr_hook_init_fail vr_hook_reader
+      vr_init "$d" || exit 2; recall_ok "$d" || exit $? ); rc=$?
+    case $st in ldone) nm='A: S 수신 뒤 완료 FIFO 수신 준비(동일성 확인) 실패' ;; msgsr) nm='B: S 수신 뒤 알림 읽기 fd 열기 실패' ;; msgsid) nm='C: S 수신 뒤 알림 파일 동일성 검증 실패' ;; esac
+    [ $rc -eq 0 ] && ok "초기화 실패 $nm → vr_init 2, 읽기 프로세스 종료 확인(PID·/proc), fd·FIFO·알림 파일 정리 / D: 같은 경로 즉시 재호출 성공·정상 완료·정리" || bad "초기화 실패 $nm (단계 $rc)"
+done
+# C′: 동일성 검증 시점에 알림 파일이 실제로 남의 파일로 바뀜 → 그 파일은 지우지 않음, 재호출은 그 자리를 비울 때까지 거부
+( . "$HERE/lib/verify_run.sh"; d="$TMP/if_repl"
+  vr_hook_init_fail() { [ "$1" = msgsid ] && { rm -f "$VR_MSGS"; printf 'foreign\n' > "$VR_MSGS"; }; return 1; }
+  vr_init "$d"; rc=$?; [ $rc -eq 2 ] && [ "$(cat "$d/.vr_msgs")" = foreign ] && [ ! -e "$d/.vr_life" ] && [ ! -e "$d/.vr_done" ] && [ "$(holders "$d")" = 0 ] || exit 1
+  [ -z "$(ls -A "$d" | grep '\.del\.')" ] || exit 2
+  unset -f vr_hook_init_fail; vr_init "$d"; [ $? -eq 2 ] && [ "$(cat "$d/.vr_msgs")" = foreign ] || exit 3
+  rm -f "$d/.vr_msgs"; vr_init "$d" || exit 4; recall_ok "$d" || exit $? ); rc=$?
+[ $rc -eq 0 ] && ok '초기화 실패 C′: 알림 파일이 남의 파일로 바뀜 → 남의 파일은 지우지 않고 보존, 나머지 정리, 재호출은 그 자리가 빌 때까지 거부(2), 비운 뒤 성공' || bad "초기화 실패 C′ (단계 $rc)"
+( . "$HERE/lib/verify_run.sh"; d="$TMP/if_del"
+  vr_hook_init_fail() { [ "$1" = msgsid ] && rm -f "$VR_MSGS"; return 1; }
+  vr_init "$d"; rc=$?; [ $rc -eq 2 ] && novr "$d" && [ "$(holders "$d")" = 0 ] || exit 1
+  unset -f vr_hook_init_fail; vr_init "$d" || exit 2; recall_ok "$d" || exit $? ); rc=$?
+[ $rc -eq 0 ] && ok '초기화 실패 C″: 동일성 검증 시점에 알림 파일이 지워짐 → vr_init 2, 정리, 같은 경로 재호출 성공' || bad "초기화 실패 C″ (단계 $rc)"
+( . "$HERE/lib/verify_run.sh"; d="$TMP/if_dir"
+  vr_hook_reader() { case $1 in after_s) printf '%s' "$BASHPID" > "$TMP/if_dir.rpid" ;; start) rm -f "$VR_MSGS"; mkdir "$VR_MSGS" ;; end) sleep 2 ;; esac; }
+  vr_init "$d"; rc=$?; rp=$(cat "$TMP/if_dir.rpid")
+  [ $rc -eq 2 ] && gone "$rp" && [ -d "$d/.vr_msgs" ] && [ ! -e "$d/.vr_life" ] && [ ! -e "$d/.vr_done" ] && [ "$(holders "$d")" = 0 ] \
+    && [ -z "$(ls -A "$d" | grep '\.del\.')" ] || exit 1
+  unset -f vr_hook_reader; vr_init "$d"; [ $? -eq 2 ] || exit 2; rmdir "$d/.vr_msgs"; vr_init "$d" || exit 3; recall_ok "$d" || exit $? ); rc=$?
+[ $rc -eq 0 ] && ok '초기화 실패 C‴: S 전에 알림 파일 자리가 디렉터리로 바뀜 → 일반 파일·쓰기 fd 와 같은 파일 확인으로 거부(2), 읽기 프로세스가 EOF 뒤 2초 더 살아도 종료 확인 뒤 반환, 남의 디렉터리는 원래 자리에 보존, 비운 뒤 재호출 성공' || bad "초기화 실패 C‴ (단계 $rc)"
+# S 전 사망 / S 직후 사망 + 후속 실패 — 각각의 정리 경로
+( . "$HERE/lib/verify_run.sh"; d="$TMP/if_pre"; vr_hook_reader() { [ "$1" = start ] && kill -9 $BASHPID; }
+  t0=$(date +%s%N); vr_init "$d"; rc=$?; dt=$(( ($(date +%s%N) - t0) / 1000000 ))
+  [ $rc -eq 2 ] && [ $dt -lt 3000 ] && [ "$(holders "$d")" = 0 ] && novr "$d" || exit 1
+  unset -f vr_hook_reader; vr_init "$d" || exit 2; recall_ok "$d" || exit $? ); rc=$?
+[ $rc -eq 0 ] && ok '초기화 실패: S 전 사망 → 완료 FIFO 가 곧바로 EOF(시작 제한 시간을 기다리지 않음), 정리, 같은 경로 재호출 성공' || bad "초기화 실패: S 전 사망 (단계 $rc)"
+( . "$HERE/lib/verify_run.sh"; d="$TMP/if_post"; vr_hook_reader() { [ "$1" = after_s ] && kill -9 $BASHPID; }; vr_hook_init_fail() { [ "$1" = ldone ]; }
+  vr_init "$d"; rc=$?; [ $rc -eq 2 ] && [ "$(holders "$d")" = 0 ] && novr "$d" || exit 1
+  unset -f vr_hook_reader vr_hook_init_fail; vr_init "$d" || exit 2; recall_ok "$d" || exit $? ); rc=$?
+[ $rc -eq 0 ] && ok '초기화 실패: S 직후 사망 + 후속 단계 실패 → 정리, 같은 경로 재호출 성공' || bad "초기화 실패: S 직후 사망 (단계 $rc)"
+# E: 종료 확인 실패 — 읽기 프로세스가 EOF 뒤 끝나지 않음 / 생명주기 쓰기 fd 를 가진 프로세스 때문에 EOF 를 받지 못함
+( . "$HERE/lib/verify_run.sh"; d="$TMP/if_stuck"; VR__READER_STOP_TIMEOUT=1
+  vr_hook_reader() { [ "$1" = after_s ] && printf '%s' "$BASHPID" > "$TMP/if_stuck.rpid"; [ "$1" = end ] && sleep 4; }; vr_hook_init_fail() { [ "$1" = ldone ]; }
+  t0=$SECONDS; vr_init "$d" 2> "$TMP/if_stuck.err"; rc=$?; rp=$(cat "$TMP/if_stuck.rpid")
+  [ $rc -eq 2 ] && [ $((SECONDS - t0)) -le 3 ] && [ "$VR__READER_STATE" = stuck ] && kill -0 "$rp" && grep -q '종료 확인 실패' "$TMP/if_stuck.err" \
+    && [ -p "$d/.vr_life" ] && [ -p "$d/.vr_done" ] && [ -f "$d/.vr_msgs" ] || exit 1          # 종료 확인 전에는 자원을 지우지 않음
+  unset -f vr_hook_init_fail vr_hook_reader
+  vr_init "$d" 2>/dev/null; [ $? -eq 2 ] && [ "$VR__READER_STATE" = stuck ] || exit 2     # 남아 있는 동안 재호출 거부
+  vr_init "$TMP/if_stuck_other" 2>/dev/null; [ $? -eq 2 ] || exit 3                       # 다른 경로로도 거부
+  gone "$rp" || sleep 3; gone "$rp" || exit 4
+  vr_init "$d" || exit 5; [ -z "$(ls -A "$d" | grep '\.del\.')" ] || exit 6; recall_ok "$d" || exit $? ); rc=$?
+[ $rc -eq 0 ] && ok 'E: 읽기 프로세스가 EOF 뒤 끝나지 않음, 종료 확인 1초 → 무한 대기 없이 2, stuck 기록, 자원 보존, 남아 있는 동안 재호출 거부, 끝난 뒤 재호출 성공·정리' || bad "E: 종료 확인 실패 (단계 $rc)"
+( . "$HERE/lib/verify_run.sh"; d="$TMP/if_hold"; VR__READER_STOP_TIMEOUT=1
+  vr_hook_init_fail() { if [ "$1" = ldone ]; then ( sleep 3; : ) & return 0; fi; return 1; }
+  vr_init "$d" 2>/dev/null; rc=$?; [ $rc -eq 2 ] && [ "$VR__READER_STATE" = stuck ] && [ "$(holders "$d")" -ge 2 ] || exit 1
+  unset -f vr_hook_init_fail; vr_init "$d" 2>/dev/null; [ $? -eq 2 ] || exit 2
+  sleep 3; VR__READER_STOP_TIMEOUT=5; vr_init "$d" || exit 3; recall_ok "$d" || exit $? ); rc=$?
+[ $rc -eq 0 ] && ok 'E′: 생명주기 쓰기 fd 를 가진 프로세스가 남아 읽기 프로세스가 EOF 를 받지 못함 → 2, stuck, 재호출 거부, 그 프로세스가 끝난 뒤 재호출 성공' || bad "E′: EOF 를 받지 못함 (단계 $rc)"
+# 성공한 초기화 뒤 판정 없이 같은 경로로 재호출 → 이전 읽기 프로세스 종료 확인 뒤 새 초기화
+( . "$HERE/lib/verify_run.sh"; d="$TMP/if_run"; vr_init "$d" || exit 1; rp=$VR_LIFE_RD
+  vr_init "$d" || exit 2; gone "$rp" || exit 3; recall_ok "$d" || exit $? ); rc=$?
+[ $rc -eq 0 ] && ok '재호출: 성공한 초기화 뒤 판정 없이 같은 경로로 다시 부름 → 이전 읽기 프로세스 종료 확인, 새 초기화 정상 완료' || bad "재호출: 실행 중 재호출 (단계 $rc)"
+# 소유 확인 삭제: 확인과 삭제 사이 경로 교체(경쟁 조건)
+( . "$HERE/lib/verify_run.sh"; d="$TMP/rmo"; mkdir -p "$d"; VR_RUN_ID=abcabcabcabc
+  printf a > "$d/mine"; exec {fd}<"$d/mine"; vr__rm_owned "$d/mine" "$fd"; [ $? -eq 0 ] && [ ! -e "$d/mine" ] || exit 1
+  printf a > "$d/x"; exec {fd2}<"$d/x"; rm -f "$d/x"; printf other > "$d/x"; vr__rm_owned "$d/x" "$fd2"; [ $? -eq 1 ] && [ "$(cat "$d/x")" = other ] || exit 2
+  vr__rm_owned "$d/none" "$fd"; [ $? -eq 2 ] || exit 3
+  printf b > "$d/nofd"; vr__rm_owned "$d/nofd" ""; [ $? -eq 1 ] && [ -e "$d/nofd" ] || exit 4
+  printf c > "$d/race"; exec {fd3}<"$d/race"; vr_hook_rm_owned() { rm -f "$1"; printf swapped > "$1"; }
+  vr__rm_owned "$d/race" "$fd3"; [ $? -eq 1 ] && [ "$(cat "$d/race")" = swapped ] && [ -z "$(ls "$d" | grep '\.del\.')" ] || exit 5 ); rc=$?
+[ $rc -eq 0 ] && ok '소유 확인 삭제: 내 파일 삭제 / 남의 파일 보존 / 없음 / fd 없음 보존 / 확인 직후 경로 교체(경쟁) → 교체된 남의 파일 보존·원래 자리' || bad "소유 확인 삭제 (단계 $rc)"
+for which in msgs done; do
+    eval "s_rmr_$which() { vr_hook_rm_owned() { case \"\$1\" in *.vr_$which) rm -f \"\$1\"; if [ $which = msgs ]; then printf foreign > \"\$1\"; else mkfifo \"\$1\"; fi ;; esac; }; vr_expect a; vr_bg A run a true; vr_wait; }"
+    scenario "rmr_$which" "s_rmr_$which"; rc=$?
+    { [ $rc -eq 3 ] && grep -qxF '기록 실패: 후손 추적 FIFO 삭제' "$TMP/rmr_$which/failed_steps.txt" && { [ -f "$TMP/rmr_$which/.vr_$which" ] || [ -p "$TMP/rmr_$which/.vr_$which" ]; } \
+      && [ -z "$(ls -A "$TMP/rmr_$which" | grep '\.del\.')" ] && no_alldone "$TMP/rmr_$which"; } \
+      && ok "판정 뒤 삭제: .vr_$which 를 확인 직후 남의 것으로 교체(경쟁) → 지우지 않고 원래 자리에 보존, 삭제 실패로 3" || bad "판정 뒤 삭제 경쟁: $which (rc=$rc)"
+done
 
 # ── 재현성: 처리기 return 3 + builtin exit 5 를 10번 반복(매번 5) ──────────────────────────────────────────────
 rep_ok=0; for k in 1 2 3 4 5 6 7 8 9 10; do

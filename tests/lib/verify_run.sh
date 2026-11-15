@@ -37,7 +37,7 @@
 #   "등록된 항목 없음"                          vr_expect 로 등록한 항목이 0개
 #   "기록 실패: <대상>"                         판정에 필요한 I/O 가 실패함(이 경우 종료 코드는 3)
 
-VR_OUT=""; VR_L=""; VR_ST=""; VR_TOKEN=""; VR_RUN_ID=""; VR_LIFE=""; VR_LIFE_W=""; VR_LDONE=""; VR_LDONE_R=""; VR_MSGS=""; VR_LIFE_RD=""; VR_MSGS_R=""; VR_LIFE_R=""
+VR_OUT=""; VR_L=""; VR_ST=""; VR_TOKEN=""; VR_RUN_ID=""; VR_LIFE=""; VR_LIFE_W=""; VR_LDONE=""; VR_LDONE_R=""; VR_MSGS=""; VR_LIFE_RD=""; VR_MSGS_R=""; VR_LIFE_R=""; VR__READER_STATE=""; VR__INIT_ERR=""
 VR_FAILS=""; VR_EXPECTED=""; VR_NOTES=""; VR_STEPS=""; VR_DONE=""
 VR_EXP=(); declare -A VR_EXPN=()
 VR_VIOLATED=0; VR_IOERR=0; VR_RUN_ERRS=()
@@ -65,9 +65,11 @@ vr__life_reset() {   # 읽기 프로세스는 생명주기 쓰기 fd 가 모두 
 #   R 1 = 알림을 파일에 옮기지 못한 적 있음. 최상위는 시작 때 정확히 "S <PID>", 끝에 정확히 "R 0"/"R 1" 만 받아들인다.
 vr__life_reader() {
     local line failed=0 n=0
-    exec {VR_LIFE_W}>&- {vr__dtmp}>&- < /dev/null > /dev/null 2>&1
+    exec {VR_LIFE_W}>&- < /dev/null > /dev/null 2>&1
+    if [ -n "${VR_LDONE_R:-}" ]; then exec {VR_LDONE_R}<&-; fi        # 최상위의 완료 FIFO 읽기 끝은 갖지 않는다
     declare -F vr_hook_reader > /dev/null && vr_hook_reader start          # 시험용 주입 지점(평소에는 정의되지 않음)
     printf 'S %s\n' "$BASHPID" >&"$vr__r_dw" || exit 1
+    declare -F vr_hook_reader > /dev/null && vr_hook_reader after_s
     while IFS= read -r -u "$vr__r_lr" line || [ -n "$line" ]; do     # -u: fd 를 0 번으로 잠시 복제하지 않고 바로 읽는다
         n=$((n + 1)); declare -F vr_hook_reader > /dev/null && vr_hook_reader line "$n"
         if vr__inject msgwrite || ! printf '%s\n' "$line" >&"$vr__r_mw"; then failed=1; fi
@@ -75,6 +77,52 @@ vr__life_reader() {
     done
     declare -F vr_hook_reader > /dev/null && vr_hook_reader end
     printf 'R %s\n' "$failed" >&"$vr__r_dw"
+}
+# 소유 확인 삭제: vr__rm_owned <경로> <그 파일을 가리키는 fd>. 경로를 실행 ID 가 든 고유 이름으로 원자적으로 옮긴 뒤,
+# 옮긴 대상이 그 fd 와 같은 파일(링크 아님)일 때만 지운다. 아니면(확인과 삭제 사이에 경로가 바뀜) 원래 자리로 되돌리고 1.
+# 경로에 아무것도 없으면 2(이미 없어짐 — 호출부가 판단). fd 가 없으면 1(소유를 확인할 수 없으므로 지우지 않음).
+vr__rm_owned() {
+    local p=$1 fd=$2 q
+    [ -n "$fd" ] || return 1
+    if [ ! -e "$p" ] && [ ! -L "$p" ]; then return 2; fi
+    q="$p.del.${VR_RUN_ID:-x}.$BASHPID"
+    if [ -e "$q" ] || [ -L "$q" ]; then return 1; fi
+    declare -F vr_hook_rm_owned > /dev/null && vr_hook_rm_owned "$p"      # 시험용 주입 지점(평소에는 정의되지 않음)
+    mv -T -- "$p" "$q" 2>/dev/null || return 1
+    if [ ! -L "$q" ] && [ "$q" -ef "/dev/fd/$fd" ]; then
+        rm -f -- "$q" 2>/dev/null; if [ -e "$q" ] || [ -L "$q" ]; then return 1; fi; return 0
+    fi
+    if [ ! -e "$p" ] && [ ! -L "$p" ]; then mv -T -- "$q" "$p" 2>/dev/null; fi     # 남의 것: 되돌린다(그 사이 또 바뀌었으면 고유 이름에 남김)
+    return 1
+}
+# 읽기 프로세스가 끝난 것을 확인한 뒤의 정리: 세 파일을 각자의 fd 로 소유 확인해 지우고, fd 를 모두 닫고, 변수를 비운다.
+# 반환: 0 = 모두 정리, 1 = 남은 것(남의 것으로 바뀌었거나 지우지 못함)이 있음.
+vr__life_cleanup_owned() {
+    local bad="" lfd dfd mfd r
+    # 알림 파일의 소유 판정은 우리가 만든 파일에 연 쓰기 fd(vr__r_mw)를 먼저 쓴다 — VR_MSGS_R 은 초기화 중 바뀐 경로를 열었을 수 있다
+    lfd=${VR_LIFE_R:-${vr__r_lr:-}}; dfd=${VR_LDONE_R:-}; mfd=${vr__r_mw:-${VR_MSGS_R:-}}
+    if [ -n "${VR_LIFE:-}" ]; then vr__rm_owned "$VR_LIFE" "$lfd"; r=$?; [ $r -eq 1 ] && bad=1; fi
+    if [ -n "${VR_LDONE:-}" ]; then vr__rm_owned "$VR_LDONE" "$dfd"; r=$?; [ $r -eq 1 ] && bad=1; fi
+    if [ -n "${VR_MSGS:-}" ]; then vr__rm_owned "$VR_MSGS" "$mfd"; r=$?; [ $r -eq 1 ] && bad=1; fi
+    VR_LIFE=""; VR_LDONE=""; VR_MSGS=""          # 이미 소유 확인으로 처리함 — vr__life_reset 이 경로로 다시 지우지 않게
+    vr__life_reset
+    [ -z "$bad" ]
+}
+# 읽기 프로세스가 시작된 뒤 그 생명주기를 끝낸다(초기화 실패·재호출 공통).
+#  1. 최상위의 생명주기 쓰기 끝과 완료 FIFO 쓰기 끝을 닫는다 → 후손이 없으면 읽기 프로세스가 EOF 를 받아 R 을 쓰고 끝난다.
+#  2. 종료 확인: 완료 FIFO 의 쓰기 끝은 읽기 프로세스만 가지므로, 최상위의 완료 FIFO 읽기 fd 가 EOF = 그 프로세스 종료.
+#     제한 시간 VR__READER_STOP_TIMEOUT(기본 10초). PID 로 판단하지 않는다.
+#  3. 종료가 확인된 뒤에만 FIFO·알림 파일·fd 를 정리한다.
+#  4. 확인하지 못하면 자원을 그대로 두고 VR__READER_STATE=stuck, VR__INIT_ERR 에 기록하고 1 — 다음 vr_init 은 종료가 확인될 때까지 실패한다.
+vr__reader_stop() {
+    local v
+    for v in VR_LIFE_W vr__r_dw vr__dtmp; do if [ -n "${!v:-}" ]; then eval "exec {$v}>&-" 2>/dev/null; fi; eval "$v=''"; done
+    if [ -n "${VR_LDONE_R:-}" ] && timeout "${VR__READER_STOP_TIMEOUT:-10}" cat <&"$VR_LDONE_R" > /dev/null 2>&1; then
+        vr__life_cleanup_owned; VR__READER_STATE=""; return 0
+    fi
+    VR__READER_STATE=stuck; VR__INIT_ERR="알림 읽기 프로세스 종료 확인 실패: ${VR_OUT:-?}"
+    printf 'vr_init: %s — 자원을 남겨 두며, 종료가 확인될 때까지 다시 초기화하지 않음\n' "$VR__INIT_ERR" >&2
+    return 1
 }
 vr__inject() {   # 시험용 실패 주입(평소에는 정의되지 않음): vr_hook_fail <지점> 이 0 을 돌려주면 그 지점을 실패로 본다
     declare -F vr_hook_fail > /dev/null && vr_hook_fail "$1"
@@ -96,6 +144,9 @@ vr__init_fail() {   # 시험용 실패 주입(평소에는 정의되지 않음):
 # 실패하면(반환 2) 임시 fd·생명주기 fd·FIFO 파일·VR_LIFE·VR_LIFE_W 를 모두 정리한 상태로 돌아온다(이후 vr_finish 는
 # "후손 추적 준비 안 됨"으로 실패). 이전에 실행한 vr_bg 작업이 남아 있는 상태에서의 재호출은 지원하지 않는다.
 vr_init() {
+    # 이전 초기화의 읽기 프로세스가 남아 있으면(running: 판정 없이 다시 부름, stuck: 이전에 종료를 확인하지 못함) 먼저 끝내고 확인한다.
+    # 확인하지 못하면 새 초기화를 하지 않는다(이전 실행의 자원을 가진 프로세스가 남은 상태에서 성공하지 않음).
+    if [ -n "${VR__READER_STATE:-}" ]; then vr__reader_stop || return 2; fi
     vr__life_reset
     VR_OUT=$1
     VR_L="$VR_OUT/logs"; VR_ST="$VR_OUT/status"
@@ -117,7 +168,9 @@ vr_init() {
     # vr_finish 는 자기 fd 를 닫고 EOF 를 기다린다 = 그 fd 를 가진 후손이 모두 끝났다(실행 표식을 쓰기 전에 부모가 죽어도 빠지지 않음).
     # run 으로 실행하는 명령에는 이 fd 를 닫고 넘긴다(검사 대상 명령이 남긴 프로세스 때문에 기다리지 않도록).
     VR_LIFE="$VR_OUT/.vr_life"; VR_LIFE_W=""
-    if ! rm -f "$VR_LIFE" || ! mkfifo "$VR_LIFE" || vr__init_fail fifo; then vr__life_reset; return 2; fi
+    # 그 자리에 이미 무엇이 있으면(이전 실행의 잔재·남의 파일) 지우지 않고 실패한다
+    if [ -e "$VR_LIFE" ] || [ -L "$VR_LIFE" ]; then VR_LIFE=""; return 2; fi
+    if ! mkfifo "$VR_LIFE" || vr__init_fail fifo; then vr__life_reset; return 2; fi
     # fd 할당. 목표: 이미 열린 fd 를 덮어쓰지 않으면서, 작업 코드가 번호를 직접 쓰는 fd(보통 3~10)와 겹치지 않는 높은 번호(200~249).
     #  (1) 먼저 bash 동적 할당({var})으로 연다 — 커널이 비어 있는 번호를 골라 주므로 기존 fd 를 덮어쓰지 않는다.
     #  (2) fd 목록(VR__FD_DIR, 기본 /dev/fd = 이 셸의 fd 표)이 열린 fd 를 실제로 보여 주는지, 방금 연 fd 와 0 으로 확인한다.
@@ -140,26 +193,33 @@ vr_init() {
         vr__init_cleanup; return 2
     fi
     exec {tmpfd}>&-
-    # 알림 읽기 프로세스 준비·시작·확인. fd 는 모두 여기서 연다(읽기 프로세스는 물려받은 fd 만 쓴다).
-    #  - 완료 FIFO: 먼저 읽기·쓰기(vr__dtmp, 막히지 않음)로 열고, 읽기 프로세스용 쓰기 fd(vr__r_dw)를 연다.
-    #  - 생명주기 FIFO 읽기 fd(vr__r_lr): 최상위가 쓰기 fd 를 가지므로 막히지 않음. 최상위도 VR_LIFE_R 로 계속 가진다(대체 대기용).
-    #  - 알림 파일: noclobber 로 새로 만들고 링크가 아닌 일반 파일인지 확인한 뒤, 추가 쓰기 fd(vr__r_mw)를 연다.
-    # 읽기 프로세스를 띄운 뒤 제한 시간(VR__READER_START_TIMEOUT, 기본 10초) 안에 정확히 "S <PID>" 를 받아야 한다.
-    # 그다음 최상위는 완료 FIFO 읽기 전용(VR_LDONE_R)과 알림 파일 읽기 전용(VR_MSGS_R)을 열고, 읽기 프로세스용 fd 는 닫는다.
-    # 이후 만들어지는 작업에는 이 fd 들이 상속되지만 vr_bg 하위 셸 시작 시와 run 명령에서 닫는다.
-    VR_LDONE="$VR_OUT/.vr_done"; VR_MSGS="$VR_OUT/.vr_msgs"; vr__dtmp=""; vr__r_dw=""; vr__r_lr=""; vr__r_mw=""
+    # 알림 읽기 프로세스 준비·시작·확인. fd 는 모두 여기서, 읽기 프로세스를 띄우기 전에 연다(읽기 프로세스는 물려받은 fd 만 쓴다).
+    #  - 완료 FIFO: 읽기·쓰기(vr__dtmp, 막히지 않음)로 연 상태에서 쓰기 전용(vr__r_dw, 읽기 프로세스용)과 읽기 전용(VR_LDONE_R, 최상위)을
+    #    열고 vr__dtmp 는 바로 닫는다. 읽기 프로세스를 띄운 직후 최상위의 vr__r_dw 를 닫으므로, 그 뒤 완료 FIFO 의 쓰기 끝은 읽기
+    #    프로세스만 가진다 → VR_LDONE_R 의 EOF = 읽기 프로세스 종료(시작 전에 죽어도 시작 대기가 곧바로 EOF 로 끝남).
+    #  - 생명주기 FIFO 읽기(vr__r_lr): 최상위가 쓰기 끝을 가지므로 막히지 않음. 성공하면 최상위가 VR_LIFE_R 로 계속 가진다.
+    #  - 알림 파일: 그 자리에 아무것도 없을 때 noclobber 로 새로 만들고, 링크가 아닌 일반 파일인지 확인한 뒤 추가 쓰기(vr__r_mw)로 연다.
+    # 읽기 프로세스를 띄운 뒤(VR__READER_STATE=started) 실패하면 vr__reader_stop 으로 종료를 확인하고 정리한다.
+    VR_LDONE="$VR_OUT/.vr_done"; VR_MSGS="$VR_OUT/.vr_msgs"; vr__dtmp=""; vr__r_dw=""; vr__r_lr=""; vr__r_mw=""; VR_LDONE_R=""; VR_MSGS_R=""
+    if [ -e "$VR_LDONE" ] || [ -L "$VR_LDONE" ] || [ -e "$VR_MSGS" ] || [ -L "$VR_MSGS" ]; then VR_LDONE=""; VR_MSGS=""; vr__life_reset; return 2; fi
     local hs=""
-    if ! rm -f "$VR_LDONE" "$VR_MSGS" 2>/dev/null || [ -e "$VR_LDONE" ] || [ -e "$VR_MSGS" ] || ! mkfifo "$VR_LDONE" \
-       || ! ( set -C; : > "$VR_MSGS" ) 2>/dev/null || [ ! -f "$VR_MSGS" ] || [ -L "$VR_MSGS" ] || vr__init_fail reader \
-       || ! exec {vr__dtmp}<>"$VR_LDONE" || ! exec {vr__r_dw}>"$VR_LDONE" || ! exec {vr__r_lr}<"$VR_LIFE" \
-       || ! exec {vr__r_mw}>>"$VR_MSGS"; then vr__life_reset; return 2; fi
+    if ! mkfifo "$VR_LDONE" || ! ( set -C; : > "$VR_MSGS" ) 2>/dev/null || [ ! -f "$VR_MSGS" ] || [ -L "$VR_MSGS" ] || vr__init_fail reader \
+       || ! exec {vr__dtmp}<>"$VR_LDONE" || ! exec {vr__r_dw}>"$VR_LDONE" || ! exec {VR_LDONE_R}<"$VR_LDONE" \
+       || ! exec {vr__r_lr}<"$VR_LIFE" || ! exec {vr__r_mw}>>"$VR_MSGS"; then vr__life_reset; return 2; fi
+    exec {vr__dtmp}>&-; vr__dtmp=""
     ( ( vr__life_reader ) & )
-    if ! IFS= read -r -t "${VR__READER_START_TIMEOUT:-10}" hs <&"$vr__dtmp" || ! [[ "$hs" =~ ^S\ [1-9][0-9]*$ ]] \
-       || ! exec {VR_LDONE_R}<"$VR_LDONE" || ! exec {VR_MSGS_R}<"$VR_MSGS" || ! [ "$VR_MSGS" -ef "/dev/fd/$VR_MSGS_R" ]; then
-        vr__life_reset; return 2
+    VR__READER_STATE=started
+    exec {vr__r_dw}>&-; vr__r_dw=""
+    if ! IFS= read -r -t "${VR__READER_START_TIMEOUT:-10}" hs <&"$VR_LDONE_R" || ! [[ "$hs" =~ ^S\ [1-9][0-9]*$ ]] \
+       || vr__init_fail ldone || ! [ "$VR_LDONE" -ef "/dev/fd/$VR_LDONE_R" ] \
+       || vr__init_fail msgsr || ! exec {VR_MSGS_R}<"$VR_MSGS" \
+       || vr__init_fail msgsid || [ -L "$VR_MSGS" ] || [ ! -f "$VR_MSGS" ] || ! [ "$VR_MSGS" -ef "/dev/fd/$VR_MSGS_R" ] \
+       || ! [ "/dev/fd/$VR_MSGS_R" -ef "/dev/fd/$vr__r_mw" ]; then      # 경로가 링크 아닌 일반 파일이고, 최상위가 읽을 파일 = 읽기 프로세스가 쓰는 파일
+        vr__reader_stop; return 2
     fi
     VR_LIFE_RD=${hs#S }; VR_LIFE_R=$vr__r_lr; vr__r_lr=""
-    exec {vr__dtmp}>&- {vr__r_dw}>&- {vr__r_mw}>&-; vr__dtmp=""; vr__r_dw=""; vr__r_mw=""
+    exec {vr__r_mw}>&-; vr__r_mw=""
+    VR__READER_STATE=running
 }
 
 vr__ioerr() { VR_IOERR=1; VR_RUN_ERRS+=("기록 실패: $1"); }
@@ -455,7 +515,6 @@ vr__bg_drain_descendants() {
     #     (중복 R, S, 손상) = 기록 실패(3) + 대체 대기.
     local done_out msgs extra="" line fallback="" rc
     if ! done_out=$(command cat <&"$VR_LDONE_R" 2>/dev/null); then vr__ioerr "후손 추적 완료 읽기"; fallback=1; fi
-    exec {VR_LDONE_R}<&-; VR_LDONE_R=""
     case "$done_out" in
         "R 0") ;;
         "R 1") vr__ioerr "후손 추적 알림 기록" ;;
@@ -469,31 +528,28 @@ vr__bg_drain_descendants() {
         extra=$(timeout "${VR__FALLBACK_WAIT:-30}" cat <&"$VR_LIFE_R" 2>/dev/null); rc=$?
         if [ $rc -eq 124 ]; then vr__ioerr "후손 종료 확인 시간 초과"; elif [ $rc -ne 0 ]; then vr__ioerr "후손 추적 대체 읽기"; fi
     fi
-    exec {VR_LIFE_R}<&-; VR_LIFE_R=""
+    VR__READER_STATE=""        # 완료 FIFO 가 EOF = 읽기 프로세스는 끝났다
     # (3) 알림 파일: 읽기는 vr_init 이 연 fd 로 한다(/dev/fd/N 을 다시 열어 처음부터 — 경로가 지워지거나 바뀌어도 원래 파일).
     #     경로가 여전히 그 파일(링크 아닌 일반 파일, 같은 파일)인지 확인한다. 아니면(삭제·교체·링크·다른 종류) 기록 실패(3).
     local msgs_same=1
     if [ ! -f "$VR_MSGS" ] || [ -L "$VR_MSGS" ] || ! [ "$VR_MSGS" -ef "/dev/fd/$VR_MSGS_R" ]; then vr__ioerr "후손 추적 알림 파일 변경"; msgs_same=""; fi
     if ! msgs=$(command cat "/dev/fd/$VR_MSGS_R" 2>/dev/null); then vr__ioerr "후손 추적 알림 파일 읽기"; fi
-    exec {VR_MSGS_R}<&-; VR_MSGS_R=""
     # 알림: "E <작업 ID> <작업 경로>" = 그 작업이 종료 기록을 쓰지 못함. 그 밖의 내용은 신뢰할 수 없으므로 기록 실패로 본다.
     while IFS= read -r line; do
         [ -n "$line" ] || continue
         if [[ "$line" =~ ^E\ ([0-9a-f]{12}_[0-9]+_[0-9]+)\ (.+)$ ]]; then vr__ioerr "bg:${BASH_REMATCH[2]} 종료 기록 쓰기"
         else vr__ioerr "후손 추적 FIFO 에 알 수 없는 내용"; fi
     done <<< "$msgs"$'\n'"$extra"
-    # (4) 삭제: 이 라이브러리가 만든 종류일 때만 지우고, 명령의 성공과 삭제 뒤 잔존을 모두 확인한다.
-    #     알림 파일이 바뀌었으면(위에서 이미 실패) 그 자리의 다른 것은 지우지 않는다.
-    local f bad=""
+    # (4) 삭제: 세 파일을 각자의 fd 로 소유 확인해 지운다(vr__rm_owned — 확인과 삭제 사이에 경로가 바뀌어도 남의 것은 지우지 않음).
+    #     알림 파일이 바뀌었으면(위에서 이미 실패) 그 자리의 것은 건드리지 않는다.
+    local bad="" r
     vr__inject rmfifo && bad=1
-    for f in "$VR_LIFE" "$VR_LDONE" "$VR_MSGS"; do
-        if [ "$f" = "$VR_MSGS" ] && [ -z "$msgs_same" ]; then continue; fi
-        if [ -z "$bad" ]; then
-            if [ "$f" = "$VR_MSGS" ]; then { [ -f "$f" ] && [ ! -L "$f" ] && rm -f -- "$f" 2>/dev/null; } || bad=1
-            else { [ -p "$f" ] && rm -f -- "$f" 2>/dev/null; } || bad=1; fi
-        fi
-        if [ -e "$f" ] || [ -L "$f" ]; then bad=1; fi
-    done
+    if [ -z "$bad" ]; then
+        vr__rm_owned "$VR_LIFE" "$VR_LIFE_R"; r=$?; [ $r -eq 0 ] || bad=1
+        vr__rm_owned "$VR_LDONE" "$VR_LDONE_R"; r=$?; [ $r -eq 0 ] || bad=1
+        if [ -n "$msgs_same" ]; then vr__rm_owned "$VR_MSGS" "$VR_MSGS_R"; r=$?; [ $r -eq 0 ] || bad=1; fi
+    fi
+    exec {VR_LDONE_R}<&- {VR_LIFE_R}<&- {VR_MSGS_R}<&-; VR_LDONE_R=""; VR_LIFE_R=""; VR_MSGS_R=""
     [ -z "$bad" ] || vr__ioerr "후손 추적 FIFO 삭제"
 }
 vr__bg_absorb() {   # vr__bg_absorb <id> : 부모가 회수하지 못한 종료 기록을 흡수
