@@ -387,12 +387,18 @@ bg 종료 기록 미회수: <ID>'
 ia_dir="$TMP/ia"; mkdir -p "$ia_dir"
 for stage in fifo open list range dup; do
     ( . "$HERE/lib/verify_run.sh"; vr_hook_init_fail() { [ "$1" = "$stage" ]; }
-      vr_init "$ia_dir/f_$stage"; rc=$?
-      [ $rc -eq 2 ] && [ -z "$VR_LIFE_W" ] && [ -z "$VR_LIFE" ] && [ ! -e "$ia_dir/f_$stage/.vr_life" ] && [ "$(life_fds)" = 0 ] || exit 1
+      vr_init "$ia_dir/f_$stage" 2>/dev/null; rc=$?
+      [ $rc -eq 2 ] && [ -z "$VR_LIFE_W" ] && [ -z "$VR_LIFE" ] && [ "$(life_fds)" = 0 ] || exit 1
+      if [ "$stage" = open ]; then   # FIFO 를 만들었으나 fd 를 열기 전에 실패: 소유를 입증할 수 없으므로 잔여물로 남기고, 같은 경로 재호출은 거부
+          [ -p "$ia_dir/f_$stage/.vr_life" ] && [ -n "$VR__INIT_ERR" ] || exit 4
+          unset -f vr_hook_init_fail; vr_init "$ia_dir/f_$stage" 2>/dev/null; [ $? -eq 2 ] && [ -p "$ia_dir/f_$stage/.vr_life" ] || exit 5
+      else [ ! -e "$ia_dir/f_$stage/.vr_life" ] || exit 6; fi
       unset -f vr_hook_init_fail; vr_init "$ia_dir/f_${stage}_retry" || exit 2
       [ "$(life_fds)" = 2 ] && [ "$(life_wfds)" = 1 ] && [ "$VR_LIFE_W" -ge 200 ] && [ "$VR_LIFE" -ef "/dev/fd/$VR_LIFE_W" ] || exit 3
       vr_expect a; run a true; vr_finish > /dev/null 2>&1 ) ; rc=$?
-    [ $rc -eq 0 ] && ok "보완 A: '$stage' 단계 실패 → 2, fd·FIFO·변수 모두 정리, 재호출은 정상 초기화·정상 판정" || bad "보완 A: '$stage' 단계 실패 정리 (rc=$rc)"
+    if [ "$stage" = open ]; then nm="보완 A: 'open' 단계(FIFO 를 만든 뒤 fd 를 열기 전) 실패 → 2, 소유를 입증할 수 없는 FIFO 는 지우지 않고 잔여물로 보존, 같은 경로 재호출 거부, 다른 경로 재호출은 정상"
+    else nm="보완 A: '$stage' 단계 실패 → 2, fd·FIFO·변수 모두 정리, 재호출은 정상 초기화·정상 판정"; fi
+    [ $rc -eq 0 ] && ok "$nm" || bad "$nm (rc=$rc)"
 done
 ( for n in {200..249}; do eval "exec $n>/dev/null"; done; . "$HERE/lib/verify_run.sh"; vr_init "$ia_dir/full"
   [ $? -eq 2 ] && [ -z "$VR_LIFE_W" ] && [ -z "$VR_LIFE" ] && [ ! -e "$ia_dir/full/.vr_life" ] && [ "$(life_fds)" = 0 ] ) \
@@ -490,10 +496,11 @@ s_rmf() { vr_hook_fail() { [ "$1" = rmfifo ]; }; vr_expect a; run a true; }
 scenario rmf s_rmf; check '결함 3: FIFO 삭제 실패(주입) → 기록 실패, 3' 3 $? '기록 실패: 후손 추적 FIFO 삭제' "$TMP/rmf"
 no_alldone "$TMP/rmf" && ok '결함 3: 그 경우 ALL_DONE 없음' || bad '결함 3: ALL_DONE 있음'
 ( . "$HERE/lib/verify_run.sh"; vr_init "$TMP/rmf2" || exit 1; vr_hook_fail() { [ "$1" = rmfifo ]; }; vr_expect a; run a true; vr_finish > /dev/null 2>&1; [ $? -eq 3 ] || exit 2
-  old=$VR_LIFE; [ -z "$VR_LIFE_W" ] && [ -p "$old" ] || exit 3          # 실패 뒤 상태: fd 닫힘, FIFO 남음
-  unset -f vr_hook_fail; vr_init "$TMP/rmf3" || exit 4; [ ! -e "$old" ] || exit 5   # 재호출: 이전 FIFO 정리 후 정상 초기화
-  vr_expect a; run a true; vr_finish > /dev/null 2>&1 ) \
-  && ok '결함 3: 삭제 실패 뒤 상태(fd 닫힘·FIFO 남음) 확인, 재호출하면 이전 FIFO 를 정리하고 정상 판정' || bad '결함 3: 삭제 실패 뒤 재호출'
+  old="$TMP/rmf2/.vr_life"; [ -z "$VR_LIFE_W" ] && [ -z "$VR_LIFE" ] && [ -p "$old" ] || exit 3   # 실패 뒤 상태: fd 닫힘, 변수 비움, FIFO 남음
+  unset -f vr_hook_fail; vr_init "$TMP/rmf3" || exit 4; [ -p "$old" ] || exit 5      # 다른 경로 재호출은 정상, 이전 FIFO 는 경로만 보고 지우지 않음(잔여물 보존)
+  vr_init "$TMP/rmf2" 2>/dev/null; [ $? -eq 2 ] && [ -p "$old" ] || exit 6            # 같은 경로 재호출은 그 잔여물 때문에 거부
+  vr_init "$TMP/rmf4" || exit 7; vr_expect a; run a true; vr_finish > /dev/null 2>&1 ) \
+  && ok '결함 3: 삭제 실패 뒤 상태(fd 닫힘·FIFO 남음), 다른 경로 재호출은 정상 판정, 이전 FIFO 는 소유를 입증할 수 없으므로 보존, 같은 경로 재호출은 거부' || bad '결함 3: 삭제 실패 뒤 재호출'
 s_rmf_ok() { vr_expect a; run a true; }
 scenario rmf_ok s_rmf_ok; { [ $? -eq 0 ] && [ ! -e "$TMP/rmf_ok/.vr_life" ]; } && ok '결함 3: 정상 경우 FIFO 삭제됨' || bad '결함 3: 정상 경우 FIFO 잔존'
 
@@ -654,7 +661,7 @@ done
 # C′: 동일성 검증 시점에 알림 파일이 실제로 남의 파일로 바뀜 → 그 파일은 지우지 않음, 재호출은 그 자리를 비울 때까지 거부
 ( . "$HERE/lib/verify_run.sh"; d="$TMP/if_repl"
   vr_hook_init_fail() { [ "$1" = msgsid ] && { rm -f "$VR_MSGS"; printf 'foreign\n' > "$VR_MSGS"; }; return 1; }
-  vr_init "$d"; rc=$?; [ $rc -eq 2 ] && [ "$(cat "$d/.vr_msgs")" = foreign ] && [ ! -e "$d/.vr_life" ] && [ ! -e "$d/.vr_done" ] && [ "$(holders "$d")" = 0 ] || exit 1
+  vr_init "$d" 2> "$d.err"; rc=$?; grep -q "정리 실패.*\.vr_msgs" "$d.err" || exit 7; [ $rc -eq 2 ] && [ "$(cat "$d/.vr_msgs")" = foreign ] && [ ! -e "$d/.vr_life" ] && [ ! -e "$d/.vr_done" ] && [ "$(holders "$d")" = 0 ] || exit 1
   [ -z "$(ls -A "$d" | grep '\.del\.')" ] || exit 2
   unset -f vr_hook_init_fail; vr_init "$d"; [ $? -eq 2 ] && [ "$(cat "$d/.vr_msgs")" = foreign ] || exit 3
   rm -f "$d/.vr_msgs"; vr_init "$d" || exit 4; recall_ok "$d" || exit $? ); rc=$?
@@ -666,7 +673,7 @@ done
 [ $rc -eq 0 ] && ok '초기화 실패 C″: 동일성 검증 시점에 알림 파일이 지워짐 → vr_init 2, 정리, 같은 경로 재호출 성공' || bad "초기화 실패 C″ (단계 $rc)"
 ( . "$HERE/lib/verify_run.sh"; d="$TMP/if_dir"
   vr_hook_reader() { case $1 in after_s) printf '%s' "$BASHPID" > "$TMP/if_dir.rpid" ;; start) rm -f "$VR_MSGS"; mkdir "$VR_MSGS" ;; end) sleep 2 ;; esac; }
-  vr_init "$d"; rc=$?; rp=$(cat "$TMP/if_dir.rpid")
+  vr_init "$d" 2> "$d.err"; rc=$?; rp=$(cat "$TMP/if_dir.rpid"); grep -q "정리 실패.*\.vr_msgs" "$d.err" || exit 7
   [ $rc -eq 2 ] && gone "$rp" && [ -d "$d/.vr_msgs" ] && [ ! -e "$d/.vr_life" ] && [ ! -e "$d/.vr_done" ] && [ "$(holders "$d")" = 0 ] \
     && [ -z "$(ls -A "$d" | grep '\.del\.')" ] || exit 1
   unset -f vr_hook_reader; vr_init "$d"; [ $? -eq 2 ] || exit 2; rmdir "$d/.vr_msgs"; vr_init "$d" || exit 3; recall_ok "$d" || exit $? ); rc=$?
@@ -719,6 +726,100 @@ for which in msgs done; do
       && [ -z "$(ls -A "$TMP/rmr_$which" | grep '\.del\.')" ] && no_alldone "$TMP/rmr_$which"; } \
       && ok "판정 뒤 삭제: .vr_$which 를 확인 직후 남의 것으로 교체(경쟁) → 지우지 않고 원래 자리에 보존, 삭제 실패로 3" || bad "판정 뒤 삭제 경쟁: $which (rc=$rc)"
 done
+
+# ── df59ff0 Codex 반려: 초기화 실패 경로의 소유권, 삭제 경쟁, 엄격한 형식, 보고 파일, 플랫폼 ─────────────────────────────
+ino() { stat -c '%i' "$1" 2>/dev/null; }
+# 1. Codex 재현: .vr_life 를 남의 FIFO 로 바꾼 뒤 초기화 실패 → 그 FIFO 를 지우지 않음(단계별)
+for st in list reader ldone; do
+    ( . "$HERE/lib/verify_run.sh"; d="$TMP/own_life_$st"
+      # 주입 함수 안에서는 시험의 지역 변수 d 를 쓰지 않는다(vr_init 의 local d 가 동적 스코프로 가려짐) — 라이브러리 변수로 경로를 만든다
+      vr_hook_init_fail() { if [ "$1" = "$st" ]; then rm -f "$VR_LIFE"; mkfifo "$VR_LIFE"; ino "$VR_LIFE" > "$VR_OUT.ino"; return 0; fi; return 1; }
+      vr_init "$d" 2> "$d.err"; rc=$?
+      [ $rc -eq 2 ] && [ -p "$d/.vr_life" ] && [ "$(ino "$d/.vr_life")" = "$(cat "$d.ino")" ] && grep -q "정리 실패.*\.vr_life" "$d.err" \
+        && [ -n "$VR__INIT_ERR" ] && [ -z "$(ls -A "$d" | grep '\.del\.')" ] && [ "$(holders "$d")" = 0 ] || exit 1
+      unset -f vr_hook_init_fail; vr_init "$d" 2>/dev/null; [ $? -eq 2 ] && [ "$(ino "$d/.vr_life")" = "$(cat "$d.ino")" ] || exit 2 ); rc=$?
+    [ $rc -eq 0 ] && ok "소유권: '$st' 단계에서 .vr_life 가 남의 FIFO 로 바뀐 뒤 초기화 실패 → 그 FIFO(같은 inode)를 지우지 않음, 정리 실패를 보고, 같은 경로 재호출 거부" || bad "소유권: .vr_life 교체 '$st' (단계 $rc)"
+done
+# 2. Codex 재현: .vr_msgs 를 'foreign' 일반 파일로 바꾼 뒤 초기화 실패(단계별)
+for st in reader ldone; do
+    ( . "$HERE/lib/verify_run.sh"; d="$TMP/own_msgs_$st"
+      vr_hook_init_fail() { if [ "$1" = "$st" ]; then rm -f "$VR_MSGS"; printf foreign > "$VR_MSGS"; return 0; fi; return 1; }
+      vr_init "$d" 2> "$d.err"; rc=$?
+      [ $rc -eq 2 ] && [ "$(cat "$d/.vr_msgs")" = foreign ] && grep -q "정리 실패.*\.vr_msgs" "$d.err" && [ ! -e "$d/.vr_life" ] && [ ! -e "$d/.vr_done" ] || exit 1
+      unset -f vr_hook_init_fail; vr_init "$d" 2>/dev/null; [ $? -eq 2 ] && [ "$(cat "$d/.vr_msgs")" = foreign ] || exit 2 ); rc=$?
+    [ $rc -eq 0 ] && ok "소유권: '$st' 단계에서 .vr_msgs 가 남의 파일로 바뀐 뒤 초기화 실패 → 그 파일(내용 foreign)을 지우지 않음, 우리 FIFO 는 정리, 같은 경로 재호출 거부" || bad "소유권: .vr_msgs 교체 '$st' (단계 $rc)"
+done
+# 3. 만든 직후 fd 를 열기 전에 실패(소유 입증 불가) → 잔여물 보존, 정리 실패 보고, 같은 경로 재호출 거부
+for st in done_created msgs_created; do
+    ( . "$HERE/lib/verify_run.sh"; d="$TMP/own_nofd_$st"; vr_hook_init_fail() { [ "$1" = "$st" ]; }
+      vr_init "$d" 2> "$d.err"; rc=$?
+      case $st in done_created) obj="$d/.vr_done"; t=p ;; msgs_created) obj="$d/.vr_msgs"; t=f ;; esac
+      [ $rc -eq 2 ] && [ -$t "$obj" ] && grep -q "정리 실패" "$d.err" && [ "$(holders "$d")" = 0 ] || exit 1
+      unset -f vr_hook_init_fail; vr_init "$d" 2>/dev/null; [ $? -eq 2 ] && [ -$t "$obj" ] || exit 2
+      vr_init "$d.other" || exit 3; vr_expect a; run a true; vr_finish > /dev/null 2>&1 ) ; rc=$?
+    [ $rc -eq 0 ] && ok "소유권: '$st'(만든 직후 fd 열기 전) 실패 → 소유를 입증할 수 없는 객체는 잔여물로 보존, 정리 실패 보고, 같은 경로 거부, 다른 경로는 정상" || bad "소유권: $st (단계 $rc)"
+done
+# 4. 삭제 경쟁: 임시 목적 경로 생성 시점 / 이동 직후 / 삭제 직전 확인 시점에 남의 것이 들어옴
+for stg in dir moved verified; do
+    ( . "$HERE/lib/verify_run.sh"; d="$TMP/rmrace_$stg"; mkdir -p "$d"; VR_RUN_ID=abcabcabcabc
+      printf mine > "$d/obj"; exec {fd}<"$d/obj"
+      case $stg in
+        dir)      vr_hook_rm_stage() { [ "$1" = dir ] && printf foreign > "$2"; } ;;
+        moved)    vr_hook_rm_stage() { [ "$1" = moved ] && { printf foreign > "$2.x"; mv -f "$2.x" "$2"; }; } ;;
+        verified) vr_hook_rm_stage() { [ "$1" = verified ] && { mkfifo "$2.x"; mv -f "$2.x" "$2"; }; } ;;
+      esac
+      vr__rm_owned "$d/obj" "$fd"; r=$?; [ $r -eq 1 ] || exit 1
+      case $stg in
+        dir)      [ "$(cat "$d/obj")" = mine ] && [ "$(cat "$d"/.vr.del.*/obj)" = foreign ] || exit 2 ;;      # 원래 것·남의 것 모두 보존(덮어쓰지 않는 이동)
+        moved)    [ -f "$d/obj" ] && [ "$(cat "$d/obj")" = foreign ] && [ -z "$(ls -A "$d" | grep '\.del\.')" ] || exit 3 ;;   # 남의 것을 원래 자리로
+        verified) [ -p "$d/obj" ] && [ -z "$(ls -A "$d" | grep '\.del\.')" ] || exit 4 ;;                                   # 종류(FIFO)까지 보존
+      esac ); rc=$?
+    [ $rc -eq 0 ] && ok "삭제 경쟁: '$stg' 시점에 남의 것이 들어옴 → 지우지 않고 내용·종류 보존(1)" || bad "삭제 경쟁: $stg (단계 $rc)"
+done
+for stg in moved verified; do
+    eval "s_rmst_$stg() { vr_hook_rm_stage() { case \"\$2\" in *.vr.del.*) [ \"\$1\" = $stg ] && case \"\$2\" in */obj) :;; esac ;; esac; [ \"\$1\" = $stg ] && [ ! -e \"$TMP/rmst_$stg.done\" ] && { : > \"$TMP/rmst_$stg.done\"; printf foreign > \"\$2.x\"; mv -f \"\$2.x\" \"\$2\"; }; return 0; }; vr_expect a; vr_bg A run a true; vr_wait; }"
+    scenario "rmst_$stg" "s_rmst_$stg"; rc=$?
+    { [ $rc -eq 3 ] && grep -qxF '기록 실패: 후손 추적 FIFO 삭제' "$TMP/rmst_$stg/failed_steps.txt" && no_alldone "$TMP/rmst_$stg" \
+      && [ "$(cat "$TMP/rmst_$stg/.vr_life" 2>/dev/null)" = foreign ]; } \
+      && ok "판정 뒤 삭제 경쟁: 임시 목적 경로가 '$stg' 시점에 남의 파일로 바뀜 → 그 파일을 원래 자리로 보존, 삭제 실패 3, ALL_DONE 없음" || bad "판정 뒤 삭제 경쟁: $stg (rc=$rc)"
+done
+# 5. 상태 기록의 엄격한 형식
+for kind in nl1 nl3 junk sp sym; do
+    case $kind in
+        nl1)  m='printf "\n" >> "$VR_ST/b.status"' ;;
+        nl3)  m='printf "\n\n\n" >> "$VR_ST/b.status"' ;;
+        junk) m='printf "extra" >> "$VR_ST/b.status"' ;;
+        sp)   m='c=$(cat "$VR_ST/b.status"); printf "%s \n" "${c%$'"'"'\n'"'"'}" > "$VR_ST/b.status"' ;;
+        sym)  m='cp "$VR_ST/b.status" "$VR_ST/b.real"; rm -f "$VR_ST/b.status"; ln -s b.real "$VR_ST/b.status"' ;;
+    esac
+    eval "s_stx_$kind() { vr_expect a b; run a true; run b true; $m; }"
+    scenario "stx_$kind" "s_stx_$kind"; rc=$?
+    exp='b 상태 기록 손상'      # sym 의 b.real 은 .status 가 아니므로 상태 폴더 검사 대상이 아님
+    check "엄격한 형식: 정상 상태 기록 + '$kind' → 손상, 성공 아님" 1 $rc "$exp" "$TMP/stx_$kind"
+done
+# 6. 완료 FIFO: R 0 뒤 빈 줄 / 추가 레코드
+for kind in nl rec; do
+    case $kind in nl) w='\n' ;; rec) w='R 0\n' ;; esac
+    eval "s_dnx_$kind() { body() { run b true; printf '$w' > \"\$VR_LDONE\"; }; vr_expect a b; run a true; vr_bg B body; vr_wait; }"
+    scenario "dnx_$kind" "s_dnx_$kind"; lc_fail "dnx_$kind" "엄격한 형식: 완료 FIFO 에 R 0 과 함께 '$kind'(빈 줄·추가 레코드) → 내용 이상, 3" '기록 실패: 후손 추적 완료 FIFO 내용 이상' $?
+done
+s_mnl() { body() { run b true; printf '\n' >&"$VR_LIFE_W"; }; vr_expect a b; run a true; vr_bg B body; vr_wait; }
+scenario mnl s_mnl; lc_fail mnl '엄격한 형식: 생명주기 FIFO 에 빈 줄만 씀 → 알 수 없는 내용, 3' '기록 실패: 후손 추적 FIFO 에 알 수 없는 내용' $?
+# 7. 보고 파일: 심볼릭 링크로 바뀜 / 검증 도중 경로 교체
+s_rp_sym() { vr_expect a; run a true; : > "$TMP/rp_sym.target"; rm -f "$VR_FAILS"; ln -s "$TMP/rp_sym.target" "$VR_FAILS"; vr_expect_sym=1; }
+scenario rp_sym s_rp_sym; rc=$?
+{ [ $rc -eq 3 ] && [ ! -s "$TMP/rp_sym.target" ] && [ -L "$TMP/rp_sym/failed_steps.txt" ]; } && ok '보고 파일: failed_steps.txt 가 심볼릭 링크 → 쓰지 않음(링크 대상 그대로), 기록 실패 3' || bad "보고 파일: 심볼릭 링크 (rc=$rc)"
+s_rp_swap() { vr_hook_report_write() { case "$1" in */99_done.log) rm -f "$1"; printf other > "$1" ;; esac; }; vr_expect a; run a true; }
+scenario rp_swap s_rp_swap; rc=$?
+{ [ $rc -eq 3 ] && no_alldone "$TMP/rp_swap" && [ "$(cat "$TMP/rp_swap/logs/99_done.log")" = other ]; } && ok '보고 파일: 99_done.log 를 쓰는 도중 경로가 바뀜 → 검증 실패, ALL_DONE 없음, 3(바뀐 파일은 그대로)' || bad "보고 파일: 검증 중 교체 (rc=$rc)"
+s_rp_swap2() { vr_hook_report_write() { case "$1" in */step_status.txt) rm -f "$1"; ln -s /dev/null "$1" ;; esac; }; vr_expect a; run a true; }
+scenario rp_swap2 s_rp_swap2; check '보고 파일: step_status.txt 를 쓰는 도중 심볼릭 링크로 바뀜 → 기록 실패 3' 3 $? '기록 실패: step_status.txt' "$TMP/rp_swap2"
+# 8. 플랫폼 확인
+( . "$HERE/lib/verify_run.sh"; uname() { echo Darwin; }; vr_init "$TMP/plat1" 2> "$TMP/plat1.err"; [ $? -eq 2 ] && grep -q '지원하지 않는 환경:.*Linux 전용' "$TMP/plat1.err" && [ ! -e "$TMP/plat1" ] ) \
+  && ok '플랫폼: Linux 가 아니면 vr_init 2, 사유 출력, 출력 폴더를 만들지 않음' || bad '플랫폼: 비 Linux'
+mkdir -p "$TMP/fakebin"; printf '#!/bin/sh\necho "timeout (BusyBox) 1.0"\n' > "$TMP/fakebin/timeout"; chmod +x "$TMP/fakebin/timeout"
+( PATH="$TMP/fakebin:$PATH"; . "$HERE/lib/verify_run.sh"; vr_init "$TMP/plat2" 2> "$TMP/plat2.err"; [ $? -eq 2 ] && grep -q 'GNU coreutils 의 timeout 필요' "$TMP/plat2.err" ) \
+  && ok '플랫폼: GNU 가 아닌 timeout → vr_init 2, 사유 출력' || bad '플랫폼: 비 GNU timeout'
 
 # ── 재현성: 처리기 return 3 + builtin exit 5 를 10번 반복(매번 5) ──────────────────────────────────────────────
 rep_ok=0; for k in 1 2 3 4 5 6 7 8 9 10; do
