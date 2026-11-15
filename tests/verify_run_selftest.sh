@@ -977,6 +977,55 @@ scenario rtsw s_rtsw; rc=$?
   [ "$r1/$r2/$r3" = 1/1/2 ] || exit 3 ); rc=$?
 [ $rc -eq 0 ] && ok 'ALL_DONE 철회 단위: 철회 성공 → 1(내용 NOT_DONE) / 철회 내용 없음 → 1(파일 그대로) / 철회 실패 → 2' || bad "ALL_DONE 철회 단위 (단계 $rc)"
 
+# ── VR-REPORT-PREOPEN-TOCTOU(909cd75 반려) — 합성 상태 주입. 외부 대상 파일은 시험 전후 sha256 과 cmp 로 바이트 대조 ─────────────
+# 21. 보고 파일 쓰기: 경로를 쓰기용으로 열지 않음(새 이름 O_EXCL 생성 → fd 로 쓰기 → lstat 재확인 → rename)
+mkext() { printf 'EXTERNAL-ORIGINAL\nline2\n' > "$1"; cp "$1" "$1.orig"; }
+extsame() { cmp -s "$1" "$1.orig" && [ "$(sha256sum < "$1")" = "$(sha256sum < "$1.orig")" ]; }
+norep() { [ -z "$(ls -A "$1" 2>/dev/null | grep '\.vr\.rep\.')" ]; }
+( . "$HERE/lib/verify_run.sh"; W="$TMP/wv21"; mkdir -p "$W"; e=0
+  vr__write_verified "$W/new.txt" $'abc\n'; [ $? -eq 0 ] && [ "$(cat "$W/new.txt")" = abc ] && [ ! -L "$W/new.txt" ] || { echo '  새 파일'; e=1; }
+  printf old > "$W/ex.txt"; vr__write_verified "$W/ex.txt" $'x\ny\n'; [ $? -eq 0 ] && printf 'x\ny\n' | cmp -s - "$W/ex.txt" || { echo '  기존 일반 파일'; e=1; }
+  vr__write_verified "$W/empty.txt" ''; [ $? -eq 0 ] && [ -f "$W/empty.txt" ] && [ ! -s "$W/empty.txt" ] || { echo '  빈 내용'; e=1; }
+  norep "$W" || { echo '  임시 이름 잔존'; e=1; }
+  exit $e ) > "$TMP/wv21.out" 2>&1; rc=$?
+[ $rc -eq 0 ] && ok '보고 파일 쓰기: 새 파일·기존 일반 파일·빈 내용 → 0, 내용 바이트 일치, 임시 이름 남지 않음' || bad "보고 파일 쓰기: 정상 $(tr '\n' ';' < "$TMP/wv21.out")"
+# 21-2/3: 첫 확인 직후·열기 직전(주입 지점 preopen)에 경로를 외부 파일을 가리키는 링크로 교체
+for kind in reg new; do
+  ( . "$HERE/lib/verify_run.sh"; W="$TMP/wvpre_$kind"; mkdir -p "$W"; X="$TMP/wvpre_$kind.ext"; mkext "$X"
+    [ $kind = reg ] && printf old > "$W/r.txt"
+    vr_hook_report_preopen() { rm -f "$1"; ln -s "$X" "$1"; }
+    vr__write_verified "$W/r.txt" $'ALL_DONE: x\n' $'NOT_DONE\n'; r=$?
+    [ $r -ne 0 ] && extsame "$X" && [ -L "$W/r.txt" ] && norep "$W" ); rc=$?
+  [ $rc -eq 0 ] && ok "보고 파일 열기 전 경합($kind): 열기 직전 경로가 외부 파일 링크로 바뀜 → 실패, 외부 파일 바이트 그대로(sha256·cmp), 링크도 그대로, 임시 이름 없음" || bad "보고 파일 열기 전 경합 $kind"
+done
+# 21-3b: 임시 이름을 미리 알아내 외부 파일 링크를 만들어 둠 → O_EXCL 열기 실패(링크를 따라가지 않음)
+( . "$HERE/lib/verify_run.sh"; W="$TMP/wvtmp"; mkdir -p "$W"; X="$TMP/wvtmp.ext"; mkext "$X"; printf old > "$W/r.txt"
+  vr_hook_report_preopen() { ln -s "$X" "$2"; }
+  vr__write_verified "$W/r.txt" $'new\n'; r=$?
+  [ $r -eq 1 ] && extsame "$X" && [ "$(cat "$W/r.txt")" = old ] ); rc=$?
+[ $rc -eq 0 ] && ok '보고 파일 열기 전 경합: 임시 이름에 외부 파일 링크가 먼저 있음 → O_EXCL 열기 실패 1, 외부 파일·원래 파일 바이트 그대로' || bad '보고 파일 열기 전 경합: 임시 이름 링크'
+# 21-3c: 마지막 확인 뒤·rename 직전(주입 지점 prerename)에 링크로 교체 → rename 은 링크 이름을 대체할 뿐 외부 파일은 그대로
+( . "$HERE/lib/verify_run.sh"; W="$TMP/wvren"; mkdir -p "$W"; X="$TMP/wvren.ext"; mkext "$X"; printf old > "$W/r.txt"
+  vr_hook_report_prerename() { rm -f "$1"; ln -s "$X" "$1"; }
+  vr__write_verified "$W/r.txt" $'new\n'; r=$?
+  [ $r -eq 0 ] && extsame "$X" && [ ! -L "$W/r.txt" ] && [ "$(cat "$W/r.txt")" = new ] && norep "$W" ); rc=$?
+[ $rc -eq 0 ] && ok '보고 파일 rename 직전 경합: 경로가 외부 파일 링크로 바뀜 → rename 이 링크 자리를 우리 파일로 대체, 외부 파일 바이트 그대로' || bad '보고 파일 rename 직전 경합'
+# 21-4/5: vr_finish — ALL_DONE(철회 내용 있음)·failed_steps·step_status 에서 열기 직전 링크 교체 → 외부 파일 그대로, 성공 아님
+for tgt in 99_done.log failed_steps.txt step_status.txt; do
+  eval "s_pre_${tgt%%.*}() { vr_hook_report_preopen() { case \"\$1\" in */$tgt) rm -f \"\$1\"; ln -s \"$TMP/pre_${tgt%%.*}.ext\" \"\$1\" ;; esac; }; vr_expect a; run a true; }"
+  mkext "$TMP/pre_${tgt%%.*}.ext"
+  scenario "pre_${tgt%%.*}" "s_pre_${tgt%%.*}"; rc=$?
+  { [ $rc -eq 3 ] && extsame "$TMP/pre_${tgt%%.*}.ext" && ! grep -aq 'ALL_DONE' "$TMP/pre_${tgt%%.*}.ext" && norep "$TMP/pre_${tgt%%.*}" && norep "$TMP/pre_${tgt%%.*}/logs"; } \
+    && ok "vr_finish 열기 전 경합($tgt): 열기 직전 외부 파일 링크로 교체 → 3(성공 아님), 외부 파일 바이트 그대로, 임시 이름 없음" || bad "vr_finish 열기 전 경합 $tgt (rc=$rc)"
+done
+# 21-4b: ALL_DONE 을 놓은 뒤 확인 실패 + 경로가 외부 파일 링크로 바뀜 → 철회는 우리 객체에만, 외부 파일 그대로
+s_post_ext() { vr_hook_report_written() { case "$1" in */99_done.log) rm -f "$1"; ln -s "$TMP/post_ext.ext" "$1" ;; esac; }; vr_expect a; run a true; }
+mkext "$TMP/post_ext.ext"; scenario post_ext s_post_ext; rc=$?
+{ [ $rc -eq 3 ] && extsame "$TMP/post_ext.ext" && grep -q '철회함(NOT_DONE)' "$TMP/post_ext.finish_out"; } && ok 'ALL_DONE 철회: 놓은 뒤 경로가 외부 파일 링크로 바뀜 → 3, 철회는 우리 객체에만(외부 파일 바이트 그대로)' || bad "ALL_DONE 철회: 놓은 뒤 링크 (rc=$rc)"
+# 21-6: 장치 파일 경로(/dev/full)는 일반 파일이 아니므로 열지도·rename 하지도 않음(장치 노드 보존)
+( . "$HERE/lib/verify_run.sh"; vr__write_verified /dev/full x; [ $? -eq 1 ] && [ -c /dev/full ] && [ -z "$(ls -A /dev | grep '\.vr\.rep\.')" ] ); rc=$?
+[ $rc -eq 0 ] && ok '보고 파일 쓰기: 장치 파일 경로 → 1, 장치 노드 그대로, /dev 에 임시 이름 없음' || bad '보고 파일 쓰기: 장치 파일'
+
 # ── 재현성: 처리기 return 3 + builtin exit 5 를 10번 반복(매번 5) ──────────────────────────────────────────────
 rep_ok=0; for k in 1 2 3 4 5 6 7 8 9 10; do
     eval "s_rep_$k() { body() { trap 'return 3' EXIT; builtin exit 5; }; vr_expect a; run a true; vr_bg B body; vr_wait; }"

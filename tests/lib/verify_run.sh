@@ -235,6 +235,16 @@ vr__platform_probe() {
             [ "$n1/$n2/$n0" = 1/2/0 ] || why+=" stat -L -c %h(링크 수 ${n1:-?}/${n2:-?}/${n0:-?}, 기대 1/2/0) 동작 이상"
             exec {x}<&-
         else why+=" 확인용 파일 열기 실패"; fi
+        # 보고 파일 쓰기가 기대는 두 동작: noclobber 열기가 링크(대상 없음·일반 파일 대상)를 따라가지 않고 실패, mv -T 가 링크를 대상이
+        # 아니라 링크 자체로 바꿔 놓음(대상 내용 그대로)
+        local hc=0 y=""; printf T > "$p/t"; ln -s "$p/t" "$p/l1"; ln -s "$p/nx" "$p/l2"; [[ $- == *C* ]] && hc=1; set -C
+        if { exec {y}>"$p/l1"; } 2>/dev/null; then exec {y}>&-; why+=" noclobber 가 링크를 열었음(일반 파일 대상)"; fi
+        y=""; if { exec {y}>"$p/l2"; } 2>/dev/null; then exec {y}>&-; why+=" noclobber 가 링크를 열었음(대상 없음)"; fi
+        [ $hc -eq 1 ] || set +C
+        { [ "$(cat "$p/t" 2>/dev/null)" = T ] && [ ! -e "$p/nx" ]; } || why+=" noclobber 열기가 링크 대상을 바꿈"
+        printf N > "$p/n"; mv -T -- "$p/n" "$p/l1" 2>/dev/null
+        { [ ! -L "$p/l1" ] && [ "$(cat "$p/l1" 2>/dev/null)" = N ] && [ "$(cat "$p/t" 2>/dev/null)" = T ]; } || why+=" mv -T(링크 자리를 대상 대신 이름으로 바꿈) 동작 이상"
+        rm -f -- "$p/t" "$p/l1" "$p/l2" "$p/n" "$p/nx" 2>/dev/null
         o=$(printf 'a\000\n' | od -An -v -tx1 2>/dev/null | tr -d ' \n')
         [ "$o" = 61000a ] || why+=" od -An -v -tx1 동작 이상"
         o=$(printf 'a\000b' | tr '\000' '\001' 2>/dev/null | od -An -v -tx1 2>/dev/null | tr -d ' \n')
@@ -367,20 +377,58 @@ vr__read_fd_bytes() {   # vr__read_fd_bytes <변수> <fd> : 그 fd 에서 EOF �
     __r=$(command od -An -v -tx1 <&"$2" 2>/dev/null) || return 1
     vr__hex_to_var "$1" "$__r"
 }
-# 보고 파일을 쓰고 확인한다. 경로가 심볼릭 링크면 쓰지 않는다. 연 fd 로 쓰고, 쓴 뒤와 다시 읽은 뒤에 경로가 링크 아닌 일반 파일이고
-# 그 fd 와 같은 객체인지 확인한다(검증 전후 경로 교체 검출). 다시 읽은 내용이 쓴 내용과 바이트 단위로 같아야 한다. 하나라도 아니면 1.
-vr__write_verified() {   # vr__write_verified <경로> <내용> [철회 내용]
-    # 철회 내용이 있으면(ALL_DONE 기록): 확인에 실패했을 때 **우리가 연 그 파일**(경로가 아니라 fd 의 객체 — /dev/fd/N 을 비우며 다시 엶)을
-    # 철회 내용으로 덮어쓴다. 쓴 ALL_DONE 이 확인 실패 뒤에도 그 파일에 남지 않게 한다(경로가 남의 것으로 바뀌었으면 그쪽은 건드리지 않음).
-    local f=$1 content=$2 retract=${3-} back w=""
+# 보고 파일을 쓰고 확인한다: vr__write_verified <경로> <내용> [철회 내용]. 반환: 0 = 기록·확인 성공, 1 = 실패, 2 = 실패 + 철회 실패.
+# **보고 파일 경로는 쓰기용으로 열지 않는다**(열기는 심볼릭 링크를 따라가므로, 검사와 열기 사이에 경로가 링크로 바뀌면 남의 파일을
+# 자를 수 있다 — bash 리다이렉션에는 O_NOFOLLOW 가 없다). 대신:
+#  1. 경로의 현재 객체를 lstat(링크를 따라가지 않음)으로 기록한다. 없거나 링크 아닌 일반 파일일 때만 진행(링크·장치·FIFO·폴더면 1).
+#  2. 같은 폴더에 예측할 수 없는 새 이름(.vr.rep.<mktemp -u 난수 16자리>)을 noclobber 로 만든다. bash 는 없는 이름을 O_CREAT|O_EXCL 로 연다 —
+#     그 이름에 무엇이든(링크 포함) 이미 있으면 열기가 실패하고 링크를 따라가지 않는다. 연 fd 가 링크 수 1·크기 0 인 일반 파일이고
+#     그 이름과 같은 객체인지 확인한다. 아니면 쓰지 않고 닫는다(아무것도 자르거나 쓰지 않음).
+#  3. 내용은 그 fd(우리가 방금 만든 객체)에만 쓴다.
+#  4. 경로의 객체가 1 과 같은지 lstat 으로 다시 확인한 뒤, 새 파일을 rename(mv -T)으로 경로에 놓는다. rename 은 경로의 **이름**을
+#     바꿔 놓을 뿐 그 자리에 있던 것(링크라면 링크 자체)의 대상·내용을 열거나 바꾸지 않는다.
+#  5. 놓은 뒤 경로가 링크 아닌 일반 파일이고 fd 와 같은 객체인지, 경로로 다시 읽은 바이트가 쓴 내용과 같은지 확인한다.
+# 어느 단계에서든 쓰기·자르기·철회 쓰기의 대상은 2 에서 만든 우리 객체뿐이다(fd 또는 /dev/fd/N — 경로를 다시 해석하지 않음).
+# 1~4 에서 실패하면 만든 임시 이름을 소유 확인 삭제(vr__rm_owned)로 지운다. 철회 내용이 있고 5 에서 실패하면 우리 객체를 철회한다.
+# 위협 모델 경계: 보고 파일이 들어 있는 폴더 자체가 바뀌는 경우(폴더를 링크로 교체)는 다루지 않는다(출력 폴더 구조는 vr_init 이 만든
+#   그대로라고 본다). 4 의 확인과 rename 사이에 경로가 바뀌면 rename 은 그 이름을 우리 파일로 바꿔 놓는다 — 그 자리에 있던 객체의
+#   바이트는 바뀌지 않는다(이름만 대체). 2 의 이름을 미리 알아내 링크 아닌 FIFO·장치를 먼저 만들어 두는 경우(난수 64비트 예측)에는
+#   bash noclobber 가 그것을 자르지 않고 열 수 있으나, 일반 파일 확인에서 걸려 쓰지 않는다(FIFO 열기에서 멈출 수는 있음).
+vr__lid() { stat -c '%d:%i:%F' -- "$1" 2>/dev/null || echo none; }      # lstat 식별자(링크를 따라가지 않음). 없으면 none
+vr__write_verified() {
+    local f=$1 content=$2 retract=${3-} back w="" id0 id1 tmp hc=0 r
+    case "$f" in */*) ;; *) return 1 ;; esac
     if [ -L "$f" ]; then return 1; fi
-    { exec {w}>"$f"; } 2>/dev/null || return 1   # { } 로 묶어 2>/dev/null 이 셸에 영구 적용되지 않게
-    declare -F vr_hook_report_write > /dev/null && vr_hook_report_write "$f"     # 시험용 주입 지점(쓰기 전후 경로 교체)
-    if ! printf '%s' "$content" 2>/dev/null >&"$w" || [ -L "$f" ] || [ ! -f "$f" ] || ! [ "$f" -ef "/dev/fd/$w" ]; then vr__wv_fail "$w" "$retract"; return $?; fi
-    declare -F vr_hook_report_written > /dev/null && vr_hook_report_written "$f"   # 시험용 주입 지점(쓴 뒤 같은 파일에 바이트 추가)
+    id0=$(vr__lid "$f")
+    case "$id0" in none|*":regular file"|*":regular empty file") ;; *) return 1 ;; esac
+    # 이름만 만든다(mktemp -u: 파일을 만들지 않음, 난수 16자리). 안전성은 이름이 아니라 아래 O_EXCL 생성에서 나온다.
+    tmp=$(mktemp -u "${f%/*}/.vr.rep.XXXXXXXXXXXXXXXX" 2>/dev/null) || return 1
+    [ "${tmp%/*}" = "${f%/*}" ] && [[ "${tmp##*/}" =~ ^\.vr\.rep\.[A-Za-z0-9]{16}$ ]] && [ "${tmp##*.}" != XXXXXXXXXXXXXXXX ] || return 1
+    declare -F vr_hook_report_preopen > /dev/null && vr_hook_report_preopen "$f" "$tmp"     # 시험용 주입 지점(첫 확인 뒤·열기 직전)
+    [[ $- == *C* ]] && hc=1
+    set -C; { exec {w}>"$tmp"; } 2>/dev/null; r=$?; [ $hc -eq 1 ] || set +C
+    if [ $r -ne 0 ] || [ -z "$w" ]; then return 1; fi
+    if [ -L "$tmp" ] || [ ! -f "/dev/fd/$w" ] || ! [ "$tmp" -ef "/dev/fd/$w" ] || [ "$(stat -L -c '%h:%s' "/dev/fd/$w" 2>/dev/null)" != 1:0 ]; then
+        eval "exec $w>&-"; return 1      # 우리가 만든 객체가 아님 — 쓰지도 지우지도 않는다
+    fi
+    declare -F vr_hook_report_write > /dev/null && vr_hook_report_write "$f"     # 시험용 주입 지점(쓰기 전 경로 교체)
+    if ! printf '%s' "$content" 2>/dev/null >&"$w"; then vr__wv_drop "$tmp" "$w"; return 1; fi
+    id1=$(vr__lid "$f")
+    if [ "$id1" != "$id0" ] || [ -L "$f" ]; then vr__wv_drop "$tmp" "$w"; return 1; fi      # 시작 뒤 경로가 바뀜 — 그 자리를 건드리지 않음
+    declare -F vr_hook_report_prerename > /dev/null && vr_hook_report_prerename "$f"   # 시험용 주입 지점(마지막 확인 뒤·rename 직전)
+    if ! mv -T -- "$tmp" "$f" 2>/dev/null; then vr__wv_drop "$tmp" "$w"; return 1; fi
+    declare -F vr_hook_report_written > /dev/null && vr_hook_report_written "$f"   # 시험용 주입 지점(놓은 뒤 같은 파일에 바이트 추가 등)
     # 읽기 실패는 "빈 내용"으로 오인하지 않는다. 바이트 보존 읽기(NUL 이 있으면 불일치)로 다시 읽고, 성공한 뒤에만 비교한다.
-    if ! vr__read_path_bytes back "$f" || [ -L "$f" ] || ! [ "$f" -ef "/dev/fd/$w" ] || [ "$back" != "$content" ]; then vr__wv_fail "$w" "$retract"; return $?; fi
-    exec {w}>&-
+    if [ -L "$f" ] || [ ! -f "$f" ] || ! [ "$f" -ef "/dev/fd/$w" ] || ! vr__read_path_bytes back "$f" || [ -L "$f" ] || ! [ "$f" -ef "/dev/fd/$w" ] || [ "$back" != "$content" ]; then
+        vr__wv_fail "$w" "$retract"; return $?
+    fi
+    eval "exec $w>&-"
+    return 0
+}
+vr__wv_drop() {   # vr__wv_drop <임시 이름> <fd> : 경로에 놓기 전 실패 — 우리 임시 파일을 소유 확인 삭제하고 fd 를 닫는다
+    vr__rm_owned "$1" "$2" > /dev/null 2>&1
+    [[ "$2" =~ ^[0-9]+$ ]] && eval "exec $2>&-" 2>/dev/null
+    return 0
 }
 # 확인 실패 처리: vr__wv_fail <fd> <철회 내용>. 반환(= vr__write_verified 의 반환): 1 = 확인 실패(철회 내용이 없거나, 철회해서 그
 # 객체의 내용이 철회 내용과 바이트 단위로 같음을 다시 읽어 확인함), 2 = 확인 실패 + 철회 실패(쓰기 실패 또는 다시 읽은 내용 불일치).
