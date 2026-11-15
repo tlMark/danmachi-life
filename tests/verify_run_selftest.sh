@@ -898,6 +898,85 @@ plat_t plat7 'mkfifo() { if [ "$1" = --version ]; then command mkfifo --version;
 plat_t plat8 'od() { if [ "$1" = --version ]; then command od --version; else tr -d "\000" | command od "$@"; fi; }' 'od -An -v -tx1 동작 이상' '플랫폼 기능: od 가 NUL 을 보존하지 않음 → vr_init 2, 사유 출력'
 [ -z "$(ls -A "$TMP/ok" | grep 'vr\.plat')" ] && ok '플랫폼 기능: 정상 초기화 뒤 확인용 폴더를 남기지 않음' || bad '플랫폼 기능: 확인용 폴더 잔존'
 
+# ── 44ba8f9 1차 재검수 반영(합성 상태 주입·단위 시험. 실제 P1 결과 아님) ──────────────────────────────────────────────
+# 17. 16진 표기 복원 단위 시험: 모든 입력을 원본 파일과 cmp -s 로 바이트 대조
+( . "$HERE/lib/verify_run.sh"; H="$TMP/hx"; mkdir -p "$H"; e=0
+  rt() {   # rt <이름> <printf 형식> <기대 반환>
+      printf "$2" > "$H/$1"; vr__read_path_bytes v "$H/$1"; local rc=$?
+      [ $rc -eq "$3" ] || { echo "  $1: 반환 $rc(기대 $3)"; return 1; }
+      if [ "$3" -eq 0 ]; then printf '%s' "$v" | cmp -s - "$H/$1" || { echo "  $1: 복원 불일치"; return 1; }; else [ -z "$v" ] || { echo "  $1: 실패인데 값 남음"; return 1; }; fi
+  }
+  rt one 'a' 0 || e=1
+  rt two 'ab' 0 || e=1
+  printf -v long '%s' "$(head -c 6000 /dev/zero | tr '\000' 'x')abcdefghijklmnopqrstuvwxyz0123456789"; rt long "$long" 0 || e=1
+  rt nls 'a\n\nb\n\n\n' 0 || e=1
+  rt nlonly '\n' 0 || e=1
+  rt ctl 'a\\b\\\\x41\001\t\r\033%%\200\377\376z' 0 || e=1
+  rt nulmid 'ab\000cd' 4 || e=1
+  rt nulend 'abcd\n\000' 4 || e=1
+  rt empty '' 0 || e=1
+  vr__hex_to_var v ' 61'; [ $? -eq 0 ] && [ "$v" = a ] || { echo '  hex 61'; e=1; }
+  vr__hex_to_var v ' 61 62'; [ $? -eq 0 ] && [ "$v" = ab ] || { echo '  hex 6162'; e=1; }
+  vr__hex_to_var v $' 61 62 63\n 0a'; [ $? -eq 0 ] && [ "$v" = $'abc\n' ] || { echo '  hex 여러 줄'; e=1; }
+  vr__hex_to_var v ' 6'; [ $? -eq 5 ] && [ -z "$v" ] || { echo '  hex 형식 1자리'; e=1; }
+  vr__hex_to_var v ' zz'; [ $? -eq 5 ] || { echo '  hex 형식 zz'; e=1; }
+  exit $e ) > "$TMP/hx.out" 2>&1; rc=$?
+[ $rc -eq 0 ] && ok '16진 복원: 61→a, 6162→ab, 긴 ASCII(6036바이트), 여러 개행·마지막 개행, 백슬래시·제어 문자·0x80 이상 → 원본과 cmp -s 동일 / NUL 중간·끝 → 4 / 빈 파일 → 빈 값 0 / 형식 이상 → 5' || bad "16진 복원 $(tr '\n' ';' < "$TMP/hx.out")"
+s_recok() { vr_expect a b; run a true; vr_bg B run b true; vr_wait
+    local f id; f=$(ls "$VR_BGREC"/*.read | head -1); id=${f##*/}; id=${id%.read}
+    vr__bg_read_record "$f" "$id" B && [ "$vr__rec_code" = 0 ] && [ "$vr__rec_label" = B ] && [ "$(vr_status_code b)" = 0 ] && : > "$TMP/recok.ok"; }
+scenario recok s_recok; { [ $? -eq 0 ] && [ -e "$TMP/recok.ok" ]; } && ok '16진 복원 회귀: 정상 상태 기록(코드 0)·정상 bg 종료 기록(L B, C 0)을 복원 오류 없이 읽음, 판정 0' || bad '16진 복원 회귀: 정상 기록'
+# 18. 파이프 종료 코드 보존(vr__read_path_bytes): cat 실패 / od 실패 / 둘 다 / 빈 파일 / od 표기 이상
+mkdir -p "$TMP/odfail" "$TMP/odbad"; printf '#!/bin/sh\ncat > /dev/null\nexit 1\n' > "$TMP/odfail/od"; printf '#!/bin/sh\ncat > /dev/null\necho " zz"\n' > "$TMP/odbad/od"; chmod +x "$TMP/odfail/od" "$TMP/odbad/od"
+( . "$HERE/lib/verify_run.sh"; printf 'x\n' > "$TMP/ps_f"; : > "$TMP/ps_e"; e=0
+  ( cat() { return 1; }; vr__read_path_bytes v "$TMP/ps_f"; [ $? -eq 1 ] && [ -z "$v" ] ) || { echo '  cat 실패+od 성공'; e=1; }
+  ( PATH="$TMP/odfail:$PATH"; vr__read_path_bytes v "$TMP/ps_f"; [ $? -eq 1 ] && [ -z "$v" ] ) || { echo '  cat 성공+od 실패'; e=1; }
+  ( PATH="$TMP/odfail:$PATH"; cat() { return 1; }; vr__read_path_bytes v "$TMP/ps_f"; [ $? -eq 1 ] ) || { echo '  둘 다 실패'; e=1; }
+  ( vr__read_path_bytes v "$TMP/ps_e"; [ $? -eq 0 ] && [ -z "$v" ] ) || { echo '  빈 파일'; e=1; }
+  ( PATH="$TMP/odbad:$PATH"; vr__read_path_bytes v "$TMP/ps_f"; [ $? -eq 5 ] ) || { echo '  od 표기 이상'; e=1; }
+  ( vr__read_path_bytes v "$TMP/ps_none"; [ $? -eq 1 ] ) || { echo '  없는 파일'; e=1; }
+  ( vr__read_path_bytes v "$TMP/ps_f"; [ $? -eq 0 ] && [ "$v" = $'x\n' ] ) || { echo '  정상'; e=1; }
+  exit $e ) > "$TMP/ps.out" 2>&1; rc=$?
+[ $rc -eq 0 ] && ok '파이프 종료 코드: cat 실패+od 성공 → 1 / cat 성공+od 실패 → 1 / 둘 다 실패 → 1 / 없는 파일 → 1 / 빈 파일 → 0·빈 값 / od 표기 이상 → 5(읽기 실패와 구분) / 정상 → 0' || bad "파이프 종료 코드 $(tr '\n' ';' < "$TMP/ps.out")"
+s_psst() { vr_expect a; run a true; PATH="$TMP/odbad:$PATH"; }
+scenario psst s_psst; lc_fail psst '파이프 종료 코드: 판정 중 od 가 표기 이상(5)을 냄 → 상태 기록을 유효로 보지 않음(손상), 다른 읽기도 실패, 3, ALL_DONE 없음' 'a 상태 기록 손상' $?
+# 19. 읽기 프로세스의 끝 표시·EOF 분기. 주입 지점 end 에서 읽기 프로세스 안의 failed(R 의 값)·end(끝 표시 받음)와, R 을 쓰기 직전에
+#     후손의 종료 표시 파일이 이미 있는지(j)를 기록한다.
+rdr() {   # rdr <이름> <after_s 에서 실행할 코드> <작업 본문>
+    ( . "$HERE/lib/verify_run.sh"; RN=$1; RA=$2
+      vr_hook_reader() { case $1 in after_s) eval "$RA" ;; tok) printf '%s' "$2" > "$TMP/$RN.tok" ;;
+          end) printf 'f=%s e=%s j=%s\n' "$failed" "${end:-0}" "$([ -e "$TMP/$RN.jobdone" ] && echo 1 || echo 0)" > "$TMP/$RN.state" ;; esac; return 0; }
+      vr_init "$TMP/$1" || exit 9; eval "body() { $3; }"; vr_expect a b; run a true; vr_bg B body; vr_wait; vr_finish > "$TMP/$1.finish_out" 2>&1 ); return $?
+}
+rstate() { [ "$(cat "$TMP/$1.state" 2>/dev/null)" = "$2" ]; }
+rdr rd_ok ':' 'run b true'; rc=$?
+{ [ $rc -eq 0 ] && rstate rd_ok 'f=0 e=1 j=0'; } && ok '읽기 프로세스: tr 정상 종료 + 정상 끝 표시 + 자기 fd EOF → R 0, 판정 0' || bad "읽기 프로세스: 정상 (rc=$rc, $(cat "$TMP/rd_ok.state" 2>/dev/null))"
+rdr rd_trfail 'tr() { return 3; }' 'run b true'; rc=$?
+{ rstate rd_trfail 'f=1 e=0 j=0'; } && lc_fail rd_trfail '읽기 프로세스: tr 비정상 종료(종료 코드 3, 끝 표시 불일치) → R 1, 3, ALL_DONE 없음' '기록 실패: 후손 추적 알림 기록' $rc || bad "읽기 프로세스: tr 실패 (rc=$rc, $(cat "$TMP/rd_trfail.state" 2>/dev/null))"
+rdr rd_badmark ':' 'run b true; printf "\002VR_END 0000000000000000 0\n" >&"$VR_LIFE_W"'; rc=$?
+{ rstate rd_badmark 'f=1 e=1 j=0'; } && lc_fail rd_badmark '읽기 프로세스: 난수가 틀린 끝 표시가 들어옴 → R 1, 3' '기록 실패: 후손 추적 알림 기록' $rc || bad "읽기 프로세스: 잘못된 표식 (rc=$rc, $(cat "$TMP/rd_badmark.state" 2>/dev/null))"
+rdr rd_after ':' 'run b true; local i; for i in $(seq 50); do [ -s "$TMP/rd_after.tok" ] && break; sleep 0.1; done; printf "\002VR_END %s 0\nextra\n" "$(cat "$TMP/rd_after.tok")" >&"$VR_LIFE_W"'; rc=$?
+{ rstate rd_after 'f=1 e=1 j=0'; } && lc_fail rd_after '읽기 프로세스: (난수를 알아낸 가정의 위조) 끝 표시 뒤에 추가 데이터 → R 1, 3' '기록 실패: 후손 추적 알림 기록' $rc || bad "읽기 프로세스: 끝 표시 뒤 데이터 (rc=$rc, $(cat "$TMP/rd_after.state" 2>/dev/null))"
+rdr rd_nul ':' 'run b true; printf "\0" >&"$VR_LIFE_W"'; rc=$?
+{ rstate rd_nul 'f=1 e=0 j=0' && grep -qxF '기록 실패: 후손 추적 FIFO 에 알 수 없는 내용' "$TMP/rd_nul/failed_steps.txt"; } && lc_fail rd_nul '읽기 프로세스: 생명주기 FIFO 에 NUL 만(개행 없음) → NUL 을 잃지 않음(\001 로 남아 끝 표시와 한 줄이 됨), R 1, 알 수 없는 내용, 3' '기록 실패: 후손 추적 알림 기록' $rc || bad "읽기 프로세스: NUL 만 (rc=$rc, $(cat "$TMP/rd_nul.state" 2>/dev/null))"
+rdr rd_hold ':' 'run b true; sleep 2; : > "$TMP/rd_hold.jobdone"'; rc=$?
+{ [ $rc -eq 0 ] && rstate rd_hold 'f=0 e=1 j=1'; } && ok '읽기 프로세스: 후손이 생명주기 쓰기 fd 를 2초 더 가짐 → 그 후손이 끝난 뒤에야 R(0) 을 씀' || bad "읽기 프로세스: 후손 보유 (rc=$rc, $(cat "$TMP/rd_hold.state" 2>/dev/null))"
+rdr rd_trhold 'tr() { return 3; }' 'run b true; sleep 2; : > "$TMP/rd_trhold.jobdone"'; rc=$?
+{ rstate rd_trhold 'f=1 e=0 j=1'; } && lc_fail rd_trhold '읽기 프로세스: tr 이 곧바로 실패하고 후손이 쓰기 fd 를 2초 더 가짐 → 원래 FIFO 의 EOF(후손 종료) 뒤에야 R(1) 을 씀, 3' '기록 실패: 후손 추적 알림 기록' $rc || bad "읽기 프로세스: tr 실패 + 후손 보유 (rc=$rc, $(cat "$TMP/rd_trhold.state" 2>/dev/null))"
+# 20. ALL_DONE 철회 결과 전파: 철회 성공 / 철회 실패 / 쓴 뒤 경로가 남의 파일로 바뀜(남의 파일은 그대로, 우리 객체만 철회)
+{ grep -q 'ALL_DONE 은 철회함(NOT_DONE)' "$TMP/rpnul.finish_out" && grep -q '^NOT_DONE' "$TMP/rpnul/logs/99_done.log"; } && ok 'ALL_DONE 철회: 확인 실패 + 철회 성공(다시 읽어 확인) → 3, "철회함" 진단, 파일은 NOT_DONE' || bad 'ALL_DONE 철회: 성공 진단'
+s_rtf() { vr_hook_report_written() { case "$1" in */99_done.log) printf '\0' >> "$1" ;; esac; }; vr_hook_report_retract() { return 0; }; vr_expect a; run a true; }
+scenario rtf s_rtf; rc=$?
+{ [ $rc -eq 3 ] && grep -q 'ALL_DONE 철회도 실패' "$TMP/rtf.finish_out" && ! grep -q '철회함(NOT_DONE)' "$TMP/rtf.finish_out"; } && ok 'ALL_DONE 철회: 확인 실패 + 철회 실패(주입) → 3(성공 아님), "철회도 실패" 진단을 따로 출력' || bad "ALL_DONE 철회: 실패 진단 (rc=$rc)"
+s_rtsw() { vr_hook_report_written() { case "$1" in */99_done.log) rm -f "$1"; printf other2 > "$1" ;; esac; }; vr_expect a; run a true; }
+scenario rtsw s_rtsw; rc=$?
+{ [ $rc -eq 3 ] && [ "$(cat "$TMP/rtsw/logs/99_done.log")" = other2 ] && grep -q '철회함(NOT_DONE)' "$TMP/rtsw.finish_out"; } && ok 'ALL_DONE 철회: 쓴 뒤 경로가 남의 파일로 바뀜 → 3, 남의 파일(other2)은 그대로, 철회는 우리 객체에만' || bad "ALL_DONE 철회: 경로 교체 (rc=$rc)"
+( . "$HERE/lib/verify_run.sh"; f="$TMP/wvf"; printf 'ALL_DONE\n' > "$f"; exec {w}>>"$f"; vr__wv_fail "$w" $'NOT_DONE\n'; r1=$?; [ "$(cat "$f")" = NOT_DONE ] || exit 1
+  printf 'X\n' > "$f"; exec {w}>>"$f"; vr__wv_fail "$w" ""; r2=$?; [ "$(cat "$f")" = X ] || exit 2
+  exec {w}>>"$f"; vr_hook_report_retract() { return 0; }; vr__wv_fail "$w" $'NOT_DONE\n'; r3=$?
+  [ "$r1/$r2/$r3" = 1/1/2 ] || exit 3 ); rc=$?
+[ $rc -eq 0 ] && ok 'ALL_DONE 철회 단위: 철회 성공 → 1(내용 NOT_DONE) / 철회 내용 없음 → 1(파일 그대로) / 철회 실패 → 2' || bad "ALL_DONE 철회 단위 (단계 $rc)"
+
 # ── 재현성: 처리기 return 3 + builtin exit 5 를 10번 반복(매번 5) ──────────────────────────────────────────────
 rep_ok=0; for k in 1 2 3 4 5 6 7 8 9 10; do
     eval "s_rep_$k() { body() { trap 'return 3' EXIT; builtin exit 5; }; vr_expect a; run a true; vr_bg B body; vr_wait; }"

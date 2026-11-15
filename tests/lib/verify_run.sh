@@ -94,23 +94,26 @@ vr__life_reader() {
     local tok="" in="" end="" rc
     tok=$(head -c 8 /dev/urandom 2>/dev/null | od -An -tx1 2>/dev/null | tr -d ' \n')
     [[ "$tok" =~ ^[0-9a-f]{16}$ ]] || { failed=1; tok=""; }
+    declare -F vr_hook_reader > /dev/null && vr_hook_reader tok "$tok"     # 시험용(끝 표시 위조 시험이 난수를 알아야 할 때만)
     if [ -n "$tok" ]; then
         exec {in}< <(exec {vr__r_dw}>&- {vr__r_mw}>&-; tr '\000' '\001' <&"$vr__r_lr"; rc=$?; printf '\002VR_END %s %s\n' "$tok" "$rc") || { failed=1; in=""; }
     fi
     if [ -n "$in" ]; then
         while IFS= read -r -u "$in" line || [ -n "$line" ]; do     # -u: fd 를 0 번으로 잠시 복제하지 않고 바로 읽는다
             if [ -z "$end" ] && [ "$line" = $'\002'"VR_END $tok 0" ]; then end=1; line=""; continue; fi
-            [ -z "$end" ] || failed=1                               # 끝 표시 뒤에 무엇이 더 옴(있을 수 없음)
+            [ -z "$end" ] || failed=1                               # 끝 표시 뒤에 무엇이 더 옴(있을 수 없음) → R 1
+            case "$line" in $'\002'VR_END*) failed=1 ;; esac      # 끝 표시 형식인데 난수·종료 코드가 맞지 않음(tr 실패 포함) → R 1
             n=$((n + 1)); declare -F vr_hook_reader > /dev/null && vr_hook_reader line "$n"
             if vr__inject msgwrite || ! printf '%s\n' "$line" >&"$vr__r_mw"; then failed=1; fi
             line=""
         done
         exec {in}<&-
     fi
-    if [ -z "$end" ]; then    # tr 이 비정상 종료: 판정은 실패(R 1). 남은 쓰기 끝이 모두 닫힐 때까지(EOF) 자기 fd 로 기다린다
-        failed=1
-        while IFS= read -r -u "$vr__r_lr" line || [ -n "$line" ]; do line=""; done
-    fi
+    # 완료 조건(R 을 쓰는 조건) = 끝 표시(tr 이 생명주기 FIFO 의 EOF 를 읽고 종료 코드 0 으로 끝남) **그리고** 이 프로세스가 가진
+    # 생명주기 FIFO 읽기 fd(vr__r_lr)에서도 EOF 를 확인함. 그래서 tr 이 일찍 죽었든(끝 표시 없음·종료 코드 ≠ 0) 아니든, 쓰기 끝을 가진
+    # 후손이 남아 있는 동안에는 R 을 쓰지 않는다. 이 fd 에서 읽힌 데이터는 tr 을 거치지 않은 것이므로(tr 이 끝난 뒤의 데이터) R 1.
+    [ -n "$end" ] || failed=1
+    while IFS= read -r -u "$vr__r_lr" line || [ -n "$line" ]; do failed=1; line=""; done
     declare -F vr_hook_reader > /dev/null && vr_hook_reader end
     printf 'R %s\n' "$failed" >&"$vr__r_dw"
     declare -F vr_hook_reader > /dev/null && vr_hook_reader after_r      # 시험용(R 뒤에 바이트를 덧붙이는 경우)
@@ -336,24 +339,31 @@ vr_init() {
 vr__ioerr() { VR_IOERR=1; VR_RUN_ERRS+=("기록 실패: $1"); }
 # 바이트 보존 읽기(NUL 포함). bash 의 명령 치환·read 는 NUL 바이트를 지우므로, 판정에 쓰는 기록의 내용을 그대로 셸 변수에 담아
 # 비교하지 않는다. od 로 16진 표기(NUL 이 없는 글자열)를 받아 바이트마다 검사한다: NUL 이 하나라도 있으면 4, 없으면 원래 바이트를
-# 하나도 빠짐없이(끝의 개행 포함) 변수에 되돌린다. 반환: 0 = 정상, 1 = 읽기 실패·표기 이상, 4 = NUL 포함(변수는 빈 값).
+# 하나도 빠짐없이(끝의 개행 포함) 변수에 되돌린다. 반환: 0 = 정상, 1 = 읽기 실패(cat·od 중 하나라도 실패), 4 = NUL 포함,
+# 5 = od 출력 표기 이상(2자리 16진 바이트 목록이 아님). 0 이 아니면 변수는 빈 값.
+# 복원: printf 는 인자가 형식보다 많으면 형식을 되풀이해 적용한다(-v 도 같음) → '\\x%s' 하나로 모든 바이트가 각각 \xHH 로 이어진다
+# (예: 61 62 63 → \x61\x62\x63). 그 뒤 %b 로 바이트를 만든다. 단위 시험 14·17 이 모든 입력을 원본과 cmp -s 로 대조한다.
 vr__hex_to_var() {   # vr__hex_to_var <변수> <od -An -v -tx1 출력>
     local __h=${2//$'\n'/ } __f __re='^( [0-9a-f]{2})+ $'; local -a __b=()
     printf -v "$1" '%s' ''
     IFS=' ' read -r -a __b <<< "$__h"
     [ ${#__b[@]} -gt 0 ] || return 0
-    [[ " ${__b[*]} " =~ $__re ]] || return 1
+    [[ " ${__b[*]} " =~ $__re ]] || return 5
     case " ${__b[*]} " in *" 00 "*) return 4 ;; esac
     printf -v __f '\\x%s' "${__b[@]}"
+    [ ${#__f} -eq $(( 4 * ${#__b[@]} )) ] || return 5          # 바이트마다 정확히 \xHH 4글자
     LC_ALL=C printf -v "$1" '%b' "$__f"
 }
 vr__read_path_bytes() {   # vr__read_path_bytes <변수> <경로> : 한 번만 읽는다(cat | od — cat 은 시험의 읽기 실패 모의와 같은 방식으로 부른다)
     local __r
-    __r=$(cat "$2" 2>/dev/null | command od -An -v -tx1 2>/dev/null; __s=("${PIPESTATUS[@]}"); [ "${__s[0]}" = 0 ] && [ "${__s[1]}" = 0 ]) || return 1
+    printf -v "$1" '%s' ''                  # 실패해도 변수는 빈 값(정의됨)
+    # 파이프의 두 종료 코드를 파이프 직후 한 번에 배열로 복사한다(다음 명령이 PIPESTATUS 를 덮어쓰기 전). 둘 다 0 일 때만 읽기 성공.
+    __r=$(cat "$2" 2>/dev/null | command od -An -v -tx1 2>/dev/null; __s=("${PIPESTATUS[@]}"); [ "${#__s[@]}" -eq 2 ] && [ "${__s[0]}" = 0 ] && [ "${__s[1]}" = 0 ]) || return 1
     vr__hex_to_var "$1" "$__r"
 }
 vr__read_fd_bytes() {   # vr__read_fd_bytes <변수> <fd> : 그 fd 에서 EOF 까지 한 번 읽는다
     local __r
+    printf -v "$1" '%s' ''                  # 실패해도 변수는 빈 값(정의됨)
     __r=$(command od -An -v -tx1 <&"$2" 2>/dev/null) || return 1
     vr__hex_to_var "$1" "$__r"
 }
@@ -366,16 +376,25 @@ vr__write_verified() {   # vr__write_verified <경로> <내용> [철회 내용]
     if [ -L "$f" ]; then return 1; fi
     { exec {w}>"$f"; } 2>/dev/null || return 1   # { } 로 묶어 2>/dev/null 이 셸에 영구 적용되지 않게
     declare -F vr_hook_report_write > /dev/null && vr_hook_report_write "$f"     # 시험용 주입 지점(쓰기 전후 경로 교체)
-    if ! printf '%s' "$content" 2>/dev/null >&"$w" || [ -L "$f" ] || [ ! -f "$f" ] || ! [ "$f" -ef "/dev/fd/$w" ]; then vr__wv_fail "$w" "$retract"; return 1; fi
+    if ! printf '%s' "$content" 2>/dev/null >&"$w" || [ -L "$f" ] || [ ! -f "$f" ] || ! [ "$f" -ef "/dev/fd/$w" ]; then vr__wv_fail "$w" "$retract"; return $?; fi
     declare -F vr_hook_report_written > /dev/null && vr_hook_report_written "$f"   # 시험용 주입 지점(쓴 뒤 같은 파일에 바이트 추가)
     # 읽기 실패는 "빈 내용"으로 오인하지 않는다. 바이트 보존 읽기(NUL 이 있으면 불일치)로 다시 읽고, 성공한 뒤에만 비교한다.
-    if ! vr__read_path_bytes back "$f" || [ -L "$f" ] || ! [ "$f" -ef "/dev/fd/$w" ] || [ "$back" != "$content" ]; then vr__wv_fail "$w" "$retract"; return 1; fi
+    if ! vr__read_path_bytes back "$f" || [ -L "$f" ] || ! [ "$f" -ef "/dev/fd/$w" ] || [ "$back" != "$content" ]; then vr__wv_fail "$w" "$retract"; return $?; fi
     exec {w}>&-
 }
-vr__wv_fail() {   # vr__wv_fail <fd> <철회 내용> : 철회 내용이 있으면 그 fd 의 객체를 비우고 철회 내용을 쓴 뒤 fd 를 닫는다
-    [ -n "$2" ] && { printf '%s' "$2" > "/dev/fd/$1"; } 2>/dev/null
-    [[ "$1" =~ ^[0-9]+$ ]] && eval "exec $1>&-" 2>/dev/null
-    return 0
+# 확인 실패 처리: vr__wv_fail <fd> <철회 내용>. 반환(= vr__write_verified 의 반환): 1 = 확인 실패(철회 내용이 없거나, 철회해서 그
+# 객체의 내용이 철회 내용과 바이트 단위로 같음을 다시 읽어 확인함), 2 = 확인 실패 + 철회 실패(쓰기 실패 또는 다시 읽은 내용 불일치).
+# 철회는 경로가 아니라 fd 의 객체(/dev/fd/N 을 비우며 다시 엶)에만 한다 — 경로가 남의 것으로 바뀌었으면 그쪽은 건드리지 않는다.
+vr__wv_fail() {
+    local fd=$1 retract=$2 r=1 chk=""
+    [[ "$fd" =~ ^[0-9]+$ ]] || return 2
+    if [ -n "$retract" ]; then
+        if declare -F vr_hook_report_retract > /dev/null && vr_hook_report_retract; then r=2      # 시험용 주입 지점(철회 쓰기 실패)
+        elif ! { printf '%s' "$retract" > "/dev/fd/$fd"; } 2>/dev/null; then r=2
+        elif ! vr__read_path_bytes chk "/dev/fd/$fd" || [ "$chk" != "$retract" ]; then r=2; fi
+    fi
+    eval "exec $fd>&-" 2>/dev/null
+    return $r
 }
 vr__violation() {   # 위반은 메모리에 먼저 기억하고, 파일 기록은 보조다. 파일 기록이 실패하면 기록 실패로도 기억한다
     VR_VIOLATED=1; VR_RUN_ERRS+=("$1")
@@ -666,8 +685,8 @@ vr__bg_drain_descendants() {
     # 바이트 단위로 대조한다(바이트 보존 읽기 — 끝의 개행·NUL 도 그대로): 정확히 "R 0\n" 또는 "R 1\n" 만 허용. 그 밖의 바이트가 하나라도
     # 있으면(NUL 포함) 내용 이상.
     vr__read_fd_bytes done_out "$VR_LDONE_R"; rc=$?
-    if [ $rc -eq 1 ]; then vr__ioerr "후손 추적 완료 읽기"; fallback=1
-    elif [ $rc -ne 0 ]; then vr__ioerr "후손 추적 완료 FIFO 내용 이상"; fallback=1
+    if [ $rc -eq 1 ] || [ $rc -eq 5 ]; then vr__ioerr "후손 추적 완료 읽기"; fallback=1      # 읽기 실패·od 표기 이상
+    elif [ $rc -ne 0 ]; then vr__ioerr "후손 추적 완료 FIFO 내용 이상"; fallback=1        # NUL 포함(4)
     else
         case "$done_out" in
             $'R 0\n') ;;
@@ -683,7 +702,8 @@ vr__bg_drain_descendants() {
         raw=$(timeout "${VR__FALLBACK_WAIT:-30}" od -An -v -tx1 <&"$VR_LIFE_R" 2>/dev/null); rc=$?
         if [ $rc -eq 124 ]; then vr__ioerr "후손 종료 확인 시간 초과"; elif [ $rc -ne 0 ]; then vr__ioerr "후손 추적 대체 읽기"
         else vr__hex_to_var extra "$raw"; rc=$?
-            [ $rc -eq 0 ] || { extra=""; vr__ioerr "후손 추적 FIFO 에 알 수 없는 내용"; }     # NUL(4)·표기 이상(1)
+            if [ $rc -eq 4 ]; then extra=""; vr__ioerr "후손 추적 FIFO 에 알 수 없는 내용"
+            elif [ $rc -ne 0 ]; then extra=""; vr__ioerr "후손 추적 대체 읽기"; fi          # od 표기 이상(5)
         fi
     fi
     VR__READER_STATE=""        # 완료 FIFO 가 EOF = 읽기 프로세스는 끝났다
@@ -695,7 +715,8 @@ vr__bg_drain_descendants() {
     msgs=""
     if ! raw=$(command od -An -v -tx1 < "/dev/fd/$VR_MSGS_R" 2>/dev/null); then vr__ioerr "후손 추적 알림 파일 읽기"
     else vr__hex_to_var msgs "$raw"; rc=$?
-        [ $rc -eq 0 ] || { msgs=""; vr__ioerr "후손 추적 FIFO 에 알 수 없는 내용"; }
+        if [ $rc -eq 4 ]; then msgs=""; vr__ioerr "후손 추적 FIFO 에 알 수 없는 내용"
+        elif [ $rc -ne 0 ]; then msgs=""; vr__ioerr "후손 추적 알림 파일 읽기"; fi      # od 표기 이상(5)
     fi
     # 알림: "E <작업 ID> <작업 경로>" = 그 작업이 종료 기록을 쓰지 못함. 그 밖의 내용은 신뢰할 수 없으므로 기록 실패로 본다.
     # 각 줄은 정확히 "E <작업 ID> <경로>" 이고 개행으로 끝나야 한다. 빈 줄·끝이 잘린 줄·그 밖의 내용은 알 수 없는 내용(3).
@@ -866,10 +887,12 @@ vr_finish() {
     # (6) 최종 판정
     if [ ${#list[@]} -eq 0 ] && [ ${#ioerrs[@]} -eq 0 ]; then
         local msg="ALL_DONE: 모든 항목 종료 코드 0 ($total 개 항목)"
-        if vr__write_verified "$VR_DONE" "$msg"$'\n' "NOT_DONE: 99_done.log 에 ALL_DONE 을 기록하거나 확인하지 못함 — 성공으로 판정하지 않음"$'\n'; then
-            echo "$msg"; return 0
-        fi
-        echo "기록 실패: 99_done.log (ALL_DONE 을 기록하거나 확인하지 못함 — 성공으로 판정하지 않음)" >&2
+        vr__write_verified "$VR_DONE" "$msg"$'\n' "NOT_DONE: 99_done.log 에 ALL_DONE 을 기록하거나 확인하지 못함 — 성공으로 판정하지 않음"$'\n'
+        case $? in
+            0) echo "$msg"; return 0 ;;
+            1) echo "기록 실패: 99_done.log (ALL_DONE 을 기록하거나 확인하지 못함 — 성공으로 판정하지 않음. 그 파일의 ALL_DONE 은 철회함(NOT_DONE))" >&2 ;;
+            *) echo "기록 실패: 99_done.log (ALL_DONE 을 기록하거나 확인하지 못함 — 성공으로 판정하지 않음. ALL_DONE 철회도 실패 — 그 파일에 ALL_DONE 이 남았을 수 있음)" >&2 ;;
+        esac
         return 3
     fi
     local head="FAILED_STEPS: ${#list[@]} (등록 항목 $total 개, 기록 실패 ${#ioerrs[@]} 건)"
