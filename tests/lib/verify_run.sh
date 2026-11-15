@@ -2,7 +2,10 @@
 # 목적: 항목별 종료 상태를 모으고, 종료 상태를 남기지 못한 항목·비정상 종료한 백그라운드 작업·기록 실패를 모두 실패로 잡는다.
 # 지원 대상: Linux + GNU coreutils + Bash 4.4 이상(개발자 실행 확인은 Linux x86_64, GNU bash 5.2.21, GNU coreutils 9.4 뿐).
 #   필요한 것: procfs(/proc/self/fd)와 /dev/fd(→ /proc/self/fd), GNU coreutils 의 timeout·mv(-n = RENAME_NOREPLACE, -T)·stat(-L -c %h)·
-#   mktemp·mkfifo, 같은 파일시스템 안의 rename·link. vr_init 이 시작할 때 이 조건을 확인하고, 맞지 않으면 사유를 표준 오류에 쓰고 2.
+#   mktemp(-d TEMPLATE)·mkfifo·od(-An -v -tx1)·tr, 같은 파일시스템 안의 rename·link.
+#   vr_init 은 (1) 시작할 때(출력 폴더를 만들기 전) bash 버전·Linux·procfs·/dev/fd·위 명령이 GNU coreutils 인지 확인하고,
+#   (2) 출력 폴더를 만든 직후 그 파일시스템에서 실제로 쓰는 옵션·동작(vr__platform_probe)을 직접 해 본다.
+#   어느 하나라도 맞지 않으면 사유를 표준 오류(VR__INIT_ERR)에 쓰고 2 로 끝난다(성공으로 진행하지 않음).
 #   macOS·BSD·Windows(Git Bash·Cygwin) 등은 지원하지 않으며(미실행), 그 결과를 Linux 결과와 섞지 않는다. sh 로 실행하지 않는다.
 #
 #   vr_init <출력 폴더>          로그 폴더·상태 폴더·실행 토큰을 준비한다
@@ -84,24 +87,54 @@ vr__life_reader() {
     declare -F vr_hook_reader > /dev/null && vr_hook_reader start          # 시험용 주입 지점(평소에는 정의되지 않음)
     printf 'S %s\n' "$BASHPID" >&"$vr__r_dw" || exit 1
     declare -F vr_hook_reader > /dev/null && vr_hook_reader after_s
-    while IFS= read -r -u "$vr__r_lr" line || [ -n "$line" ]; do     # -u: fd 를 0 번으로 잠시 복제하지 않고 바로 읽는다
-        n=$((n + 1)); declare -F vr_hook_reader > /dev/null && vr_hook_reader line "$n"
-        if vr__inject msgwrite || ! printf '%s\n' "$line" >&"$vr__r_mw"; then failed=1; fi
-        line=""
-    done
+    # NUL 보존: bash 의 read 는 NUL 바이트를 말없이 지운다(NUL 만 있는 조각은 통째로 사라짐). 그래서 생명주기 FIFO 는 tr 로 NUL 을
+    # \001 로 바꿔 읽는다 → NUL 이 섞인 줄은 알림 형식에 맞지 않거나(알 수 없는 내용, 3) 비어 있지 않은 줄로 남는다(사라지지 않음).
+    # tr 이 끝까지(= 생명주기 FIFO EOF) 정상 종료했다는 표시로, 이 프로세스만 아는 난수를 넣은 끝 표시 한 줄을 받는다. 끝 표시가 없거나
+    # 마지막 줄이 아니면 R 1(기록 실패) — 그리고 자기 fd 로 EOF 까지 마저 기다린 뒤에 R 을 쓴다(후손이 남은 채로 R 을 쓰지 않음).
+    local tok="" in="" end="" rc
+    tok=$(head -c 8 /dev/urandom 2>/dev/null | od -An -tx1 2>/dev/null | tr -d ' \n')
+    [[ "$tok" =~ ^[0-9a-f]{16}$ ]] || { failed=1; tok=""; }
+    if [ -n "$tok" ]; then
+        exec {in}< <(exec {vr__r_dw}>&- {vr__r_mw}>&-; tr '\000' '\001' <&"$vr__r_lr"; rc=$?; printf '\002VR_END %s %s\n' "$tok" "$rc") || { failed=1; in=""; }
+    fi
+    if [ -n "$in" ]; then
+        while IFS= read -r -u "$in" line || [ -n "$line" ]; do     # -u: fd 를 0 번으로 잠시 복제하지 않고 바로 읽는다
+            if [ -z "$end" ] && [ "$line" = $'\002'"VR_END $tok 0" ]; then end=1; line=""; continue; fi
+            [ -z "$end" ] || failed=1                               # 끝 표시 뒤에 무엇이 더 옴(있을 수 없음)
+            n=$((n + 1)); declare -F vr_hook_reader > /dev/null && vr_hook_reader line "$n"
+            if vr__inject msgwrite || ! printf '%s\n' "$line" >&"$vr__r_mw"; then failed=1; fi
+            line=""
+        done
+        exec {in}<&-
+    fi
+    if [ -z "$end" ]; then    # tr 이 비정상 종료: 판정은 실패(R 1). 남은 쓰기 끝이 모두 닫힐 때까지(EOF) 자기 fd 로 기다린다
+        failed=1
+        while IFS= read -r -u "$vr__r_lr" line || [ -n "$line" ]; do line=""; done
+    fi
     declare -F vr_hook_reader > /dev/null && vr_hook_reader end
     printf 'R %s\n' "$failed" >&"$vr__r_dw"
+    declare -F vr_hook_reader > /dev/null && vr_hook_reader after_r      # 시험용(R 뒤에 바이트를 덧붙이는 경우)
 }
-# 소유 확인 삭제: vr__rm_owned <경로> <그 객체를 가리키는 fd>. 반환: 0 = 우리 객체를 지움, 1 = 지우지 않음(남의 것·확인 불가 — 보존),
-# 2 = 경로에 아무것도 없음, 3 = 지웠으나 결과가 우리 객체였는지 확인되지 않음(실패로 다룬다).
-#  1. 같은 폴더에 예측할 수 없는 이름의 빈 폴더(mktemp -d)를 만들고, 경로를 그 안으로 **덮어쓰지 않는 이동**(mv -n -T = RENAME_NOREPLACE)
-#     한다. 그 안에 이미 무엇이 생겼으면 이동하지 않는다(원래 경로·그 안의 것 모두 보존).
+# 소유 확인 삭제: vr__rm_owned <경로> <그 객체를 가리키는 fd>.
+# 반환: 0 = 우리 객체를 지웠음을 확인, 1 = 지우지 않음(남의 것·확인 불가 — 보존), 2 = 경로에 아무것도 없음,
+#       3 = 삭제를 시도했으나 결과를 확인하지 못함(실패로 다룬다).
+#  1. 같은 폴더에 예측할 수 없는 이름의 빈 폴더(mktemp -d, 권한 0700)를 만들고, 경로를 그 안으로 **덮어쓰지 않는 이동**
+#     (mv -n -T = RENAME_NOREPLACE)한다. 그 안에 이미 무엇이 생겼으면 이동하지 않는다(원래 경로·그 안의 것 모두 보존).
 #  2. 옮긴 객체가 링크가 아니고 fd 와 같은 객체인지 확인한다. 아니면(남의 것) 덮어쓰지 않는 이동으로 원래 자리에 되돌리고 1.
-#  3. 지우기 직전에 다시 확인한 뒤 지우고, 지운 뒤 fd 가 가리키는 우리 객체의 링크 수가 0 인지 확인한다(0 이 아니면 다른 객체를
-#     지웠을 수 있음 → 3).
-# 보장 범위: 경로가 원래 자리·임시 폴더 생성·이동 직후·확인 직후·삭제 직전(마지막 확인 전)에 바뀌는 경우는 남의 것을 지우지 않는다.
-# 제외 범위: 마지막 확인과 rm 사이의 아주 짧은 구간에 그 임시 폴더 안의 이름을 바꾸는 경우(임시 폴더 이름을 알아야 함 — 같은 권한의
-# 의도적 공격)는 막지 못하며, 그 경우는 3 단계의 링크 수 확인으로 "확인되지 않음"(3)으로 드러난다. 경로 기반 삭제의 한계다.
+#  3. 지우기 직전에 다시 확인한다: 링크가 아니고, fd 와 같은 객체이고, 그 객체의 링크 수가 정확히 1(임시 이름 하나뿐)이어야 한다.
+#     아니면 원래 자리에 되돌리고 1. 확인 뒤 rm 하고, fd 가 가리키는 우리 객체의 링크 수가 0 이고 임시 폴더가 비어 지워져야 0.
+# 0 의 의미(보장): (a) 마지막 확인 때 임시 이름이 우리 객체였고 링크가 하나뿐이었다, (b) 지금 우리 객체의 링크 수가 0 이다(fd 로
+#   확인 — 우리 객체는 어떤 이름으로도 남아 있지 않다), (c) 임시 폴더가 비어 있어 지워졌다. 삭제 시도 뒤 (b)·(c) 중 하나라도
+#   확인되지 않으면 성공으로 보지 않는다(3).
+# 위협 모델(선택: 제외): 마지막 확인과 rm 사이에, 같은 사용자 권한의 다른 프로세스가 **의도적으로** 이 함수의 임시 폴더(난수 이름,
+#   0700, 그 순간에만 존재) 안의 이름을 바꿔치기하는 공격은 위협 모델에서 제외한다. 그 경우 rm 은 바꿔 넣은 객체를 지울 수 있고,
+#   공격자가 우리 객체의 이름을 먼저 지웠다면 (b)·(c) 가 성립해 0 을 돌려줄 수 있다 — 링크 수 0 은 "우리 객체의 이름이 더는 없음"을
+#   뜻할 뿐, 직전 rm 이 지운 것이 우리 객체였다는 증명이 아니다. 이 구간은 막지도 검출하지도 못한다.
+#   제외 근거: Linux 에는 "이 inode 일 때만 이 이름을 지움" 같은 조건부 삭제가 없다(unlink·unlinkat 은 이름 기준). 이름을 지우는
+#   마지막 한 단계는 사용자 공간에서 원자적으로 확인할 수 없으므로 구조를 바꿔도 이 구간을 없앨 수 없다. 또 그 공격자는 같은 권한이라
+#   이 함수 없이도 그 객체를 직접 지울 수 있으므로 권한 상승은 없다. 그 밖의 경우 — 원래 경로가 원래 자리·임시 폴더 생성·이동 직후·
+#   첫 확인 직후(마지막 확인 전)에 바뀌는 경우, 그리고 우연한 이름 충돌(임시 폴더는 mktemp 가 배타적으로 만든 난수 이름) — 에는
+#   남의 것을 지우지 않는다.
 vr__rm_owned() {
     local p=$1 fd=$2 d q n
     if [ ! -e "$p" ] && [ ! -L "$p" ]; then return 2; fi
@@ -116,7 +149,7 @@ vr__rm_owned() {
         mv -n -T -- "$q" "$p" 2>/dev/null && rmdir -- "$d" 2>/dev/null; return 1
     fi
     declare -F vr_hook_rm_stage > /dev/null && vr_hook_rm_stage verified "$q"
-    if [ -L "$q" ] || ! [ "$q" -ef "/dev/fd/$fd" ]; then                  # 삭제 직전 재확인
+    if [ -L "$q" ] || ! [ "$q" -ef "/dev/fd/$fd" ] || [ "$(stat -L -c %h "/dev/fd/$fd" 2>/dev/null)" != 1 ]; then   # 삭제 직전 재확인
         mv -n -T -- "$q" "$p" 2>/dev/null && rmdir -- "$d" 2>/dev/null; return 1
     fi
     rm -f -- "$q" 2>/dev/null
@@ -167,11 +200,46 @@ vr__platform_check() {
     if [ "${BASH_VERSINFO[0]}" -lt 4 ] || { [ "${BASH_VERSINFO[0]}" -eq 4 ] && [ "${BASH_VERSINFO[1]}" -lt 4 ]; }; then why+=" bash 4.4 이상 필요(현재 $BASH_VERSION)"; fi
     [ "$(uname -s 2>/dev/null)" = Linux ] || why+=" Linux 전용(현재 $(uname -s 2>/dev/null))"
     { [ -d /proc/self/fd ] && [ -e /dev/fd/0 ] && [ /dev/fd/0 -ef /proc/self/fd/0 ]; } || why+=" procfs(/proc/self/fd)와 /dev/fd 필요"
-    local c; for c in timeout mv stat mktemp mkfifo; do
+    local c; for c in timeout mv stat mktemp mkfifo od tr; do
         command -v "$c" > /dev/null 2>&1 || { why+=" $c 없음"; continue; }
-        case $c in timeout|mv|stat|mktemp|mkfifo) "$c" --version 2>/dev/null | head -1 | grep -q 'GNU coreutils' || why+=" GNU coreutils 의 $c 필요" ;; esac
+        "$c" --version 2>/dev/null | head -1 | grep -q 'GNU coreutils' || why+=" GNU coreutils 의 $c 필요"
     done
     if [ -n "$why" ]; then VR__INIT_ERR="지원하지 않는 환경:$why"; printf 'vr_init: %s\n' "$VR__INIT_ERR" >&2; return 1; fi
+    return 0
+}
+# 기능 확인: 버전 글자가 아니라 이 라이브러리가 실제로 쓰는 옵션·동작을, 출력 폴더와 같은 파일시스템에서 직접 해 본다.
+#   mktemp -d TEMPLATE(난수 자리 치환·디렉터리 생성), mkfifo, mv -n -T(있으면 덮어쓰지 않음·디렉터리를 대상 폴더로 보지 않음·없으면 이동),
+#   /dev/fd/N 과 /proc/self/fd/N 이 같은 객체, stat -L -c %h(링크 수 1 → 2 → 지운 뒤 fd 로 0), od -An -v -tx1(NUL 보존), tr(NUL → \001).
+# 확인용 폴더는 방금 mktemp 로 만든 것이며, 그 안의 확인용 파일만 지운다. 하나라도 맞지 않으면 사유를 남기고 1.
+vr__platform_probe() {
+    local base=$1 p why="" x="" n1="" n2="" n0="" o=""
+    p=$(mktemp -d "$base/.vr.plat.XXXXXXXXXX" 2>/dev/null)
+    if [ -z "$p" ] || [ ! -d "$p" ] || [ -L "$p" ] || [ "${p%/*}" != "$base" ] || [[ ! "${p##*/}" =~ ^\.vr\.plat\.[A-Za-z0-9]{10}$ ]] || [ "${p##*.}" = XXXXXXXXXX ]; then
+        why=" mktemp -d TEMPLATE 동작 이상"; [ -n "$p" ] && [ -d "$p" ] && [ ! -L "$p" ] && rmdir -- "$p" 2>/dev/null
+    else
+        { mkfifo "$p/f" 2>/dev/null && [ -p "$p/f" ] && [ ! -L "$p/f" ]; } || why+=" mkfifo 동작 이상"
+        printf A > "$p/a"; printf B > "$p/b"; mkdir "$p/d"
+        mv -n -T -- "$p/a" "$p/b" 2>/dev/null
+        { [ "$(cat "$p/b" 2>/dev/null)" = B ] && [ "$(cat "$p/a" 2>/dev/null)" = A ]; } || why+=" mv -n(있으면 덮어쓰지 않음) 동작 이상"
+        mv -n -T -- "$p/a" "$p/d" 2>/dev/null
+        { [ -f "$p/a" ] && [ -d "$p/d" ] && [ -z "$(ls -A "$p/d" 2>/dev/null)" ]; } || why+=" mv -T(대상을 폴더로 보지 않음) 동작 이상"
+        mv -n -T -- "$p/a" "$p/c" 2>/dev/null
+        { [ "$(cat "$p/c" 2>/dev/null)" = A ] && [ ! -e "$p/a" ]; } || why+=" mv -n -T(없으면 이동) 동작 이상"
+        if { exec {x}<"$p/c"; } 2>/dev/null; then
+            { [ "$p/c" -ef "/dev/fd/$x" ] && [ "/dev/fd/$x" -ef "/proc/self/fd/$x" ]; } || why+=" /dev/fd 와 /proc/self/fd 동일성 확인 실패"
+            n1=$(stat -L -c %h "/dev/fd/$x" 2>/dev/null); ln -- "$p/c" "$p/e" 2>/dev/null; n2=$(stat -L -c %h "/dev/fd/$x" 2>/dev/null)
+            rm -f -- "$p/c" "$p/e"; n0=$(stat -L -c %h "/dev/fd/$x" 2>/dev/null)
+            [ "$n1/$n2/$n0" = 1/2/0 ] || why+=" stat -L -c %h(링크 수 ${n1:-?}/${n2:-?}/${n0:-?}, 기대 1/2/0) 동작 이상"
+            exec {x}<&-
+        else why+=" 확인용 파일 열기 실패"; fi
+        o=$(printf 'a\000\n' | od -An -v -tx1 2>/dev/null | tr -d ' \n')
+        [ "$o" = 61000a ] || why+=" od -An -v -tx1 동작 이상"
+        o=$(printf 'a\000b' | tr '\000' '\001' 2>/dev/null | od -An -v -tx1 2>/dev/null | tr -d ' \n')
+        [ "$o" = 610162 ] || why+=" tr(NUL 변환) 동작 이상"
+        # 정리: 확인용 이름만 지운다(동작이 틀린 명령이 폴더 d 안으로 옮겼을 수 있는 이름 포함). 남으면 사유에 더한다.
+        rm -f -- "$p/f" "$p/a" "$p/b" "$p/c" "$p/e" "$p/d/a" "$p/d/b" "$p/d/c" 2>/dev/null; rmdir -- "$p/d" "$p" 2>/dev/null || why+=" 확인용 폴더 정리 실패($p)"
+    fi
+    if [ -n "$why" ]; then VR__INIT_ERR="지원하지 않는 환경(기능 확인):$why"; printf 'vr_init: %s\n' "$VR__INIT_ERR" >&2; return 1; fi
     return 0
 }
 vr_init() {
@@ -188,6 +256,7 @@ vr_init() {
     VR_EXP=(); VR_EXPN=(); VR_VIOLATED=0; VR_IOERR=0; VR_RUN_ERRS=(); VR_BG_PIDS=(); VR_BG_LABELS=(); VR_BG_FAILS=(); VR_BG_IDS=(); VR_BG_ST=(); VR_BG_RC=(); VR_BG_SEQ=0; VR_BG_PATH=""
     VR_BGREC="$VR_OUT/bg"
     mkdir -p "$VR_L" "$VR_ST" "$VR_BGREC" || return 2
+    vr__platform_probe "$VR_OUT" || return 2      # 실제 동작 확인은 출력 폴더와 같은 파일시스템에서(출력 폴더를 만든 직후)
     : > "$VR_FAILS" || return 2
     : > "$VR_EXPECTED" || return 2
     : > "$VR_NOTES" || return 2
@@ -265,19 +334,48 @@ vr_init() {
 }
 
 vr__ioerr() { VR_IOERR=1; VR_RUN_ERRS+=("기록 실패: $1"); }
+# 바이트 보존 읽기(NUL 포함). bash 의 명령 치환·read 는 NUL 바이트를 지우므로, 판정에 쓰는 기록의 내용을 그대로 셸 변수에 담아
+# 비교하지 않는다. od 로 16진 표기(NUL 이 없는 글자열)를 받아 바이트마다 검사한다: NUL 이 하나라도 있으면 4, 없으면 원래 바이트를
+# 하나도 빠짐없이(끝의 개행 포함) 변수에 되돌린다. 반환: 0 = 정상, 1 = 읽기 실패·표기 이상, 4 = NUL 포함(변수는 빈 값).
+vr__hex_to_var() {   # vr__hex_to_var <변수> <od -An -v -tx1 출력>
+    local __h=${2//$'\n'/ } __f __re='^( [0-9a-f]{2})+ $'; local -a __b=()
+    printf -v "$1" '%s' ''
+    IFS=' ' read -r -a __b <<< "$__h"
+    [ ${#__b[@]} -gt 0 ] || return 0
+    [[ " ${__b[*]} " =~ $__re ]] || return 1
+    case " ${__b[*]} " in *" 00 "*) return 4 ;; esac
+    printf -v __f '\\x%s' "${__b[@]}"
+    LC_ALL=C printf -v "$1" '%b' "$__f"
+}
+vr__read_path_bytes() {   # vr__read_path_bytes <변수> <경로> : 한 번만 읽는다(cat | od — cat 은 시험의 읽기 실패 모의와 같은 방식으로 부른다)
+    local __r
+    __r=$(cat "$2" 2>/dev/null | command od -An -v -tx1 2>/dev/null; __s=("${PIPESTATUS[@]}"); [ "${__s[0]}" = 0 ] && [ "${__s[1]}" = 0 ]) || return 1
+    vr__hex_to_var "$1" "$__r"
+}
+vr__read_fd_bytes() {   # vr__read_fd_bytes <변수> <fd> : 그 fd 에서 EOF 까지 한 번 읽는다
+    local __r
+    __r=$(command od -An -v -tx1 <&"$2" 2>/dev/null) || return 1
+    vr__hex_to_var "$1" "$__r"
+}
 # 보고 파일을 쓰고 확인한다. 경로가 심볼릭 링크면 쓰지 않는다. 연 fd 로 쓰고, 쓴 뒤와 다시 읽은 뒤에 경로가 링크 아닌 일반 파일이고
 # 그 fd 와 같은 객체인지 확인한다(검증 전후 경로 교체 검출). 다시 읽은 내용이 쓴 내용과 바이트 단위로 같아야 한다. 하나라도 아니면 1.
-vr__write_verified() {
-    local f=$1 content=$2 back w=""
+vr__write_verified() {   # vr__write_verified <경로> <내용> [철회 내용]
+    # 철회 내용이 있으면(ALL_DONE 기록): 확인에 실패했을 때 **우리가 연 그 파일**(경로가 아니라 fd 의 객체 — /dev/fd/N 을 비우며 다시 엶)을
+    # 철회 내용으로 덮어쓴다. 쓴 ALL_DONE 이 확인 실패 뒤에도 그 파일에 남지 않게 한다(경로가 남의 것으로 바뀌었으면 그쪽은 건드리지 않음).
+    local f=$1 content=$2 retract=${3-} back w=""
     if [ -L "$f" ]; then return 1; fi
     { exec {w}>"$f"; } 2>/dev/null || return 1   # { } 로 묶어 2>/dev/null 이 셸에 영구 적용되지 않게
     declare -F vr_hook_report_write > /dev/null && vr_hook_report_write "$f"     # 시험용 주입 지점(쓰기 전후 경로 교체)
-    if ! printf '%s' "$content" 2>/dev/null >&"$w" || [ -L "$f" ] || [ ! -f "$f" ] || ! [ "$f" -ef "/dev/fd/$w" ]; then exec {w}>&-; return 1; fi
-    # cat 의 종료 코드를 따로 확인한다(읽기 실패가 "빈 내용"으로 오인되지 않게). 읽기에 성공한 뒤에만 내용을 비교한다.
-    back=$(cat "$f" 2>/dev/null && printf x) || { exec {w}>&-; return 1; }
-    if [ -L "$f" ] || ! [ "$f" -ef "/dev/fd/$w" ]; then exec {w}>&-; return 1; fi
+    if ! printf '%s' "$content" 2>/dev/null >&"$w" || [ -L "$f" ] || [ ! -f "$f" ] || ! [ "$f" -ef "/dev/fd/$w" ]; then vr__wv_fail "$w" "$retract"; return 1; fi
+    declare -F vr_hook_report_written > /dev/null && vr_hook_report_written "$f"   # 시험용 주입 지점(쓴 뒤 같은 파일에 바이트 추가)
+    # 읽기 실패는 "빈 내용"으로 오인하지 않는다. 바이트 보존 읽기(NUL 이 있으면 불일치)로 다시 읽고, 성공한 뒤에만 비교한다.
+    if ! vr__read_path_bytes back "$f" || [ -L "$f" ] || ! [ "$f" -ef "/dev/fd/$w" ] || [ "$back" != "$content" ]; then vr__wv_fail "$w" "$retract"; return 1; fi
     exec {w}>&-
-    [ "${back%x}" = "$content" ] || return 1
+}
+vr__wv_fail() {   # vr__wv_fail <fd> <철회 내용> : 철회 내용이 있으면 그 fd 의 객체를 비우고 철회 내용을 쓴 뒤 fd 를 닫는다
+    [ -n "$2" ] && { printf '%s' "$2" > "/dev/fd/$1"; } 2>/dev/null
+    [[ "$1" =~ ^[0-9]+$ ]] && eval "exec $1>&-" 2>/dev/null
+    return 0
 }
 vr__violation() {   # 위반은 메모리에 먼저 기억하고, 파일 기록은 보조다. 파일 기록이 실패하면 기록 실패로도 기억한다
     VR_VIOLATED=1; VR_RUN_ERRS+=("$1")
@@ -350,9 +448,14 @@ vr__bg_record_lines() {   # 종료 기록의 본문 줄(종류 표시 포함). $
 # 종료 기록을 읽어 검증하고, 유효하면 V·I·B 를 메모리에 반영한다. vr__bg_read_record <파일> <id> <이름(빈 값이면 기록의 L 을 씀)>
 # 반환: 0 = 유효(vr__rec_code, vr__rec_label 설정), 1 = 읽기 실패(기록 실패로 기억), 2 = 손상(bg 실패로 기억, 내용은 반영하지 않음)
 vr__bg_read_record() {
-    local f=$1 id=$2 label=$3 tag l; local -a lines=() pv=() pi=() pb=()
+    local f=$1 id=$2 label=$3 tag l body rc; local -a lines=() pv=() pi=() pb=()
     vr__rec_code=""; vr__rec_label=""
-    if [ ! -f "$f" ] || [ -L "$f" ] || ! mapfile -t lines < "$f" 2>/dev/null; then vr__ioerr "bg:${label:-$id} 종료 기록 읽기"; return 1; fi
+    # 한 번만 바이트 보존으로 읽는다: NUL 이 하나라도 있으면 손상(명령 치환·mapfile 이 NUL 을 지워 정상 기록으로 보이지 않게)
+    if [ ! -f "$f" ] || [ -L "$f" ]; then vr__ioerr "bg:${label:-$id} 종료 기록 읽기"; return 1; fi
+    vr__read_path_bytes body "$f"; rc=$?
+    if [ $rc -eq 4 ]; then VR_BG_FAILS+=("bg:${label:-$id} 종료 기록 손상"); return 2; fi
+    if [ $rc -ne 0 ]; then vr__ioerr "bg:${label:-$id} 종료 기록 읽기"; return 1; fi
+    mapfile -t lines < <(printf '%s' "$body")
     tag=$(vr_tag "bg:$id") && [ ${#tag} -eq 64 ] || { vr__ioerr "bg:${label:-$id} 종료 기록 태그 계산"; return 1; }
     if [ "${lines[0]:-}" != "v1 $tag $id" ]; then VR_BG_FAILS+=("bg:${label:-$id} 종료 기록 손상"); return 2; fi
     for l in "${lines[@]:1}"; do
@@ -559,30 +662,41 @@ vr__bg_drain_descendants() {
     # (1) 읽기 프로세스가 끝날 때까지(= 생명주기 쓰기 fd 를 가진 후손이 모두 끝날 때까지) 완료 FIFO 를 끝까지 읽는다.
     #     정확히 "R 0" = 정상, 정확히 "R 1" = 알림 파일 기록 실패(3). R 없이 EOF(읽기 프로세스 비정상 종료) 또는 그 밖의 내용
     #     (중복 R, S, 손상) = 기록 실패(3) + 대체 대기.
-    local done_out msgs extra="" line fallback="" rc
-    # 바이트 단위로 대조한다(명령 치환이 끝의 개행을 지우지 않게 x 를 붙여 읽음): 정확히 "R 0\n" 또는 "R 1\n" 만 허용
-    if ! done_out=$(command cat <&"$VR_LDONE_R" 2>/dev/null && printf x); then vr__ioerr "후손 추적 완료 읽기"; fallback=1; done_out="x"; fi
-    done_out=${done_out%x}
-    case "$done_out" in
-        $'R 0\n') ;;
-        $'R 1\n') vr__ioerr "후손 추적 알림 기록" ;;
-        "") vr__ioerr "후손 추적 알림 읽기(읽기 프로세스 비정상 종료)"; fallback=1 ;;
-        *) vr__ioerr "후손 추적 완료 FIFO 내용 이상"; fallback=1 ;;
-    esac
+    local done_out msgs extra="" line fallback="" rc raw
+    # 바이트 단위로 대조한다(바이트 보존 읽기 — 끝의 개행·NUL 도 그대로): 정확히 "R 0\n" 또는 "R 1\n" 만 허용. 그 밖의 바이트가 하나라도
+    # 있으면(NUL 포함) 내용 이상.
+    vr__read_fd_bytes done_out "$VR_LDONE_R"; rc=$?
+    if [ $rc -eq 1 ]; then vr__ioerr "후손 추적 완료 읽기"; fallback=1
+    elif [ $rc -ne 0 ]; then vr__ioerr "후손 추적 완료 FIFO 내용 이상"; fallback=1
+    else
+        case "$done_out" in
+            $'R 0\n') ;;
+            $'R 1\n') vr__ioerr "후손 추적 알림 기록" ;;
+            "") vr__ioerr "후손 추적 알림 읽기(읽기 프로세스 비정상 종료)"; fallback=1 ;;
+            *) vr__ioerr "후손 추적 완료 FIFO 내용 이상"; fallback=1 ;;
+        esac
+    fi
     # (2) 대체 대기: 읽기 프로세스를 믿을 수 없으면, 최상위가 가진 생명주기 FIFO 읽기 fd 로 남은 알림을 마저 읽으며 EOF(남은 후손 종료)를
     #     기다린다. 제한 시간(VR__FALLBACK_WAIT, 기본 30초) 안에 끝나지 않으면 "후손 종료 확인 시간 초과"(무한 대기 없음).
     #     fd 를 리다이렉션으로 넘기므로 FIFO 를 새로 여는 일(쓰는 쪽이 없으면 열기에서 막힘)이 없다.
     if [ -n "$fallback" ]; then
-        extra=$(timeout "${VR__FALLBACK_WAIT:-30}" cat <&"$VR_LIFE_R" 2>/dev/null; rc=$?; printf x; exit $rc); rc=$?; extra=${extra%x}
-        if [ $rc -eq 124 ]; then vr__ioerr "후손 종료 확인 시간 초과"; elif [ $rc -ne 0 ]; then vr__ioerr "후손 추적 대체 읽기"; fi
+        raw=$(timeout "${VR__FALLBACK_WAIT:-30}" od -An -v -tx1 <&"$VR_LIFE_R" 2>/dev/null); rc=$?
+        if [ $rc -eq 124 ]; then vr__ioerr "후손 종료 확인 시간 초과"; elif [ $rc -ne 0 ]; then vr__ioerr "후손 추적 대체 읽기"
+        else vr__hex_to_var extra "$raw"; rc=$?
+            [ $rc -eq 0 ] || { extra=""; vr__ioerr "후손 추적 FIFO 에 알 수 없는 내용"; }     # NUL(4)·표기 이상(1)
+        fi
     fi
     VR__READER_STATE=""        # 완료 FIFO 가 EOF = 읽기 프로세스는 끝났다
     # (3) 알림 파일: 읽기는 vr_init 이 연 fd 로 한다(/dev/fd/N 을 다시 열어 처음부터 — 경로가 지워지거나 바뀌어도 원래 파일).
     #     경로가 여전히 그 파일(링크 아닌 일반 파일, 같은 파일)인지 확인한다. 아니면(삭제·교체·링크·다른 종류) 기록 실패(3).
     local msgs_same=1
     if [ ! -f "$VR_MSGS" ] || [ -L "$VR_MSGS" ] || ! [ "$VR_MSGS" -ef "/dev/fd/$VR_MSGS_R" ]; then vr__ioerr "후손 추적 알림 파일 변경"; msgs_same=""; fi
-    if ! msgs=$(command cat "/dev/fd/$VR_MSGS_R" 2>/dev/null && printf x); then vr__ioerr "후손 추적 알림 파일 읽기"; msgs="x"; fi
-    msgs=${msgs%x}
+    # 바이트 보존 읽기: NUL 이 하나라도 있으면 알 수 없는 내용(3) — 명령 치환으로 NUL 이 사라져 정상 줄로 보이지 않게
+    msgs=""
+    if ! raw=$(command od -An -v -tx1 < "/dev/fd/$VR_MSGS_R" 2>/dev/null); then vr__ioerr "후손 추적 알림 파일 읽기"
+    else vr__hex_to_var msgs "$raw"; rc=$?
+        [ $rc -eq 0 ] || { msgs=""; vr__ioerr "후손 추적 FIFO 에 알 수 없는 내용"; }
+    fi
     # 알림: "E <작업 ID> <작업 경로>" = 그 작업이 종료 기록을 쓰지 못함. 그 밖의 내용은 신뢰할 수 없으므로 기록 실패로 본다.
     # 각 줄은 정확히 "E <작업 ID> <경로>" 이고 개행으로 끝나야 한다. 빈 줄·끝이 잘린 줄·그 밖의 내용은 알 수 없는 내용(3).
     local all="$msgs$extra" one
@@ -590,8 +704,8 @@ vr__bg_drain_descendants() {
     if [ -n "$all" ]; then
         [ "${all: -1}" = $'\n' ] || vr__ioerr "후손 추적 FIFO 에 알 수 없는 내용"
         mapfile -t mlines <<< "${all%$'\n'}"
-        for one in "${mlines[@]}"; do
-            if [[ "$one" =~ ^E\ ([0-9a-f]{12}_[0-9]+_[0-9]+)\ (.+)$ ]]; then vr__ioerr "bg:${BASH_REMATCH[2]} 종료 기록 쓰기"
+        for one in "${mlines[@]}"; do      # 경로에 제어 문자(NUL 을 바꾼 \001 포함)가 있으면 알 수 없는 내용
+            if [[ "$one" =~ ^E\ ([0-9a-f]{12}_[0-9]+_[0-9]+)\ ([^[:cntrl:]]+)$ ]]; then vr__ioerr "bg:${BASH_REMATCH[2]} 종료 기록 쓰기"
             else vr__ioerr "후손 추적 FIFO 에 알 수 없는 내용"; fi
         done
     fi
@@ -639,8 +753,7 @@ vr_status_code() {   # 상태 기록은 바이트 단위로 정확히 "v1 <태�
     local name=$1 f="$VR_ST/$1.status" content tag pre rest re
     if [ ! -e "$f" ] && [ ! -L "$f" ]; then return 1; fi
     if [ -L "$f" ] || [ ! -f "$f" ]; then return 2; fi
-    content=$(cat "$f" 2>/dev/null && printf x) || return 2
-    content=${content%x}
+    vr__read_path_bytes content "$f" || return 2      # 한 번만 읽고 NUL 이 하나라도 있으면 손상(바이트 보존 — 명령 치환으로 NUL 이 사라지지 않음)
     tag=$(vr_tag "$name") || return 2
     pre="v1 $tag $name "
     [[ "$content" == "$pre"* ]] || return 2
@@ -753,7 +866,7 @@ vr_finish() {
     # (6) 최종 판정
     if [ ${#list[@]} -eq 0 ] && [ ${#ioerrs[@]} -eq 0 ]; then
         local msg="ALL_DONE: 모든 항목 종료 코드 0 ($total 개 항목)"
-        if vr__write_verified "$VR_DONE" "$msg"$'\n'; then
+        if vr__write_verified "$VR_DONE" "$msg"$'\n' "NOT_DONE: 99_done.log 에 ALL_DONE 을 기록하거나 확인하지 못함 — 성공으로 판정하지 않음"$'\n'; then
             echo "$msg"; return 0
         fi
         echo "기록 실패: 99_done.log (ALL_DONE 을 기록하거나 확인하지 못함 — 성공으로 판정하지 않음)" >&2

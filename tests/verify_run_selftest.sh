@@ -821,6 +821,83 @@ mkdir -p "$TMP/fakebin"; printf '#!/bin/sh\necho "timeout (BusyBox) 1.0"\n' > "$
 ( PATH="$TMP/fakebin:$PATH"; . "$HERE/lib/verify_run.sh"; vr_init "$TMP/plat2" 2> "$TMP/plat2.err"; [ $? -eq 2 ] && grep -q 'GNU coreutils 의 timeout 필요' "$TMP/plat2.err" ) \
   && ok '플랫폼: GNU 가 아닌 timeout → vr_init 2, 사유 출력' || bad '플랫폼: 비 GNU timeout'
 
+# ── 97c37c9 1차 재검수 반영 ─────────────────────────────────────────────────────────────────────────────────────────
+# 아래는 모두 합성 상태 주입(파일·FIFO 에 바이트를 직접 넣거나 시험용 주입 지점·함수 대체)이며, 실제 P1 실행에서 생긴 결과가 아니다.
+# 9. NUL 바이트: 상태 기록(끝·중간·NUL 뒤 데이터)
+for kind in nul1 nulmid nuljunk; do
+    case $kind in
+        nul1)    m='printf "\0" >> "$VR_ST/b.status"' ;;
+        nulmid)  m='c=$(cat "$VR_ST/b.status"); printf "%s\0%s\n" "${c:0:8}" "${c:8}" > "$VR_ST/b.status"' ;;
+        nuljunk) m='printf "\0junk\n" >> "$VR_ST/b.status"' ;;
+    esac
+    eval "s_snul_$kind() { vr_expect a b; run a true; run b true; $m; }"
+    scenario "snul_$kind" "s_snul_$kind"; rc=$?
+    { [ $rc -eq 1 ] && same_list 'b 상태 기록 손상' "$TMP/snul_$kind/failed_steps.txt" && no_alldone "$TMP/snul_$kind" \
+      && [ "$(tr -cd '\000' < "$TMP/snul_$kind/status/b.status" | wc -c)" -ge 1 ]; } \
+      && ok "NUL: 정상 상태 기록 + '$kind' → 손상, 1, ALL_DONE 없음(파일에 NUL 이 실제로 있음)" || bad "NUL: 상태 기록 $kind (rc=$rc, $(tr '\n' ';' < "$TMP/snul_$kind/failed_steps.txt" 2>/dev/null))"
+done
+# 10. NUL 바이트: 완료 FIFO 의 R 0 / R 1 뒤 NUL(읽기 프로세스가 R 을 쓴 직후의 주입 지점 after_r 에서 같은 쓰기 끝으로 덧붙임 — 순서 결정적)
+dnul() {   # dnul <이름> <R 1 유도(1/0)> <NUL 덧붙임(1/0)>
+    ( . "$HERE/lib/verify_run.sh"; R1=$2; NULX=$3
+      vr_hook_reader() { case $1 in end) [ "$R1" = 1 ] && failed=1 ;; after_r) [ "$NULX" = 1 ] && printf '\0' >&"$vr__r_dw" ;; esac; return 0; }
+      vr_init "$TMP/$1" || exit 9; vr_expect a b; run a true; vr_bg B run b true; vr_wait; vr_finish > "$TMP/$1.finish_out" 2>&1 ); return $?
+}
+dnul dnul_r0c 0 0; check "대조: 주입 지점만 정의(바이트 추가 없음) → 정상 0" 0 $? '' "$TMP/dnul_r0c"
+dnul dnul_r0 0 1; lc_fail dnul_r0 "NUL: 완료 FIFO 'R 0\\n' 뒤 NUL → 내용 이상, 3, ALL_DONE 없음" '기록 실패: 후손 추적 완료 FIFO 내용 이상' $?
+dnul dnul_r1c 1 0; lc_fail dnul_r1c "대조: 완료 FIFO 'R 1\\n'(NUL 없음) → 알림 기록 실패, 3(R 1 유도 확인)" '기록 실패: 후손 추적 알림 기록' $?
+dnul dnul_r1 1 1; lc_fail dnul_r1 "NUL: 완료 FIFO 'R 1\\n' 뒤 NUL → 내용 이상, 3, ALL_DONE 없음" '기록 실패: 후손 추적 완료 FIFO 내용 이상' $?
+# 11. NUL 바이트: 알림 파일(.vr_msgs) — NUL 만 / 정상 알림 줄 중간 / 정상 알림 줄 끝 뒤
+for kind in only mid end; do
+    case $kind in
+        only) m='printf "\0" >> "$VR_MSGS"' ;;
+        mid)  m='printf "E %s_1_1 /x\0y\n" "$VR_RUN_ID" >> "$VR_MSGS"' ;;
+        end)  m='printf "E %s_1_1 /x\n\0" "$VR_RUN_ID" >> "$VR_MSGS"' ;;
+    esac
+    eval "s_mnul_$kind() { vr_expect a; run a true; $m; }"
+    scenario "mnul_$kind" "s_mnul_$kind"; lc_fail "mnul_$kind" "NUL: .vr_msgs 에 NUL('$kind') → 알 수 없는 내용, 3, ALL_DONE 없음" '기록 실패: 후손 추적 FIFO 에 알 수 없는 내용' $?
+done
+# 12. NUL 바이트: 생명주기 FIFO(읽기 프로세스의 read 가 NUL 을 지우지 않게 tr 로 \001 변환) — NUL 1바이트만(개행 없음) / 알림 줄 안의 NUL
+s_lnul1() { body() { run b true; printf '\0' >&"$VR_LIFE_W"; }; vr_expect a b; run a true; vr_bg B body; vr_wait; }
+scenario lnul1 s_lnul1; lc_fail lnul1 'NUL: 생명주기 FIFO 에 NUL 1바이트만(개행 없음) → 사라지지 않고 알 수 없는 내용, 3' '기록 실패: 후손 추적 FIFO 에 알 수 없는 내용' $?
+s_lnul2() { body() { run b true; printf 'E %s_1_1 /x\0\n' "$VR_RUN_ID" >&"$VR_LIFE_W"; }; vr_expect a b; run a true; vr_bg B body; vr_wait; }
+scenario lnul2 s_lnul2; lc_fail lnul2 'NUL: 생명주기 FIFO 의 알림 줄 안에 NUL → 알 수 없는 내용, 3' '기록 실패: 후손 추적 FIFO 에 알 수 없는 내용' $?
+# 13. NUL 바이트: 보고 파일 — 쓴 뒤 다시 읽기 전에 같은 파일에 NUL 이 붙음
+s_rpnul() { vr_hook_report_written() { case "$1" in */99_done.log) printf '\0' >> "$1" ;; esac; }; vr_expect a; run a true; }
+scenario rpnul s_rpnul; rc=$?
+{ [ $rc -eq 3 ] && no_alldone "$TMP/rpnul" && grep -q '^NOT_DONE' "$TMP/rpnul/logs/99_done.log" && [ "$(tr -cd '\000' < "$TMP/rpnul/logs/99_done.log" | wc -c)" -eq 0 ]; } \
+  && ok 'NUL: 99_done.log 를 다시 읽을 때 NUL 이 붙어 있음 → 불일치, 3, ALL_DONE 을 철회(그 파일에 ALL_DONE 이 남지 않음)' || bad "NUL: 99_done.log (rc=$rc)"
+s_rpnul2() { vr_hook_report_written() { case "$1" in */step_status.txt) printf '\0' >> "$1" ;; esac; }; vr_expect a; run a true; }
+scenario rpnul2 s_rpnul2; check 'NUL: step_status.txt 를 다시 읽을 때 NUL 이 붙어 있음 → 기록 실패 3' 3 $? '기록 실패: step_status.txt' "$TMP/rpnul2"
+s_rpnulc() { vr_hook_report_written() { :; }; vr_expect a; run a true; }
+scenario rpnulc s_rpnulc; { [ $? -eq 0 ] && grep -qx 'ALL_DONE: 모든 항목 종료 코드 0 (1 개 항목)' "$TMP/rpnulc/logs/99_done.log"; } && ok '대조: 보고 파일 주입 지점만 정의(바이트 추가 없음) → 정상 0, ALL_DONE' || bad '대조: 보고 파일 주입 지점'
+# 14. 바이트 보존 읽기 단위 시험: NUL 이 없으면 끝 개행·제어 문자·0x80 이상 바이트까지 그대로, NUL 이 있으면 4
+( . "$HERE/lib/verify_run.sh"; printf 'a\n\n\\x\001\200\n\n' > "$TMP/hb1"; printf 'a\0b' > "$TMP/hb2"; : > "$TMP/hb3"
+  vr__read_path_bytes v "$TMP/hb1" || exit 1; printf '%s' "$v" | cmp -s - "$TMP/hb1" || exit 2
+  vr__read_path_bytes v "$TMP/hb2"; [ $? -eq 4 ] && [ -z "$v" ] || exit 3
+  vr__read_path_bytes v "$TMP/hb3" && [ -z "$v" ] || exit 4
+  vr__read_path_bytes v "$TMP/hb_none"; [ $? -eq 1 ] || exit 5 ); rc=$?
+[ $rc -eq 0 ] && ok '바이트 보존 읽기: 끝 개행·빈 줄·백슬래시·제어 문자·0x80 그대로 / NUL → 4 / 빈 파일 → 빈 값 / 없음 → 1' || bad "바이트 보존 읽기 (단계 $rc)"
+# 15. 삭제 직전 링크 수 확인: 확인 시점에 우리 객체에 다른 이름(하드 링크)이 생김 → 지우지 않고 보존(1)
+( . "$HERE/lib/verify_run.sh"; RL="$TMP/rmlink"; mkdir -p "$RL"; printf mine > "$RL/obj"; exec {fd}<"$RL/obj"
+  vr_hook_rm_stage() { [ "$1" = verified ] && ln "$2" "$RL/extra"; return 0; }     # 주입 함수에서는 d 를 쓰지 않는다(vr__rm_owned 의 local d)
+  vr__rm_owned "$RL/obj" "$fd"; [ $? -eq 1 ] && [ "$(cat "$RL/obj")" = mine ] && [ -z "$(ls -A "$RL" | grep '\.del\.')" ] ); rc=$?
+[ $rc -eq 0 ] && ok '삭제 경쟁: 삭제 직전 우리 객체의 링크 수가 1 이 아님 → 지우지 않고 원래 자리에 보존(1)' || bad "삭제 경쟁: 링크 수 (rc=$rc)"
+( . "$HERE/lib/verify_run.sh"; d="$TMP/rmok"; mkdir -p "$d"; printf mine > "$d/obj"; exec {fd}<"$d/obj"
+  vr__rm_owned "$d/obj" "$fd"; [ $? -eq 0 ] && [ ! -e "$d/obj" ] && [ "$(stat -L -c %h "/dev/fd/$fd")" = 0 ] && [ -z "$(ls -A "$d")" ] ); rc=$?
+[ $rc -eq 0 ] && ok '소유 확인 삭제 0 의 조건: 경로 없음, fd 의 객체 링크 수 0, 임시 폴더 없음' || bad "소유 확인 삭제 0 (rc=$rc)"
+# 16. 플랫폼 기능 확인(실제 옵션·동작을 직접 해 봄): 함수로 대체한 명령이 필요한 동작을 하지 않으면 vr_init 2 + 사유, 확인용 폴더를 남기지 않음
+plat_t() {   # plat_t <이름> <대체 정의> <기대 사유 글자> <설명>
+    ( . "$HERE/lib/verify_run.sh"; eval "$2"; vr_init "$TMP/$1" 2> "$TMP/$1.err"; [ $? -eq 2 ] && grep -qF "$3" "$TMP/$1.err" \
+      && [ -z "$(ls -A "$TMP/$1" 2>/dev/null | grep 'vr\.plat')" ] ) && ok "$4" || bad "$4 ($(head -c 300 "$TMP/$1.err" 2>/dev/null))"
+}
+plat_t plat3 'mv() { local a=() x; for x in "$@"; do [ "$x" = -n ] || a+=("$x"); done; command mv "${a[@]}"; }' 'mv -n(있으면 덮어쓰지 않음) 동작 이상' '플랫폼 기능: mv 가 -n 을 지키지 않음(덮어씀) → vr_init 2, 사유 출력'
+plat_t plat4 'mv() { local a=() x; for x in "$@"; do [ "$x" = -T ] || a+=("$x"); done; command mv "${a[@]}"; }' 'mv -T(대상을 폴더로 보지 않음) 동작 이상' '플랫폼 기능: mv 가 -T 를 지키지 않음(폴더 안으로 옮김) → vr_init 2, 사유 출력'
+plat_t plat5 'stat() { case "$*" in *%h*) echo 1 ;; *) command stat "$@" ;; esac; }' 'stat -L -c %h(링크 수 1/1/1' '플랫폼 기능: stat -L -c %h 가 실제 링크 수를 주지 않음 → vr_init 2, 사유 출력'
+plat_t plat6 'mktemp() { if [ "$1" = -d ]; then mkdir -p "$2" && printf "%s\n" "$2"; else command mktemp "$@"; fi; }' 'mktemp -d TEMPLATE 동작 이상' '플랫폼 기능: mktemp -d 가 TEMPLATE 의 X 를 바꾸지 않음 → vr_init 2, 사유 출력'
+plat_t plat7 'mkfifo() { if [ "$1" = --version ]; then command mkfifo --version; else : > "$1"; fi; }' 'mkfifo 동작 이상' '플랫폼 기능: mkfifo 가 FIFO 를 만들지 않음 → vr_init 2, 사유 출력'
+plat_t plat8 'od() { if [ "$1" = --version ]; then command od --version; else tr -d "\000" | command od "$@"; fi; }' 'od -An -v -tx1 동작 이상' '플랫폼 기능: od 가 NUL 을 보존하지 않음 → vr_init 2, 사유 출력'
+[ -z "$(ls -A "$TMP/ok" | grep 'vr\.plat')" ] && ok '플랫폼 기능: 정상 초기화 뒤 확인용 폴더를 남기지 않음' || bad '플랫폼 기능: 확인용 폴더 잔존'
+
 # ── 재현성: 처리기 return 3 + builtin exit 5 를 10번 반복(매번 5) ──────────────────────────────────────────────
 rep_ok=0; for k in 1 2 3 4 5 6 7 8 9 10; do
     eval "s_rep_$k() { body() { trap 'return 3' EXIT; builtin exit 5; }; vr_expect a; run a true; vr_bg B body; vr_wait; }"
