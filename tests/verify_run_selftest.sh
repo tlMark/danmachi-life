@@ -1262,6 +1262,65 @@ scenario fmt s_fmt; rc=$?
   && [ -z "$(ls -A "$TMP/fmt" "$TMP/fmt/logs" "$TMP/fmt/status" | grep '\.vr\.new\.\|\.vr\.rep\.\|\.vr_lock')" ]; } \
   && ok '정상 실행 출력 형식: expected_steps·_violations·로그(stdout·stderr·exit 줄)·step_status·failed_steps 바이트 고정, 임시 이름·잠금 남지 않음' || bad "정상 실행 출력 형식 (rc=$rc)"
 
+# ── e10123b 1차 재검수 반영(합성 주입) ───────────────────────────────────────────────────────────────────────────────
+# 27-1. 같은 셸에서 성공한 vr_init 뒤 다른 폴더로 vr_init 이 실패(잠금 선점·플랫폼 실패·하위 폴더 링크·파일 선점) → vr_finish 3,
+#       이전 폴더에 새 보고 파일·상태 변경 없음(이전 실행의 생명주기 객체·잠금 정리는 재호출 계약대로 — 대조에서 제외)
+snap() { ( cd "$1" && { find . \( -name .vr_life -o -name .vr_done -o -name .vr_msgs -o -name .vr_lock \) -prune -o -print | sort; find . -type f ! -name '.vr_*' -exec sha256sum {} + | sort; } ); }
+for kind in lock plat sub file; do
+  ( . "$HERE/lib/verify_run.sh"; A="$TMP/ri_${kind}_A"; B="$TMP/ri_${kind}_B"; X="$TMP/ri_$kind.ext"; mkext "$X"; mkdir -p "$TMP/ri_$kind.dir"
+    vr_init "$A" || exit 9; vr_expect a; run a true
+    case $kind in lock) mkdir -p "$B/.vr_lock" ;; plat) uname() { echo Darwin; } ;; sub) mkdir -p "$B"; ln -s "$TMP/ri_$kind.dir" "$B/logs" ;; file) mkdir -p "$B"; ln -s "$X" "$B/failed_steps.txt" ;; esac
+    s0=$(snap "$A")
+    vr_init "$B" 2>/dev/null; r=$?; [ $r -eq 2 ] || exit 1
+    unset -f uname
+    vr_finish > "$TMP/ri_$kind.fin" 2>&1; r=$?; [ $r -eq 3 ] || exit 2
+    grep -q '초기화가 성공한 상태가 아님' "$TMP/ri_$kind.fin" || exit 3
+    [ "$(snap "$A")" = "$s0" ] && [ ! -e "$A/logs/99_done.log" ] && [ ! -e "$A/step_status.txt" ] || exit 4
+    extsame "$X" && [ -z "$(ls -A "$TMP/ri_$kind.dir")" ] || exit 5
+    case $kind in lock) [ "$(ls -A "$B")" = .vr_lock ] || exit 6 ;; esac ); rc=$?
+  [ $rc -eq 0 ] && ok "재초기화 실패($kind): 두 번째 vr_init 2 → vr_finish 3(아무것도 쓰지 않음), 이전 폴더의 보고·상태 그대로, 외부 객체 그대로" || bad "재초기화 실패 $kind (단계 $rc)"
+done
+( . "$HERE/lib/verify_run.sh"; vr_finish > "$TMP/ri_none.fin" 2>&1; [ $? -eq 3 ] && grep -q '초기화가 성공한 상태가 아님' "$TMP/ri_none.fin" ); rc=$?
+[ $rc -eq 0 ] && ok '초기화 없이 vr_finish → 3, 아무것도 쓰지 않음' || bad "초기화 없이 vr_finish (rc=$rc)"
+# 27-2. vr__new_placed 배치 직후(주입 지점 place_after) 최종 경로 교체·링크 교체·이름 이동 → 4/4/3, 남의 것 삭제 없음
+for kind in reg lnk mov; do
+  ( . "$HERE/lib/verify_run.sh"; D="$TMP/np_$kind"; mkdir -p "$D"; X="$TMP/np_$kind.ext"; mkext "$X"
+    case $kind in
+      reg) vr_hook_place_after() { rm -f "$1"; printf FOREIGN > "$1"; } ;;
+      lnk) vr_hook_place_after() { rm -f "$1"; ln -s "$X" "$1"; } ;;
+      mov) vr_hook_place_after() { mv "$1" "$1.moved"; printf FOREIGN > "$1"; } ;;
+    esac
+    vr__new_placed "$D/f.txt" fd append; r=$?
+    extsame "$X" && [ -z "$fd" ] && [ -z "$(ls -A "$D" | grep '\.vr\.new\.')" ] || exit 1
+    case $kind in
+      reg) [ $r -eq 4 ] && [ "$(cat "$D/f.txt")" = FOREIGN ] ;;
+      lnk) [ $r -eq 4 ] && [ -L "$D/f.txt" ] && [ "$(readlink "$D/f.txt")" = "$X" ] ;;
+      mov) [ $r -eq 3 ] && [ "$(cat "$D/f.txt")" = FOREIGN ] && [ -e "$D/f.txt.moved" ] && [[ "$VR__WV_LEFT" == "$D/f.txt("*"위치 미확인"* ]] ;;
+    esac ); rc=$?
+  case $kind in reg) d='남의 일반 파일로 교체 → 4(우리 객체 남지 않음), 남의 파일 그대로' ;; lnk) d='외부 링크로 교체 → 4, 링크·외부 파일 그대로' ;; mov) d='우리 파일을 다른 이름으로 옮기고 남의 파일을 놓음 → 3·위치 미확인 진단, 옮겨진 우리 파일·남의 파일 모두 지우지 않음' ;; esac
+  [ $rc -eq 0 ] && ok "배치 직후 경합($kind): $d" || bad "배치 직후 경합 $kind (rc=$rc)"
+done
+s_npl() { vr_hook_place_after() { case "$1" in */a.log) mv "$1" "$1.moved"; printf FOREIGN > "$1" ;; esac; }; vr_expect a; run a sh -c ": > '$TMP/npl.ran'"; unset -f vr_hook_place_after; }
+scenario npl s_npl; rc=$?
+{ [ $rc -eq 3 ] && [ ! -e "$TMP/npl.ran" ] && grep -qxF '기록 실패: a.log 생성' "$TMP/npl/failed_steps.txt" && grep -q '^기록 실패: 임시 파일 정리 .*a\.log(.*위치 미확인' "$TMP/npl/failed_steps.txt" && [ "$(cat "$TMP/npl/logs/a.log")" = FOREIGN ]; } \
+  && ok '배치 직후 경합(로그): 명령 미실행, "a.log 생성"·"임시 파일 정리(위치 미확인)" 기록 실패 3, 남의 파일 그대로' || bad "배치 직후 경합 로그 (rc=$rc)"
+( . "$HERE/lib/verify_run.sh"; X="$TMP/npi.ext"; mkext "$X"; vr_hook_place_after() { case "$1" in */expected_steps.txt) rm -f "$1"; ln -s "$X" "$1" ;; esac; }
+  vr_init "$TMP/npi" 2> "$TMP/npi.err"; r=$?; [ $r -eq 2 ] && extsame "$X" && grep -q 'expected_steps.txt 생성 실패(4)' "$TMP/npi.err" && [ ! -e "$TMP/npi/.vr_lock" ] ); rc=$?
+[ $rc -eq 0 ] && ok '배치 직후 경합(초기화 expected_steps → 외부 링크): vr_init 2·반환 4 진단, 외부 파일 그대로, 잠금 해제' || bad "배치 직후 경합 초기화 (rc=$rc)"
+# 27-3. 잠금 생성 직후 fd 열기 실패·확인 실패 → 잠금을 남김(자동 복구·삭제 없음), 다음 vr_init 도 거부
+( . "$HERE/lib/verify_run.sh"; vr_hook_fail() { [ "$1" = lock_open ]; }; vr_init "$TMP/lko" 2> "$TMP/lko.err"; r=$?; unset -f vr_hook_fail
+  [ $r -eq 2 ] && grep -q '자동으로 복구·삭제하지 않음' "$TMP/lko.err" && [ -d "$TMP/lko/.vr_lock" ] && [ ! -e "$TMP/lko/logs" ] || exit 1
+  vr_init "$TMP/lko" 2>/dev/null; [ $? -eq 2 ] && [ -d "$TMP/lko/.vr_lock" ] ); rc=$?
+[ $rc -eq 0 ] && ok '잠금 생성 직후 fd 열기 실패: vr_init 2·"자동으로 복구·삭제하지 않음", 잠금 남김·하위 폴더 안 만듦, 다음 vr_init 도 거부' || bad "잠금 fd 열기 실패 (rc=$rc)"
+for kind in lnk reg; do
+  ( . "$HERE/lib/verify_run.sh"; L="$TMP/lkv_$kind"; mkdir -p "$TMP/lkv_$kind.dir"
+    case $kind in lnk) vr_hook_lock_made() { rmdir "$1"; ln -s "$TMP/lkv_$kind.dir" "$1"; } ;; reg) vr_hook_lock_made() { rmdir "$1"; printf FOREIGN > "$1"; } ;; esac
+    vr_init "$L" 2> "$L.err"; r=$?; unset -f vr_hook_lock_made
+    [ $r -eq 2 ] && grep -q '소유를 입증하지 못함' "$L.err" && [ -z "$(ls -A "$TMP/lkv_$kind.dir")" ] || exit 1
+    case $kind in lnk) [ -L "$L/.vr_lock" ] ;; reg) [ "$(cat "$L/.vr_lock")" = FOREIGN ] ;; esac ); rc=$?
+  [ $rc -eq 0 ] && ok "잠금 생성 직후 확인 실패($kind 로 바뀜): vr_init 2, 그 객체를 지우지 않음(외부 소유로 간주), 링크 대상에 아무것도 만들지 않음" || bad "잠금 확인 실패 $kind (rc=$rc)"
+done
+
 # ── 재현성: 처리기 return 3 + builtin exit 5 를 10번 반복(매번 5) ──────────────────────────────────────────────
 rep_ok=0; for k in 1 2 3 4 5 6 7 8 9 10; do
     eval "s_rep_$k() { body() { trap 'return 3' EXIT; builtin exit 5; }; vr_expect a; run a true; vr_bg B body; vr_wait; }"

@@ -43,7 +43,7 @@
 #   "등록된 항목 없음"                          vr_expect 로 등록한 항목이 0개
 #   "기록 실패: <대상>"                         판정에 필요한 I/O 가 실패함(이 경우 종료 코드는 3)
 
-VR_OUT=""; VR_L=""; VR_ST=""; VR_TOKEN=""; VR_RUN_ID=""; VR_LIFE=""; VR_LIFE_W=""; VR_LDONE=""; VR_LDONE_R=""; VR_MSGS=""; VR_LIFE_RD=""; VR_MSGS_R=""; VR_LIFE_R=""; VR__READER_STATE=""; VR__INIT_ERR=""; VR__INIT_PID=""; VR__WV_LEFT=""; VR__LOCK=""; VR__LOCK_ID=""; VR__LOCK_FD=""; VR__NOTES_FD=""; VR__NOTES_AT=""; VR__EXP_FD=""; VR__EXP_AT=""; VR__WV_KEEP=""; VR__WV_FD=""
+VR_OUT=""; VR_L=""; VR_ST=""; VR_TOKEN=""; VR_RUN_ID=""; VR_LIFE=""; VR_LIFE_W=""; VR_LDONE=""; VR_LDONE_R=""; VR_MSGS=""; VR_LIFE_RD=""; VR_MSGS_R=""; VR_LIFE_R=""; VR__READER_STATE=""; VR__INIT_ERR=""; VR__INIT_PID=""; VR__WV_LEFT=""; VR__INIT_OK=0; VR__LOCK=""; VR__LOCK_ID=""; VR__LOCK_FD=""; VR__NOTES_FD=""; VR__NOTES_AT=""; VR__EXP_FD=""; VR__EXP_AT=""; VR__WV_KEEP=""; VR__WV_FD=""
 VR_FAILS=""; VR_EXPECTED=""; VR_NOTES=""; VR_STEPS=""; VR_DONE=""
 VR_EXP=(); declare -A VR_EXPN=()
 VR_VIOLATED=0; VR_IOERR=0; VR_RUN_ERRS=()
@@ -258,8 +258,10 @@ vr__platform_probe() {
 vr_init() {
     # 이전 초기화의 읽기 프로세스가 남아 있으면(running: 판정 없이 다시 부름, stuck: 이전에 종료를 확인하지 못함) 먼저 끝내고 확인한다.
     # 확인하지 못하면 새 초기화를 하지 않는다(이전 실행의 자원을 가진 프로세스가 남은 상태에서 성공하지 않음).
+    # 초기화 성공 표시(VR__INIT_OK)는 맨 먼저 내린다 — 이후 어느 단계에서 실패해도 vr_finish 는 아무것도 쓰지 않고 3(이전 실행의 출력 폴더를 쓰지 않음)
+    VR__INIT_OK=0; VR__INIT_ERR=""; VR__INIT_PID=$BASHPID
+    vr__state_clear      # 이전 실행의 경로·실행 ID·토큰·배열·플래그 무효화(정리에 필요한 생명주기·잠금 변수는 아래 정리 함수가 다룸)
     if [ -n "${VR__READER_STATE:-}" ]; then vr__reader_stop || return 2; fi
-    VR__INIT_ERR=""; VR__INIT_PID=$BASHPID
     vr__life_reset || return 2
     vr__app_close
     vr__lock_release || { VR__INIT_ERR="이전 출력 폴더 잠금 해제 실패: $VR__LOCK"; printf 'vr_init: %s\n' "$VR__INIT_ERR" >&2; return 2; }
@@ -268,8 +270,16 @@ vr_init() {
     if [ $rc -ne 0 ]; then
         vr__app_close
         if [ -n "$VR__LOCK" ] && ! vr__lock_release; then printf 'vr_init: 출력 폴더 잠금 해제 실패(그대로 둠): %s\n' "$VR__LOCK" >&2; fi
+        vr__state_clear
+        return $rc
     fi
-    return $rc
+    VR__INIT_OK=1
+    return 0
+}
+vr__state_clear() {   # 실행 상태 무효화: 경로·토큰·실행 ID·등록 목록·실패 목록·bg 상태. 생명주기 fd·잠금·추가 기록 fd 는 각자의 정리 함수가 닫는다
+    VR_OUT=""; VR_L=""; VR_ST=""; VR_FAILS=""; VR_EXPECTED=""; VR_STEPS=""; VR_NOTES=""; VR_DONE=""; VR_BGREC=""; VR_TOKEN=""; VR_RUN_ID=""
+    VR_EXP=(); VR_EXPN=(); VR_VIOLATED=0; VR_IOERR=0; VR_RUN_ERRS=(); VR_BG_PIDS=(); VR_BG_LABELS=(); VR_BG_FAILS=(); VR_BG_IDS=(); VR_BG_ST=(); VR_BG_RC=(); VR_BG_SEQ=0; VR_BG_PATH=""
+    VR__WV_LEFT=""; VR__WV_KEEP=""; VR__WV_FD=""
 }
 vr__app_close() {   # 추가 기록 fd 를 닫는다
     local v
@@ -296,8 +306,13 @@ vr__init_body() {
     done
     vr__platform_probe "$VR_OUT" || return 2      # 실제 동작 확인은 출력 폴더와 같은 파일시스템에서(출력 폴더를 만든 직후)
     vr__write_verified "$VR_FAILS" "" || return 2    # 경로를 열지 않는 교체(A)
-    vr__new_placed "$VR_EXPECTED" VR__EXP_FD append || return 2; VR__EXP_AT=$VR_EXPECTED      # 추가 기록(B)
-    vr__new_placed "$VR_NOTES" VR__NOTES_FD append || return 2; VR__NOTES_AT=$VR_NOTES
+    local ar
+    vr__new_placed "$VR_EXPECTED" VR__EXP_FD append; ar=$?      # 추가 기록(B)
+    if [ $ar -ne 0 ]; then VR__INIT_ERR="expected_steps.txt 생성 실패($ar)${VR__WV_LEFT:+: $VR__WV_LEFT}"; printf 'vr_init: %s\n' "$VR__INIT_ERR" >&2; return 2; fi
+    VR__EXP_AT=$VR_EXPECTED
+    vr__new_placed "$VR_NOTES" VR__NOTES_FD append; ar=$?
+    if [ $ar -ne 0 ]; then VR__INIT_ERR="_violations.txt 생성 실패($ar)${VR__WV_LEFT:+: $VR__WV_LEFT}"; printf 'vr_init: %s\n' "$VR__INIT_ERR" >&2; return 2; fi
+    VR__NOTES_AT=$VR_NOTES
     VR_TOKEN=$(head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n') || return 2
     [ "${#VR_TOKEN}" -eq 48 ] || return 2
     # 실행 ID: 작업 ID 에 넣는 비밀이 아닌 실행별 난수(토큰은 파일 이름에 넣지 않는다). 이전 실행의 bg 기록이 남은 출력 폴더는 받지 않는다.
@@ -480,11 +495,14 @@ vr__place() {
     declare -F vr_hook_place_before > /dev/null && vr_hook_place_before "$f"                   # 시험용 주입 지점(확인 뒤·rename 직전)
     [ "$(vr__lid "$f")" = "$id0" ] && [ ! -L "$f" ] || return 1
     mv -T -- "$t" "$f" 2>/dev/null || return 1
+    declare -F vr_hook_place_after > /dev/null && vr_hook_place_after "$f"                     # 시험용 주입 지점(놓은 직후·확인 전)
     [ ! -L "$f" ] && [ -f "$f" ] && [ "$f" -ef "/dev/fd/$fd" ] || return 4
     return 0
 }
 # vr__new_placed <최종 경로> <fd 변수> [append] : 같은 폴더의 무작위 임시 이름에 새 객체를 만들어 최종 경로에 놓는다(내용은 비어 있음).
-# 반환: 0 = 성공(fd 변수), 그 밖 = 실패(1·3 은 vr__new_obj/vr__wv_drop 의미, 실패 시 fd 는 닫힘, VR__WV_LEFT).
+# 반환: 0 = 성공(fd 변수), 1 = 실패·우리 것 남지 않음, 3 = 정리 실패(우리 객체가 남았거나 위치 미확인 — VR__WV_LEFT),
+#       4 = 놓았으나 최종 경로가 바뀜(그 자리의 남의 것은 건드리지 않음) + 우리 객체는 어떤 이름으로도 남지 않음(fd 로 링크 수 0 확인).
+# 실패 시 fd 는 닫힌다. 놓은 뒤 최종 경로가 바뀌었는데 우리 객체의 링크 수가 0 이 아니면(다른 이름으로 옮겨짐) 위치를 알 수 없으므로 3.
 vr__new_placed() {
     local np_f=$1 np_v=$2 np_ap=${3:-} np_t np_fd np_r
     printf -v "$np_v" '%s' ''
@@ -495,7 +513,12 @@ vr__new_placed() {
     [ $np_r -eq 0 ] || { [ $np_r -eq 2 ] && return 1; return $np_r; }
     vr__place "$np_t" "$np_f" "$np_fd"; np_r=$?
     if [ $np_r -eq 1 ]; then vr__wv_drop "$np_t" "$np_fd"; return $?; fi
-    if [ $np_r -ne 0 ]; then eval "exec $np_fd>&-" 2>/dev/null; return 1; fi
+    if [ $np_r -ne 0 ]; then      # 4: 놓은 뒤 최종 경로가 우리 객체가 아님 — 닫기 전에 우리 객체가 남았는지 본다(남의 것은 지우지 않음)
+        local np_h; np_h=$(stat -L -c %h "/dev/fd/$np_fd" 2>/dev/null)
+        eval "exec $np_fd>&-" 2>/dev/null
+        if [ "$np_h" = 0 ]; then return 4; fi
+        VR__WV_LEFT="$np_f(놓은 뒤 최종 경로가 바뀜 — 우리 객체가 다른 이름으로 남음: 링크 수 ${np_h:-?}, 위치 미확인)"; return 3
+    fi
     printf -v "$np_v" '%s' "$np_fd"; return 0
 }
 # ── 출력 폴더 잠금 ── vr_init 이 출력 폴더의 파일·하위 폴더에 손대기 전에 mkdir "<출력>/.vr_lock"(원자적, 링크를 따라가지 않음)으로 얻고,
@@ -508,10 +531,14 @@ vr__lock_take() {
         VR__INIT_ERR="출력 폴더 잠금 실패: $l 이(가) 이미 있음 — 다른 실행이 이 폴더를 쓰는 중이거나 이전 실행이 비정상 종료함(자동으로 지우지 않음)"
         printf 'vr_init: %s\n' "$VR__INIT_ERR" >&2; return 1
     fi
+    # 만든 직후 폴더 fd 를 연다(소유 증거). 열기 실패·확인 실패면 그 잠금이 우리 것임을 입증할 수 없다 → 안전 우선: 잠금을 그대로 남기고
+    # 실패한다(자동 복구·자동 삭제 없음 — 사람이 확인해 지워야 함). 폴더 fd 방식은 Linux(procfs /dev/fd)에서만 확인했다(지원 대상도 Linux 한정).
     local lfd=""
-    if ! { exec {lfd}<"$l"; } 2>/dev/null || [ -L "$l" ] || [ ! -d "/dev/fd/$lfd" ] || ! [ "$l" -ef "/dev/fd/$lfd" ]; then
+    declare -F vr_hook_lock_made > /dev/null && vr_hook_lock_made "$l"                          # 시험용 주입 지점(만든 직후·fd 열기 전)
+    if vr__inject lock_open || ! { exec {lfd}<"$l"; } 2>/dev/null || [ -L "$l" ] || [ ! -d "/dev/fd/$lfd" ] || ! [ "$l" -ef "/dev/fd/$lfd" ]; then
         [ -n "$lfd" ] && eval "exec $lfd<&-"
-        VR__INIT_ERR="출력 폴더 잠금 확인 실패(만든 잠금이 바뀜 — 지우지 않음): $l"; printf 'vr_init: %s\n' "$VR__INIT_ERR" >&2; return 1
+        VR__INIT_ERR="출력 폴더 잠금 확인 실패: $l 를 만든 뒤 소유를 입증하지 못함(폴더 fd 열기 실패 또는 바뀜) — 잠금을 남김. 자동으로 복구·삭제하지 않음: 다른 실행이 없음을 확인한 뒤 직접 지울 것"
+        printf 'vr_init: %s\n' "$VR__INIT_ERR" >&2; return 1
     fi
     VR__LOCK=$l; VR__LOCK_ID=$(vr__lid "$l"); VR__LOCK_FD=$lfd
     return 0
@@ -1032,6 +1059,10 @@ vr__wv_note() {   # vr__wv_note <vr__write_verified 반환> <보고 파일 이�
 # 명령 치환 같은 다른 셸에서 부르면 보고 파일을 쓰지 않고 3. 같은 출력 폴더에 동시에 두 번째 vr_init 이 성공하지 못하는 것은
 # 생명주기 FIFO 의 배타적 생성(mkfifo — 이미 있으면 실패)이 보장한다.
 vr_finish() {
+    if [ "${VR__INIT_OK:-0}" != 1 ] || [ -z "$VR_OUT" ]; then     # 초기화가 성공한 상태가 아님 — 어떤 경로에도 쓰지 않는다
+        echo "vr_finish: 초기화가 성공한 상태가 아님(${VR__INIT_ERR:-vr_init 실패 또는 미호출}) — 보고 파일을 쓰지 않음, 성공으로 판정하지 않음" >&2
+        return 3
+    fi
     if [ -z "${VR__INIT_PID:-}" ] || [ "$BASHPID" != "$VR__INIT_PID" ]; then
         echo "vr_finish: vr_init 을 부른 셸(${VR__INIT_PID:-없음})이 아닌 셸($BASHPID)에서 불림 — 보고 파일을 쓰지 않음, 성공으로 판정하지 않음" >&2
         return 3
