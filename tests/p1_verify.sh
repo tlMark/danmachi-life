@@ -10,10 +10,15 @@ set -u
 OUT=${1:?usage: bash tests/p1_verify.sh <out dir>}
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 cd "$ROOT" || exit 2
-mkdir -p "$OUT/compare" || exit 2
 . "$ROOT/tests/lib/verify_run.sh"
-vr_init "$OUT" || exit 2
+vr_init "$OUT" || exit 2        # 출력 폴더 검증·잠금 확보. 그 전에는 출력 폴더 아래 어떤 경로도 만들거나 열지 않는다
 L="$VR_L"; C="$OUT/compare"
+# 비교 결과 폴더는 잠금 확보 뒤에 준비한다: 링크면 거부, 없으면 한 단계만 만든다(-p 없음 — 링크를 따라 만들지 않음), 있으면 링크 아닌 폴더여야 한다.
+# 실패하면 기록 실패로 남기고 vr_finish 로 끝낸다(잠금 해제·보고는 기존 종료 계약대로, 종료 코드 3).
+if [ -L "$C" ] || { [ ! -e "$C" ] && ! mkdir -- "$C" 2>/dev/null; } || [ -L "$C" ] || [ ! -d "$C" ]; then
+    vr_note_ioerr "compare 폴더 준비($C: 링크이거나 폴더가 아니거나 만들지 못함)"
+    vr_finish; exit $?
+fi
 # 이번 실행에서 반드시 끝나야 하는 항목(아래 run 호출과 1:1). 여기 없는 이름으로는 run 할 수 없고, 여기 있는데 기록이 없으면 실패다.
 vr_expect 01_syntax 02_tr_20261104 03_tr_777 04_digest10_vs_F1 05_f1_byte_compare 06_digest10_strict 07_verify_run_selftest \
     10_followup_pf_test 10_followup_halt_test 10_f1_joinhard_test 10_f1_transition_test 10_god_gone_2ba_test 10_residence_ri_test 10_sync_2i_test 10_jobsince_test 10_recruit_2bb_test \
