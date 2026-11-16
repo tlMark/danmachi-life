@@ -1104,6 +1104,164 @@ scenario cc_bg s_cc_bg; rc=$?
 { [ $rc -eq 0 ] && [ "$(cat "$TMP/cc_two.second")" = 2 ] && grep -qx 'ALL_DONE: 모든 항목 종료 코드 0 (1 개 항목)' "$TMP/cc_two/logs/99_done.log" && [ -s "$TMP/cc_two/step_status.txt" ]; } \
   && ok '단일 작성자: 실행 중인 출력 폴더에 다른 프로세스의 두 번째 vr_init → 2(생명주기 FIFO 배타 생성), 첫 실행의 보고는 그대로' || bad "단일 작성자: 두 번째 vr_init (rc=$rc)"
 
+# ── 파일 쓰기 경로 전체 안전성(설계 v2) — 합성 주입. 외부 파일은 사전 사본과 cmp·sha256. 멈춤 위험이 있는 경우는 timeout 으로 감쌈 ─────────
+TO=20   # 시험 하나의 시간 제한(초). 멈추면 124 → 실패로 표시
+# 26-0. bash noclobber 동작표 고정(설계 9-1): FIFO·FIFO 링크는 멈춤, 장치·장치 링크는 열림, 나머지는 거부
+( D="$TMP/nc"; mkdir -p "$D"; cd "$D"; printf R > reg; ln -s reg l_reg; ln -s nx l_dang; mkfifo fifo; ln -s fifo l_fifo; ln -s /dev/null l_dev; mkdir dir
+  out=""; for t in new reg l_reg l_dang fifo l_fifo /dev/null l_dev dir; do r=$(timeout 2 bash -c 'set -C; exec 3>"$1" 2>/dev/null && echo O || echo R' _ "$t" 2>/dev/null); [ $? -eq 124 ] && r=B; out+="$t=$r "; done
+  [ "$out" = "new=O reg=R l_reg=R l_dang=R fifo=B l_fifo=B /dev/null=O l_dev=O dir=R " ] && [ "$(cat reg)" = R ] && [ ! -e nx ] || { echo "$out"; exit 1; } ) > "$TMP/nc.out" 2>&1
+[ $? -eq 0 ] && ok 'noclobber 동작표(실측 고정): 없음 생성 / 일반·링크·대상 없는 링크·폴더 거부 / FIFO·FIFO 링크 멈춤 / 장치·장치 링크 열림' || bad "noclobber 동작표 $(cat "$TMP/nc.out")"
+# 26-1. vr__new_obj: 선점(일반·링크→외부·대상 없는 링크·FIFO·FIFO 링크·장치 링크) → 2, 멈추지 않음, 선점된 것·외부 파일 그대로
+for kind in reg lext dang fifo lfifo ldev; do
+  ( . "$HERE/lib/verify_run.sh"; D="$TMP/no_$kind"; mkdir -p "$D"; X="$TMP/no_$kind.ext"; mkext "$X"; mkfifo "$D/f0"
+    case $kind in reg) printf PRE > "$D/t" ;; lext) ln -s "$X" "$D/t" ;; dang) ln -s "$D/nx" "$D/t" ;; fifo) mkfifo "$D/t" ;; lfifo) ln -s "$D/f0" "$D/t" ;; ldev) ln -s /dev/null "$D/t" ;; esac
+    before=$(stat -c '%i:%F' "$D/t")
+    vr__new_obj "$D/t" fd; r=$?
+    [ $r -eq 2 ] && [ -z "$fd" ] && extsame "$X" && [ "$(stat -c '%i:%F' "$D/t")" = "$before" ] && [ ! -e "$D/nx" ] ) & wp=$!
+  ( sleep $TO; kill -9 $wp 2>/dev/null ) & kp=$!; wait $wp; rc=$?; kill $kp 2>/dev/null; wait $kp 2>/dev/null
+  [ $rc -eq 0 ] && ok "안전 생성 선점($kind): 열지 않고 2, 멈추지 않음, 선점된 것·외부 파일 그대로" || bad "안전 생성 선점 $kind (rc=$rc)"
+done
+# 26-2. vr__new_obj 확인~열기 경합(주입 지점 preopen): 링크→외부 / FIFO 링크 → 열기 실패(외부 그대로) 또는 멈춤 위험(문서화된 경계: 시간 제한 안에 끝나는지만 확인하지 않고, 경계로 기록)
+( . "$HERE/lib/verify_run.sh"; D="$TMP/nopre"; mkdir -p "$D"; X="$TMP/nopre.ext"; mkext "$X"
+  vr_hook_new_obj_preopen() { ln -s "$X" "$1"; }
+  vr__new_obj "$D/t" fd; r=$?; [ $r -eq 2 ] && extsame "$X" && [ -L "$D/t" ] ); rc=$?
+[ $rc -eq 0 ] && ok '안전 생성 확인~열기 경합: 그 사이 외부 파일 링크가 생김 → O_EXCL 거부 2, 외부 파일 그대로' || bad "안전 생성 확인~열기 경합 (rc=$rc)"
+# 26-3. vr__new_obj 소유 증명 실패 → 쓰기·삭제 금지
+( . "$HERE/lib/verify_run.sh"; D="$TMP/noown"; mkdir -p "$D"; e=0
+  vr_hook_new_obj_opened() { rm -f "$1"; printf FOREIGN > "$1"; }; vr__new_obj "$D/a" fd; r=$?; unset -f vr_hook_new_obj_opened
+  [ $r -eq 1 ] && [ "$(cat "$D/a")" = FOREIGN ] || { echo "  이름 교체 r=$r"; e=1; }
+  vr_hook_new_obj_opened() { ln "$1" "$D/b.keep"; }; vr__new_obj "$D/b" fd; r=$?; unset -f vr_hook_new_obj_opened
+  { [ $r -eq 3 ] && [ -e "$D/b" ] && [ "$D/b" -ef "$D/b.keep" ] && [[ "$VR__WV_LEFT" == "$D/b("* ]]; } || { echo "  링크 수 r=$r"; e=1; }
+  vr_hook_new_obj_opened() { printf z >> "$1"; }; vr__new_obj "$D/c" fd; r=$?; unset -f vr_hook_new_obj_opened
+  [ $r -eq 1 ] && [ ! -e "$D/c" ] || { echo "  크기 r=$r"; e=1; }
+  exit $e ) > "$TMP/noown.out" 2>&1; rc=$?
+[ $rc -eq 0 ] && ok '안전 생성 소유 증명 실패: 이름이 남의 파일로 바뀜 → 1·남의 파일 그대로 / 링크 수 2 → 3·보존 / 크기 변조(우리 객체) → 소유 확인 정리 1' || bad "안전 생성 소유 증명 $(tr '\n' ';' < "$TMP/noown.out")"
+# 26-4. /dev/fd/N O_APPEND 재열기: 접근 모드 쓰기 전용·O_APPEND·inode 같음·원래 fd 닫힘 / 여러 프로세스 추가가 빠짐없이
+( . "$HERE/lib/verify_run.sh"; D="$TMP/app"; mkdir -p "$D"; e=0
+  vr__new_placed "$D/f.txt" fd append || exit 1
+  fl=$(vr__fd_flags "$fd"); (( (8#$fl & 3) == 1 && (8#$fl & 02000) != 0 )) || { echo "  flags $fl"; e=1; }
+  [ "$D/f.txt" -ef "/dev/fd/$fd" ] || { echo '  inode'; e=1; }
+  n=0; for x in /proc/$BASHPID/fd/*; do [ "$(readlink "$x")" = "$D/f.txt" ] && n=$((n + 1)); done; [ $n -eq 1 ] || { echo "  열린 fd 수 $n"; e=1; }
+  ls -A "$D" | grep -q '\.vr\.new\.' && { echo '  임시 이름 남음'; e=1; }
+  for k in 1 2 3 4 5 6 7 8; do ( for j in $(seq 1 50); do printf 'w%s-%s\n' "$k" "$j" >&"$fd"; done ) & done; wait
+  [ "$(wc -l < "$D/f.txt")" -eq 400 ] || { echo "  줄 수 $(wc -l < "$D/f.txt")"; e=1; }
+  for k in 1 2 3 4 5 6 7 8; do [ "$(grep -c "^w$k-" "$D/f.txt")" -eq 50 ] || { echo "  작성자 $k 누락"; e=1; }; done
+  [ "$(grep -cvE '^w[1-8]-[0-9]+$' "$D/f.txt")" -eq 0 ] || { echo '  깨진 줄'; e=1; }
+  exit $e ) > "$TMP/app.out" 2>&1; rc=$?
+[ $rc -eq 0 ] && ok 'O_APPEND 재열기: 쓰기 전용+O_APPEND, inode 같음, 원래 fd 닫힘(열린 fd 1개), 하위 셸 8개 × 50줄 추가가 빠짐없이·줄 단위로' || bad "O_APPEND 재열기 $(tr '\n' ';' < "$TMP/app.out")"
+# 26-5. 초기화 3개 경로에 미리 놓인 외부 파일 링크 → vr_init 2, 외부 그대로, 잠금 해제됨
+for tgt in failed_steps.txt expected_steps.txt status/_violations.txt; do
+  k=${tgt##*/}; k=${k%%.*}
+  ( . "$HERE/lib/verify_run.sh"; O="$TMP/ipre_$k"; X="$TMP/ipre_$k.ext"; mkext "$X"; mkdir -p "$O/status"; ln -s "$X" "$O/$tgt"
+    vr_init "$O" 2>/dev/null; r=$?; [ $r -eq 2 ] && extsame "$X" && [ -L "$O/$tgt" ] && [ ! -e "$O/.vr_lock" ] ); rc=$?
+  [ $rc -eq 0 ] && ok "초기화 경로 선점($tgt → 외부 링크): vr_init 2, 외부 파일 그대로, 링크 그대로, 잠금 해제" || bad "초기화 경로 선점 $tgt (rc=$rc)"
+done
+# 26-6. 추가 기록 파일 경로를 실행 중 외부 링크로 교체 → 쓰기는 우리 객체로, 외부 그대로, vr_finish 3(경로 변경)
+s_apsw_n() { vr_expect a; rm -f "$VR_NOTES"; ln -s "$TMP/apsw_n.ext" "$VR_NOTES"; run a true; run zzz true; }
+mkext "$TMP/apsw_n.ext"; scenario apsw_n s_apsw_n; rc=$?
+{ [ $rc -eq 3 ] && extsame "$TMP/apsw_n.ext" && grep -qxF '기록 실패: _violations.txt 경로 변경' "$TMP/apsw_n/failed_steps.txt" && grep -qxF 'zzz 등록되지 않은 항목' "$TMP/apsw_n/failed_steps.txt" && ! grep -q 'EXTERNAL' "$TMP/apsw_n/failed_steps.txt"; } \
+  && ok '추가 기록 경로 교체(_violations.txt → 외부 링크): 위반은 우리 객체에 기록·판정에 반영, 외부 파일 그대로·읽지 않음, 3' || bad "추가 기록 경로 교체 notes (rc=$rc)"
+s_apsw_e() { vr_expect a; rm -f "$VR_EXPECTED"; ln -s "$TMP/apsw_e.ext" "$VR_EXPECTED"; vr_expect b; run a true; run b true; }
+mkext "$TMP/apsw_e.ext"; scenario apsw_e s_apsw_e; rc=$?
+{ [ $rc -eq 3 ] && extsame "$TMP/apsw_e.ext" && grep -qxF '기록 실패: expected_steps.txt 경로 변경' "$TMP/apsw_e/failed_steps.txt"; } \
+  && ok '추가 기록 경로 교체(expected_steps.txt → 외부 링크): 외부 파일 그대로, 3' || bad "추가 기록 경로 교체 exp (rc=$rc)"
+# 26-7. 로그 경로: 미리 외부 링크 → 명령을 실행하지 않고 실패 / 실행 중 명령이 경로를 외부 링크로 바꿈 → 출력은 우리 객체로, 3
+s_logpre() { vr_expect a; ln -s "$TMP/logpre.ext" "$VR_L/a.log"; run a sh -c ": > '$TMP/logpre.ran'"; }
+mkext "$TMP/logpre.ext"; scenario logpre s_logpre; rc=$?
+{ [ $rc -eq 3 ] && extsame "$TMP/logpre.ext" && [ ! -e "$TMP/logpre.ran" ] && grep -qxF '기록 실패: a.log 생성' "$TMP/logpre/failed_steps.txt" && grep -qxF 'a 시작했으나 상태 기록 없음' "$TMP/logpre/failed_steps.txt"; } \
+  && ok '로그 경로 선점(외부 링크): 명령을 실행하지 않음, 외부 파일 그대로, 상태 없음 → 실패 3' || bad "로그 경로 선점 (rc=$rc)"
+s_logsw() { vr_expect a; run a sh -c "echo before; rm -f '$TMP/logsw/logs/a.log'; ln -s '$TMP/logsw.ext' '$TMP/logsw/logs/a.log'; echo after"; }
+mkext "$TMP/logsw.ext"; scenario logsw s_logsw; rc=$?
+{ [ $rc -eq 3 ] && extsame "$TMP/logsw.ext" && grep -qxF '기록 실패: a.log 경로 변경' "$TMP/logsw/failed_steps.txt"; } \
+  && ok '로그 경로 실행 중 교체(외부 링크): 출력·exit 줄은 우리 객체로, 외부 파일 그대로, 3' || bad "로그 경로 실행 중 교체 (rc=$rc)"
+# 26-8. 상태 임시 이름 선점(일반·외부 링크·FIFO·FIFO 링크·장치 링크) / 놓기 직전 교체 → 기록 실패, 멈추지 않음, 외부 그대로
+for kind in reg lext fifo lfifo ldev; do
+  eval "s_stpre_$kind() { vr_hook_before_status() { local t=\"\$VR_ST/\$1.status.tmp.\$BASHPID\"; case $kind in reg) printf PRE > \"\$t\" ;; lext) ln -s \"$TMP/stpre_$kind.ext\" \"\$t\" ;; fifo) mkfifo \"\$t\" ;; lfifo) mkfifo \"$TMP/stpre_$kind.f\"; ln -s \"$TMP/stpre_$kind.f\" \"\$t\" ;; ldev) ln -s /dev/null \"\$t\" ;; esac; }; vr_expect a; run a true; unset -f vr_hook_before_status; rm -f \"\$VR_ST\"/a.status.tmp.*; }"
+  mkext "$TMP/stpre_$kind.ext"
+  ( scenario "stpre_$kind" "s_stpre_$kind" ) & wp=$!; ( sleep $TO; kill -9 $wp 2>/dev/null ) & kp=$!; wait $wp; rc=$?; kill $kp 2>/dev/null; wait $kp 2>/dev/null
+  { [ $rc -eq 3 ] && extsame "$TMP/stpre_$kind.ext" && grep -qxF '기록 실패: a 상태 임시 파일' "$TMP/stpre_$kind/failed_steps.txt" && no_alldone "$TMP/stpre_$kind"; } \
+    && ok "상태 임시 이름 선점($kind): 열지 않고 기록 실패 3, 멈추지 않음, 외부 파일 그대로" || bad "상태 임시 이름 선점 $kind (rc=$rc)"
+done
+s_stsw() { vr_hook_before_commit() { local t="$VR_ST/$1.status.tmp.$BASHPID"; rm -f "$t"; ln -s "$TMP/stsw.ext" "$t"; }; vr_expect a; run a true; unset -f vr_hook_before_commit; rm -f "$VR_ST"/a.status.tmp.*; }
+mkext "$TMP/stsw.ext"; scenario stsw s_stsw; rc=$?
+{ [ $rc -eq 3 ] && extsame "$TMP/stsw.ext" && grep -qxF '기록 실패: a 상태 파일 놓기' "$TMP/stsw/failed_steps.txt"; } && ok '상태 임시 파일 놓기 직전 외부 링크로 교체: 놓지 않음, 외부 파일 그대로, 3' || bad "상태 임시 교체 (rc=$rc)"
+# 26-9. bg .run 선점(외부 링크·FIFO) → 작업 ID 충돌로 다음 순번, 멈추지 않음 / .run 을 PID 기록 전 외부 링크로 교체 / .tmp 선점(FIFO·외부 링크)
+for kind in lext fifo; do
+  eval "s_runpre_$kind() { vr_expect a; local nid=\"\${VR_RUN_ID}_\${BASHPID}_\$((VR_BG_SEQ + 1))\"; case $kind in lext) ln -s \"$TMP/runpre_$kind.ext\" \"\$VR_BGREC/\$nid.run\" ;; fifo) mkfifo \"\$VR_BGREC/\$nid.run\" ;; esac; vr_bg A run a true; vr_wait; }"
+  mkext "$TMP/runpre_$kind.ext"
+  ( scenario "runpre_$kind" "s_runpre_$kind" ) & wp=$!; ( sleep $TO; kill -9 $wp 2>/dev/null ) & kp=$!; wait $wp; rc=$?; kill $kp 2>/dev/null; wait $kp 2>/dev/null
+  { [ $rc -ne 0 ] && [ $rc -ne 137 ] && extsame "$TMP/runpre_$kind.ext" && grep -q '^bg:A 작업 ID 충돌: ' "$TMP/runpre_$kind/failed_steps.txt" && no_alldone "$TMP/runpre_$kind"; } \
+    && ok "bg 실행 표식 선점($kind): 그 이름을 건드리지 않고 다음 순번, 멈추지 않음, 외부 파일 그대로, 성공 아님" || bad "bg 실행 표식 선점 $kind (rc=$rc)"
+done
+s_runsw() { vr_hook_bg_before_mark() { local m; for m in "$VR_BGREC"/*.run; do rm -f "$m"; ln -s "$TMP/runsw.ext" "$m"; done; }; vr_expect a; vr_bg A run a true; vr_wait; unset -f vr_hook_bg_before_mark; }
+mkext "$TMP/runsw.ext"; scenario runsw s_runsw; rc=$?
+{ [ $rc -eq 3 ] && extsame "$TMP/runsw.ext" && grep -qxF '기록 실패: bg:A 실행 표식' "$TMP/runsw/failed_steps.txt"; } && ok 'bg 실행 표식을 PID 기록 전 외부 링크로 교체: PID 는 우리 객체로, 외부 파일 그대로, 3' || bad "bg 실행 표식 교체 (rc=$rc)"
+for kind in fifo lext; do
+  eval "s_tmppre_$kind() { body() { run b true; case $kind in fifo) mkfifo \"\$VR_BGREC/\$vr__bg_id.tmp\" ;; lext) ln -s \"$TMP/tmppre_$kind.ext\" \"\$VR_BGREC/\$vr__bg_id.tmp\" ;; esac; }; vr_expect a b; run a true; vr_bg B body; vr_wait; }"
+  mkext "$TMP/tmppre_$kind.ext"
+  ( scenario "tmppre_$kind" "s_tmppre_$kind" ) & wp=$!; ( sleep $TO; kill -9 $wp 2>/dev/null ) & kp=$!; wait $wp; rc=$?; kill $kp 2>/dev/null; wait $kp 2>/dev/null
+  { [ $rc -eq 3 ] && extsame "$TMP/tmppre_$kind.ext" && grep -q '^기록 실패: bg:B 종료 기록 쓰기' "$TMP/tmppre_$kind/failed_steps.txt" && no_alldone "$TMP/tmppre_$kind"; } \
+    && ok "bg 종료 기록 임시 이름 선점($kind): 열지 않고 기록 실패 3, 멈추지 않음, 외부 파일 그대로" || bad "bg 종료 기록 임시 선점 $kind (rc=$rc, $(tr '\n' ';' < "$TMP/tmppre_$kind/failed_steps.txt" | cut -c1-200))"
+done
+# 26-10. 정렬 임시 경로: 선점(FIFO·FIFO 링크·외부 링크) → 생성 실패, 멈추지 않음 / 쓴 뒤 외부 링크로 교체 → 읽지 않음, 지우지 않음
+for kind in fifo lfifo lext; do
+  eval "s_sopre_$kind() { s_sort_base; VR_SORT_TMP=\"$TMP/sopre_$kind.tmp\"; case $kind in fifo) mkfifo \"\$VR_SORT_TMP\" ;; lfifo) mkfifo \"$TMP/sopre_$kind.f\"; ln -s \"$TMP/sopre_$kind.f\" \"\$VR_SORT_TMP\" ;; lext) ln -s \"$TMP/sopre_$kind.ext\" \"\$VR_SORT_TMP\" ;; esac; }"
+  mkext "$TMP/sopre_$kind.ext"
+  ( scenario "sopre_$kind" "s_sopre_$kind" ) & wp=$!; ( sleep $TO; kill -9 $wp 2>/dev/null ) & kp=$!; wait $wp; rc=$?; kill $kp 2>/dev/null; wait $kp 2>/dev/null
+  { [ $rc -eq 3 ] && extsame "$TMP/sopre_$kind.ext" && grep -qxF '기록 실패: sort 임시 파일 생성' "$TMP/sopre_$kind/failed_steps.txt"; } \
+    && ok "정렬 임시 경로 선점($kind): 생성 실패 3, 멈추지 않음, 외부 파일 그대로" || bad "정렬 임시 선점 $kind (rc=$rc)"
+done
+s_sosw() { s_sort_base; vr_hook_sort_after_write() { rm -f "$1"; ln -s "$TMP/sosw.ext" "$1"; }; }
+mkext "$TMP/sosw.ext"; scenario sosw s_sosw; rc=$?
+{ [ $rc -eq 3 ] && extsame "$TMP/sosw.ext" && grep -qxF '기록 실패: sort 임시 파일 읽기' "$TMP/sosw/failed_steps.txt" && [ -n "$(find "$TMP/sosw" -maxdepth 1 -name '.sort_out.*' -type l)" ]; } \
+  && ok '정렬 임시 파일을 쓴 뒤 외부 링크로 교체: 읽지 않음(읽기 실패 3), 외부 파일 그대로, 그 링크를 지우지 않음' || bad "정렬 임시 교체 (rc=$rc)"
+# 26-11. 보고 임시 이름 FIFO 선점(주입 지점 preopen) → 멈추지 않고 실패
+s_repfifo() { vr_hook_report_preopen() { case "$1" in */99_done.log) mkfifo "$2" ;; esac; }; vr_expect a; run a true; }
+( scenario repfifo s_repfifo ) & wp=$!; ( sleep $TO; kill -9 $wp 2>/dev/null ) & kp=$!; wait $wp; rc=$?; kill $kp 2>/dev/null; wait $kp 2>/dev/null
+{ [ $rc -eq 3 ] && no_alldone "$TMP/repfifo" && [ -n "$(find "$TMP/repfifo/logs" -name '.vr.rep.*' -type p)" ]; } && ok '보고 임시 이름 FIFO 선점: 열지 않음(멈추지 않음), 3, ALL_DONE 없음, FIFO 그대로' || bad "보고 임시 FIFO 선점 (rc=$rc)"
+# 26-12. 출력 폴더 잠금
+s_lk() { vr_expect a; run a true; [ -d "$VR_OUT/.vr_lock" ] && [ ! -L "$VR_OUT/.vr_lock" ] && : > "$TMP/lk.held"; }
+scenario lk s_lk; rc=$?
+{ [ $rc -eq 0 ] && [ -e "$TMP/lk.held" ] && [ ! -e "$TMP/lk/.vr_lock" ]; } && ok '잠금: 실행 중 .vr_lock 있음, vr_finish 뒤 없음' || bad "잠금 획득·해제 (rc=$rc)"
+( . "$HERE/lib/verify_run.sh"; vr_init "$TMP/lk" 2> "$TMP/lk.again.err"; r=$?; [ $r -eq 0 ] && [ -d "$TMP/lk/.vr_lock" ] || exit 1; vr_expect b; run b true; vr_finish > /dev/null 2>&1; [ ! -e "$TMP/lk/.vr_lock" ] ); rc=$?
+{ [ $rc -eq 0 ] && ! grep -q '잠금' "$TMP/lk.again.err"; } && ok '잠금: 정상 종료(해제) 뒤 같은 폴더(bg 기록 없음)에서 다시 vr_init 성공·잠금 재획득, 판정 뒤 잠금 남지 않음' || bad "잠금: 정상 종료 뒤 재실행 (rc=$rc, $(cat "$TMP/lk.again.err"))"
+( . "$HERE/lib/verify_run.sh"; O="$TMP/lkre"; vr_init "$O" || exit 1; vr_expect a; run a true; vr_finish > /dev/null 2>&1 || exit 2; rm -rf "$O/bg"/* ; vr_init "$O" || exit 3; [ -d "$O/.vr_lock" ] || exit 4; vr_expect a; vr__app_close; vr__life_reset; vr__lock_release; [ ! -e "$O/.vr_lock" ] ); rc=$?
+[ $rc -eq 0 ] && ok '잠금: 정상 종료(해제) 뒤 같은 폴더에서 다시 잠금 획득 가능' || bad "잠금: 해제 뒤 재획득 (단계 $rc)"
+( mkdir -p "$TMP/lkstale/.vr_lock"; i0=$(stat -c %i "$TMP/lkstale/.vr_lock"); . "$HERE/lib/verify_run.sh"; vr_init "$TMP/lkstale" 2> "$TMP/lkstale.err"; r=$?
+  [ $r -eq 2 ] && grep -q '잠금 실패' "$TMP/lkstale.err" && [ "$(stat -c %i "$TMP/lkstale/.vr_lock")" = "$i0" ] && [ ! -e "$TMP/lkstale/logs" ] ); rc=$?
+[ $rc -eq 0 ] && ok '잠금: 비정상 종료로 남은 잠금 → vr_init 2·사유, 잠금을 지우지 않음, 하위 폴더를 만들지 않음' || bad "잠금: 남은 잠금 (rc=$rc)"
+s_lkrf() { vr_hook_lock_release() { : > "$1/blocker"; }; vr_expect a; run a true; }
+scenario lkrf s_lkrf; rc=$?
+{ [ $rc -eq 3 ] && no_alldone "$TMP/lkrf" && grep -q '^NOT_DONE' "$TMP/lkrf/logs/99_done.log" && grep -q '출력 폴더 잠금 해제' "$TMP/lkrf.finish_out" && [ -d "$TMP/lkrf/.vr_lock" ]; } \
+  && ok '잠금 해제 실패(rmdir 실패): 3, ALL_DONE 철회(NOT_DONE), 진단, 잠금 그대로' || bad "잠금 해제 실패 (rc=$rc)"
+s_lkfo() { vr_hook_lock_release() { rmdir "$1"; mkdir "$1"; }; vr_expect a; run a true; }
+scenario lkfo s_lkfo; rc=$?
+{ [ $rc -eq 3 ] && no_alldone "$TMP/lkfo" && [ -d "$TMP/lkfo/.vr_lock" ]; } && ok '잠금 해제 직전 남의 폴더로 교체: 소유 확인 실패로 지우지 않음, 3, ALL_DONE 철회' || bad "잠금 교체 (rc=$rc)"
+s_lkpre() { vr_expect a; run a true; rmdir "$VR_OUT/.vr_lock"; mkdir "$VR_OUT/.vr_lock"; }
+scenario lkpre s_lkpre; rc=$?
+{ [ $rc -eq 3 ] && grep -qxF '기록 실패: 출력 폴더 잠금 확인' "$TMP/lkpre/failed_steps.txt" && [ -d "$TMP/lkpre/.vr_lock" ]; } && ok '잠금이 vr_finish 전에 남의 것으로 바뀜: 사전 확인에서 기록 실패 3, 남의 폴더 그대로' || bad "잠금 사전 확인 (rc=$rc)"
+s_lkdr() { vr_hook_after_drain() { ( . "$HERE/lib/verify_run.sh"; vr_init "$VR_OUT" 2>/dev/null; echo $? > "$TMP/lkdr.second" ); }; vr_expect a; run a true; }
+scenario lkdr s_lkdr; rc=$?
+{ [ $rc -eq 0 ] && [ "$(cat "$TMP/lkdr.second")" = 2 ] && grep -qx 'ALL_DONE: 모든 항목 종료 코드 0 (1 개 항목)' "$TMP/lkdr/logs/99_done.log" && [ ! -e "$TMP/lkdr/.vr_lock" ]; } \
+  && ok '잠금: 생명주기 FIFO 정리 직후 다른 프로세스의 vr_init → 2(잠금), 첫 실행 보고 그대로·정상 해제' || bad "잠금 FIFO 정리 직후 경합 (rc=$rc)"
+( . "$HERE/lib/verify_run.sh"; vr_hook_init_fail() { [ "$1" = list ]; }; vr_init "$TMP/lkif" 2>/dev/null; [ $? -eq 2 ] && [ ! -e "$TMP/lkif/.vr_lock" ] ); rc=$?
+[ $rc -eq 0 ] && ok '잠금: vr_init 이 잠금 뒤 실패 → 잠금 해제' || bad "잠금: 초기화 실패 해제 (rc=$rc)"
+# 26-13. 하위 폴더·출력 폴더가 링크 → 따라가 만들지 않음
+( D="$TMP/sublnk"; mkdir -p "$D" "$TMP/sublnk.ext"; ln -s "$TMP/sublnk.ext" "$D/logs"; . "$HERE/lib/verify_run.sh"; vr_init "$D" 2>/dev/null; r=$?
+  [ $r -eq 2 ] && [ -z "$(ls -A "$TMP/sublnk.ext")" ] && [ ! -e "$D/.vr_lock" ] ); rc=$?
+[ $rc -eq 0 ] && ok '하위 폴더가 미리 링크(logs → 외부 폴더): vr_init 2, 외부 폴더에 아무것도 만들지 않음, 잠금 해제' || bad "하위 폴더 링크 (rc=$rc)"
+( mkdir -p "$TMP/outlnk.ext"; ln -s "$TMP/outlnk.ext" "$TMP/outlnk"; . "$HERE/lib/verify_run.sh"; vr_init "$TMP/outlnk" 2>/dev/null; [ $? -eq 2 ] && [ -z "$(ls -A "$TMP/outlnk.ext")" ] ); rc=$?
+[ $rc -eq 0 ] && ok '출력 폴더가 링크: vr_init 2, 링크 대상에 아무것도 만들지 않음' || bad "출력 폴더 링크 (rc=$rc)"
+# 26-14. 정상 실행 출력 형식: expected_steps·_violations·로그·step_status 바이트 고정
+s_fmt() { vr_expect a b c; run a sh -c 'echo out; echo err >&2; exit 0'; vr_bg B run b printf 'x\ny'; vr_wait; run zzz true; run c true; }
+scenario fmt s_fmt; rc=$?
+{ [ $rc -eq 1 ] && [ "$(od -An -c "$TMP/fmt/expected_steps.txt" | tr -s ' ')" = "$(printf 'a\nb\nc\n' | od -An -c | tr -s ' ')" ] \
+  && cmp -s "$TMP/fmt/status/_violations.txt" <(printf 'zzz 등록되지 않은 항목\n') \
+  && cmp -s "$TMP/fmt/logs/a.log" <(printf 'out\nerr\nexit=0\n') && cmp -s "$TMP/fmt/logs/b.log" <(printf 'x\nyexit=0\n') \
+  && cmp -s "$TMP/fmt/step_status.txt" <(printf 'a 0\nb 0\nc 0\n') && cmp -s "$TMP/fmt/failed_steps.txt" <(printf 'zzz 등록되지 않은 항목\n') \
+  && [ -z "$(ls -A "$TMP/fmt" "$TMP/fmt/logs" "$TMP/fmt/status" | grep '\.vr\.new\.\|\.vr\.rep\.\|\.vr_lock')" ]; } \
+  && ok '정상 실행 출력 형식: expected_steps·_violations·로그(stdout·stderr·exit 줄)·step_status·failed_steps 바이트 고정, 임시 이름·잠금 남지 않음' || bad "정상 실행 출력 형식 (rc=$rc)"
+
 # ── 재현성: 처리기 return 3 + builtin exit 5 를 10번 반복(매번 5) ──────────────────────────────────────────────
 rep_ok=0; for k in 1 2 3 4 5 6 7 8 9 10; do
     eval "s_rep_$k() { body() { trap 'return 3' EXIT; builtin exit 5; }; vr_expect a; run a true; vr_bg B body; vr_wait; }"

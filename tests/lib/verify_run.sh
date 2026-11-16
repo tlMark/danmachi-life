@@ -43,7 +43,7 @@
 #   "등록된 항목 없음"                          vr_expect 로 등록한 항목이 0개
 #   "기록 실패: <대상>"                         판정에 필요한 I/O 가 실패함(이 경우 종료 코드는 3)
 
-VR_OUT=""; VR_L=""; VR_ST=""; VR_TOKEN=""; VR_RUN_ID=""; VR_LIFE=""; VR_LIFE_W=""; VR_LDONE=""; VR_LDONE_R=""; VR_MSGS=""; VR_LIFE_RD=""; VR_MSGS_R=""; VR_LIFE_R=""; VR__READER_STATE=""; VR__INIT_ERR=""; VR__INIT_PID=""; VR__WV_LEFT=""
+VR_OUT=""; VR_L=""; VR_ST=""; VR_TOKEN=""; VR_RUN_ID=""; VR_LIFE=""; VR_LIFE_W=""; VR_LDONE=""; VR_LDONE_R=""; VR_MSGS=""; VR_LIFE_RD=""; VR_MSGS_R=""; VR_LIFE_R=""; VR__READER_STATE=""; VR__INIT_ERR=""; VR__INIT_PID=""; VR__WV_LEFT=""; VR__LOCK=""; VR__LOCK_ID=""; VR__LOCK_FD=""; VR__NOTES_FD=""; VR__NOTES_AT=""; VR__EXP_FD=""; VR__EXP_AT=""; VR__WV_KEEP=""; VR__WV_FD=""
 VR_FAILS=""; VR_EXPECTED=""; VR_NOTES=""; VR_STEPS=""; VR_DONE=""
 VR_EXP=(); declare -A VR_EXPN=()
 VR_VIOLATED=0; VR_IOERR=0; VR_RUN_ERRS=()
@@ -261,18 +261,43 @@ vr_init() {
     if [ -n "${VR__READER_STATE:-}" ]; then vr__reader_stop || return 2; fi
     VR__INIT_ERR=""; VR__INIT_PID=$BASHPID
     vr__life_reset || return 2
+    vr__app_close
+    vr__lock_release || { VR__INIT_ERR="이전 출력 폴더 잠금 해제 실패: $VR__LOCK"; printf 'vr_init: %s\n' "$VR__INIT_ERR" >&2; return 2; }
     vr__platform_check || return 2
+    vr__init_body "$1"; local rc=$?
+    if [ $rc -ne 0 ]; then
+        vr__app_close
+        if [ -n "$VR__LOCK" ] && ! vr__lock_release; then printf 'vr_init: 출력 폴더 잠금 해제 실패(그대로 둠): %s\n' "$VR__LOCK" >&2; fi
+    fi
+    return $rc
+}
+vr__app_close() {   # 추가 기록 fd 를 닫는다
+    local v
+    for v in VR__NOTES_FD VR__EXP_FD; do if [ -n "${!v:-}" ]; then eval "exec ${!v}>&-" 2>/dev/null; fi; eval "$v=''"; done
+    VR__NOTES_AT=""; VR__EXP_AT=""
+}
+# 순서(파일·하위 폴더 접근은 모두 잠금 뒤): 출력 폴더(링크 거부) → 잠금 → 하위 폴더(링크 거부, -p 없이) → 기능 확인 → 보고·추가 파일 → 생명주기 객체
+vr__init_body() {
     VR_OUT=$1
+    if [ -L "$VR_OUT" ]; then VR__INIT_ERR="출력 폴더가 링크임: $VR_OUT"; printf 'vr_init: %s\n' "$VR__INIT_ERR" >&2; return 2; fi
+    mkdir -p -- "$VR_OUT" 2>/dev/null || return 2
+    { [ ! -L "$VR_OUT" ] && [ -d "$VR_OUT" ]; } || return 2
+    vr__lock_take "$VR_OUT" || return 2
     VR_L="$VR_OUT/logs"; VR_ST="$VR_OUT/status"
     VR_FAILS="$VR_OUT/failed_steps.txt"; VR_EXPECTED="$VR_OUT/expected_steps.txt"; VR_STEPS="$VR_OUT/step_status.txt"
     VR_NOTES="$VR_ST/_violations.txt"; VR_DONE="$VR_L/99_done.log"
     VR_EXP=(); VR_EXPN=(); VR_VIOLATED=0; VR_IOERR=0; VR_RUN_ERRS=(); VR_BG_PIDS=(); VR_BG_LABELS=(); VR_BG_FAILS=(); VR_BG_IDS=(); VR_BG_ST=(); VR_BG_RC=(); VR_BG_SEQ=0; VR_BG_PATH=""
     VR_BGREC="$VR_OUT/bg"
-    mkdir -p "$VR_L" "$VR_ST" "$VR_BGREC" || return 2
+    local sub
+    for sub in "$VR_L" "$VR_ST" "$VR_BGREC"; do        # 링크면 거부(따라가서 만들지 않음). -p 없이 한 단계만
+        if [ -L "$sub" ]; then VR__INIT_ERR="하위 폴더가 링크임: $sub"; printf 'vr_init: %s\n' "$VR__INIT_ERR" >&2; return 2; fi
+        if [ ! -e "$sub" ]; then mkdir -- "$sub" 2>/dev/null || return 2; fi
+        { [ ! -L "$sub" ] && [ -d "$sub" ]; } || return 2
+    done
     vr__platform_probe "$VR_OUT" || return 2      # 실제 동작 확인은 출력 폴더와 같은 파일시스템에서(출력 폴더를 만든 직후)
-    : > "$VR_FAILS" || return 2
-    : > "$VR_EXPECTED" || return 2
-    : > "$VR_NOTES" || return 2
+    vr__write_verified "$VR_FAILS" "" || return 2    # 경로를 열지 않는 교체(A)
+    vr__new_placed "$VR_EXPECTED" VR__EXP_FD append || return 2; VR__EXP_AT=$VR_EXPECTED      # 추가 기록(B)
+    vr__new_placed "$VR_NOTES" VR__NOTES_FD append || return 2; VR__NOTES_AT=$VR_NOTES
     VR_TOKEN=$(head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n') || return 2
     [ "${#VR_TOKEN}" -eq 48 ] || return 2
     # 실행 ID: 작업 ID 에 넣는 비밀이 아닌 실행별 난수(토큰은 파일 이름에 넣지 않는다). 이전 실행의 bg 기록이 남은 출력 폴더는 받지 않는다.
@@ -289,6 +314,9 @@ vr_init() {
     # 만든 직후 연다(이 fd 가 소유의 증거). 열기 전에 실패하면 소유를 입증할 수 없으므로 그 FIFO 는 잔여물로 남는다.
     vr__tmpfd=""
     if vr__init_fail open || ! exec {vr__tmpfd}<>"$VR_LIFE"; then vr__tmpfd=""; vr__life_reset; return 2; fi
+    # 연 것이 FIFO 이고 경로가 링크 아니며 같은 객체인지(링크→일반 파일·장치로 바뀐 경우 거부). 같은 종류의 남의 FIFO 로 바뀌는 경합은
+    # 구분할 수 없다(위협 모델 경계 — 잠금으로 다른 vr_init 실행은 배제).
+    if [ ! -p "/dev/fd/$vr__tmpfd" ] || [ -L "$VR_LIFE" ] || ! [ "$VR_LIFE" -ef "/dev/fd/$vr__tmpfd" ]; then vr__life_reset; return 2; fi
     if vr__init_fail fifo; then vr__life_reset; return 2; fi
     # fd 할당. 목표: 이미 열린 fd 를 덮어쓰지 않으면서, 작업 코드가 번호를 직접 쓰는 fd(보통 3~10)와 겹치지 않는 높은 번호(200~249).
     #  (1) 먼저 bash 동적 할당({var})으로 연다 — 커널이 비어 있는 번호를 골라 주므로 기존 fd 를 덮어쓰지 않는다.
@@ -324,8 +352,11 @@ vr_init() {
     # 각 객체는 만든 직후 연다(그 fd 가 소유의 증거). 그 뒤 경로로 다시 여는 fd 는 모두 그 fd 와 같은 객체인지 확인한다.
     if ! mkfifo "$VR_LDONE"; then VR_LDONE=""; VR_MSGS=""; vr__life_reset; return 2; fi
     if vr__init_fail done_created || ! exec {vr__dtmp}<>"$VR_LDONE"; then vr__dtmp=""; VR_MSGS=""; vr__life_reset; return 2; fi
-    if ! ( set -C; : > "$VR_MSGS" ) 2>/dev/null; then VR_MSGS=""; vr__life_reset; return 2; fi
-    if vr__init_fail msgs_created || ! exec {vr__r_mw}>>"$VR_MSGS"; then vr__r_mw=""; vr__life_reset; return 2; fi
+    if [ ! -p "/dev/fd/$vr__dtmp" ] || [ -L "$VR_LDONE" ] || ! [ "$VR_LDONE" -ef "/dev/fd/$vr__dtmp" ]; then VR_MSGS=""; vr__life_reset; return 2; fi
+    # 알림 파일: 경로를 다시 열지 않는다 — vr__new_obj(append)가 만든 fd(O_APPEND)를 그대로 쓴다
+    local mrc; vr__new_obj "$VR_MSGS" vr__r_mw append; mrc=$?
+    if [ $mrc -ne 0 ]; then vr__r_mw=""; [ $mrc -eq 2 ] && VR_MSGS=""; vr__life_reset; return 2; fi
+    if vr__init_fail msgs_created; then eval "exec $vr__r_mw>&-"; vr__r_mw=""; vr__life_reset; return 2; fi    # 시험용: 만든 뒤 fd 없이 실패(소유 입증 불가 재현)
     if [ -L "$VR_MSGS" ] || [ ! -f "$VR_MSGS" ] || ! [ "$VR_MSGS" -ef "/dev/fd/$vr__r_mw" ] || vr__init_fail reader \
        || ! exec {vr__r_dw}>"$VR_LDONE" || ! [ "/dev/fd/$vr__r_dw" -ef "/dev/fd/$vr__dtmp" ] \
        || ! exec {VR_LDONE_R}<"$VR_LDONE" || ! [ "/dev/fd/$VR_LDONE_R" -ef "/dev/fd/$vr__dtmp" ] \
@@ -384,9 +415,9 @@ vr__read_fd_bytes() {   # vr__read_fd_bytes <변수> <fd> : 그 fd 에서 EOF �
 # **보고 파일 경로는 쓰기용으로 열지 않는다**(열기는 심볼릭 링크를 따라가므로, 검사와 열기 사이에 경로가 링크로 바뀌면 남의 파일을
 # 자를 수 있다 — bash 리다이렉션에는 O_NOFOLLOW 가 없다). 대신:
 #  1. 경로의 현재 객체를 lstat(링크를 따라가지 않음)으로 기록한다. 없거나 링크 아닌 일반 파일일 때만 진행(링크·장치·FIFO·폴더면 1).
-#  2. 같은 폴더에 예측할 수 없는 새 이름(.vr.rep.<mktemp -u 난수 16자리>)을 noclobber 로 만든다. bash 는 없는 이름을 O_CREAT|O_EXCL 로 연다 —
-#     그 이름에 무엇이든(링크 포함) 이미 있으면 열기가 실패하고 링크를 따라가지 않는다. 연 fd 가 링크 수 1·크기 0 인 일반 파일이고
-#     그 이름과 같은 객체인지 확인한다. 아니면 쓰지 않고 닫는다(아무것도 자르거나 쓰지 않음).
+#  2. 같은 폴더에 예측할 수 없는 새 이름(.vr.rep.<mktemp -u 난수 16자리>)을 noclobber 로 만든다. 그 이름에 무엇이든 이미 있으면 열지
+#     않는다(noclobber 는 없는 이름만 O_CREAT|O_EXCL 로 열고, 이미 있는 FIFO·장치·그 링크는 O_TRUNC 없이 열 수 있다 — vr__new_obj 주석).
+#     연 fd 가 링크 수 1·크기 0 인 일반 파일이고 그 이름과 같은 객체인지 확인한다. 아니면 쓰지 않고 닫는다(아무것도 자르거나 쓰지 않음).
 #  3. 내용은 그 fd(우리가 방금 만든 객체)에만 쓴다.
 #  4. 경로의 객체가 1 과 같은지 lstat 으로 다시 확인한 뒤, 새 파일을 rename(mv -T)으로 경로에 놓는다. rename 은 경로의 **이름**을
 #     바꿔 놓을 뿐 그 자리에 있던 것(링크라면 링크 자체)의 대상·내용을 열거나 바꾸지 않는다.
@@ -398,6 +429,112 @@ vr__read_fd_bytes() {   # vr__read_fd_bytes <변수> <fd> : 그 fd 에서 EOF �
 #   바이트는 바뀌지 않는다(이름만 대체). 2 의 이름을 미리 알아내 링크 아닌 FIFO·장치를 먼저 만들어 두는 경우(난수 64비트 예측)에는
 #   bash noclobber 가 그것을 자르지 않고 열 수 있으나, 일반 파일 확인에서 걸려 쓰지 않는다(FIFO 열기에서 멈출 수는 있음).
 vr__lid() { stat -c '%d:%i:%F' -- "$1" 2>/dev/null || echo none; }      # lstat 식별자(링크를 따라가지 않음). 없으면 none
+# ── 안전 생성·배치 도우미 ────────────────────────────────────────────────────────────────────────────────────────────
+# bash noclobber(set -C)의 실제 동작(bash 5.2.21 실측): 없는 이름 → O_CREAT|O_EXCL 생성. 일반 파일·일반 파일을 가리키는 링크·대상 없는
+# 링크·폴더 → 거부. **이미 있는 비일반 파일(FIFO·장치) 또는 그것을 가리키는 링크 → O_TRUNC 만 빼고 O_EXCL 없이 연다**(FIFO 는 읽는
+# 쪽이 없으면 열기에서 멈추고, 장치는 열려 이후 쓰기가 장치로 간다). 그래서 vr__new_obj 는 (1) 열기 전에 경로에 무엇이든 있으면 열지
+# 않고, (2) 연 fd 가 일반 파일이 아니면 쓰지도 지우지도 않는다. (1) 과 열기 사이(수 μs)에 FIFO·장치를 끼워 넣는 경합은 남는다
+# (이름을 미리 알아야 함 — 고정 이름은 예측 가능: 위협 모델 경계).
+# vr__new_obj <경로> <fd 변수> [append] : 경로에 새 일반 파일을 만들고 그 fd 를 변수에 넣는다. 반환:
+#   0 = 성공(소유 증명됨), 1 = 실패·우리 것이 남지 않음, 2 = 선점됨·만들지 못함(그 자리의 것은 남의 것 — 쓰지도 지우지도 않음),
+#   3 = 실패 + 우리 객체 정리 실패(VR__WV_LEFT).
+# 소유 증명 = fd 가 일반 파일(noclobber 는 일반 파일을 O_EXCL 로만 연다 — 이미 있는 일반 파일은 거부, stat 과 open 사이에 일반 파일로
+#   바뀌면 bash 가 닫고 실패) 그리고 경로가 링크 아니고 그 fd 와 같은 객체 그리고 링크 수 1·크기 0. 증명 전에는 아무것도 쓰지 않는다.
+# append: 증명 뒤 /dev/fd/N 을 >> 로 다시 열어(경로 해석 없이 같은 inode) O_APPEND fd 로 바꾸고 원래 fd 는 닫는다(섞어 쓰면 원래 fd 가
+#   덮어써 유실됨). 재열기 fd 의 접근 모드(쓰기 전용)·O_APPEND·inode 동일성을 확인한다.
+vr__fd_flags() { awk '/^flags:/{print $2}' "/proc/$BASHPID/fdinfo/$1" 2>/dev/null; }
+vr__fd_is_append() { local fl; fl=$(vr__fd_flags "$1"); [[ "$fl" =~ ^[0-7]+$ ]] || return 1; (( (8#$fl & 3) == 1 && (8#$fl & 02000) != 0 )); }
+vr__new_obj() {
+    local vno_p=$1 vno_v=$2 vno_ap=${3:-} vno_hc=0 vno_r vno_w="" vno_a="" vno_h
+    printf -v "$vno_v" '%s' ''; VR__WV_LEFT=""
+    if [ -e "$vno_p" ] || [ -L "$vno_p" ]; then return 2; fi
+    declare -F vr_hook_new_obj_preopen > /dev/null && vr_hook_new_obj_preopen "$vno_p"     # 시험용 주입 지점(확인 뒤·열기 직전)
+    [[ $- == *C* ]] && vno_hc=1
+    set -C; { exec {vno_w}>"$vno_p"; } 2>/dev/null; vno_r=$?; [ $vno_hc -eq 1 ] || set +C
+    if [ $vno_r -ne 0 ] || [ -z "$vno_w" ]; then return 2; fi
+    declare -F vr_hook_new_obj_opened > /dev/null && vr_hook_new_obj_opened "$vno_p" "$vno_w"   # 시험용 주입 지점(만든 직후·증명 전)
+    if [ ! -f "/dev/fd/$vno_w" ]; then eval "exec $vno_w>&-" 2>/dev/null; return 2; fi        # 남의 비일반 파일: 쓰기·삭제 금지
+    if [ -L "$vno_p" ] || ! [ "$vno_p" -ef "/dev/fd/$vno_w" ]; then                           # 그 이름은 남의 것: 쓰기·삭제 금지
+        vno_h=$(stat -L -c %h "/dev/fd/$vno_w" 2>/dev/null); eval "exec $vno_w>&-" 2>/dev/null
+        [ "$vno_h" = 0 ] && return 1
+        VR__WV_LEFT="$vno_p(우리 객체가 다른 이름으로 남음 — 위치 미확인)"; return 3
+    fi
+    if [ "$(stat -L -c '%h:%s' "/dev/fd/$vno_w" 2>/dev/null)" != 1:0 ]; then vr__wv_drop "$vno_p" "$vno_w"; return $?; fi
+    if [ -n "$vno_ap" ]; then
+        if ! { exec {vno_a}>>"/dev/fd/$vno_w"; } 2>/dev/null || ! [ "/dev/fd/$vno_a" -ef "/dev/fd/$vno_w" ] || ! vr__fd_is_append "$vno_a"; then
+            [ -n "$vno_a" ] && eval "exec $vno_a>&-" 2>/dev/null
+            vr__wv_drop "$vno_p" "$vno_w"; return $?
+        fi
+        eval "exec $vno_w>&-" 2>/dev/null; vno_w=$vno_a
+    fi
+    printf -v "$vno_v" '%s' "$vno_w"; return 0
+}
+# vr__place <임시 경로> <최종 경로> <fd> : 우리 임시 객체를 최종 경로에 rename 으로 놓는다(최종 경로는 없거나 링크 아닌 일반 파일일 때만).
+# 반환: 0 = 놓았고 최종 경로가 그 fd 의 객체, 1 = 놓기 전 실패(임시 객체는 그대로 — 호출자가 vr__wv_drop), 4 = 놓았으나 최종 경로가
+# 그 fd 의 객체가 아님(놓은 직후 바뀜 — 그 자리의 것은 건드리지 않음).
+vr__place() {
+    local t=$1 f=$2 fd=$3 id0
+    [ -L "$f" ] && return 1
+    id0=$(vr__lid "$f")
+    case "$id0" in none|*":regular file"|*":regular empty file") ;; *) return 1 ;; esac
+    declare -F vr_hook_place_before > /dev/null && vr_hook_place_before "$f"                   # 시험용 주입 지점(확인 뒤·rename 직전)
+    [ "$(vr__lid "$f")" = "$id0" ] && [ ! -L "$f" ] || return 1
+    mv -T -- "$t" "$f" 2>/dev/null || return 1
+    [ ! -L "$f" ] && [ -f "$f" ] && [ "$f" -ef "/dev/fd/$fd" ] || return 4
+    return 0
+}
+# vr__new_placed <최종 경로> <fd 변수> [append] : 같은 폴더의 무작위 임시 이름에 새 객체를 만들어 최종 경로에 놓는다(내용은 비어 있음).
+# 반환: 0 = 성공(fd 변수), 그 밖 = 실패(1·3 은 vr__new_obj/vr__wv_drop 의미, 실패 시 fd 는 닫힘, VR__WV_LEFT).
+vr__new_placed() {
+    local np_f=$1 np_v=$2 np_ap=${3:-} np_t np_fd np_r
+    printf -v "$np_v" '%s' ''
+    case "$np_f" in */*) ;; *) return 1 ;; esac
+    np_t=$(mktemp -u "${np_f%/*}/.vr.new.XXXXXXXXXXXXXXXX" 2>/dev/null) || return 1
+    [ "${np_t%/*}" = "${np_f%/*}" ] && [[ "${np_t##*/}" =~ ^\.vr\.new\.[A-Za-z0-9]{16}$ ]] && [ "${np_t##*.}" != XXXXXXXXXXXXXXXX ] || return 1
+    vr__new_obj "$np_t" np_fd "$np_ap"; np_r=$?
+    [ $np_r -eq 0 ] || { [ $np_r -eq 2 ] && return 1; return $np_r; }
+    vr__place "$np_t" "$np_f" "$np_fd"; np_r=$?
+    if [ $np_r -eq 1 ]; then vr__wv_drop "$np_t" "$np_fd"; return $?; fi
+    if [ $np_r -ne 0 ]; then eval "exec $np_fd>&-" 2>/dev/null; return 1; fi
+    printf -v "$np_v" '%s' "$np_fd"; return 0
+}
+# ── 출력 폴더 잠금 ── vr_init 이 출력 폴더의 파일·하위 폴더에 손대기 전에 mkdir "<출력>/.vr_lock"(원자적, 링크를 따라가지 않음)으로 얻고,
+# vr_finish 가 마지막 보고 파일을 쓴 뒤 놓는다. 소유 증거 = 만든 직후 연 폴더 fd(VR__LOCK_FD — 열려 있는 동안 그 inode 는 해제·재사용되지
+# 않으므로 rmdir+mkdir 로 같은 inode 번호가 다시 쓰여 속는 일이 없음). 경로가 링크 아닌 폴더이고 그 fd 와 같은 객체일 때만 rmdir(빈 폴더만).
+# 남아 있는 잠금(다른 실행 중이거나 이전 실행이 비정상 종료)은 자동으로 지우지 않는다 — 다음 vr_init 은 거부.
+vr__lock_take() {
+    local l="$1/.vr_lock"
+    if ! mkdir -- "$l" 2>/dev/null; then
+        VR__INIT_ERR="출력 폴더 잠금 실패: $l 이(가) 이미 있음 — 다른 실행이 이 폴더를 쓰는 중이거나 이전 실행이 비정상 종료함(자동으로 지우지 않음)"
+        printf 'vr_init: %s\n' "$VR__INIT_ERR" >&2; return 1
+    fi
+    local lfd=""
+    if ! { exec {lfd}<"$l"; } 2>/dev/null || [ -L "$l" ] || [ ! -d "/dev/fd/$lfd" ] || ! [ "$l" -ef "/dev/fd/$lfd" ]; then
+        [ -n "$lfd" ] && eval "exec $lfd<&-"
+        VR__INIT_ERR="출력 폴더 잠금 확인 실패(만든 잠금이 바뀜 — 지우지 않음): $l"; printf 'vr_init: %s\n' "$VR__INIT_ERR" >&2; return 1
+    fi
+    VR__LOCK=$l; VR__LOCK_ID=$(vr__lid "$l"); VR__LOCK_FD=$lfd
+    return 0
+}
+vr__lock_owned() { [ -n "$VR__LOCK" ] && [ -n "$VR__LOCK_FD" ] && [ ! -L "$VR__LOCK" ] && [ -d "$VR__LOCK" ] && [ "$VR__LOCK" -ef "/dev/fd/$VR__LOCK_FD" ] && [ "$(vr__lid "$VR__LOCK")" = "$VR__LOCK_ID" ]; }
+vr__lock_release() {   # 0 = 놓음(또는 가진 잠금 없음), 1 = 소유 확인 실패 또는 rmdir 실패(잠금은 그대로)
+    [ -n "$VR__LOCK" ] || return 0
+    declare -F vr_hook_lock_release > /dev/null && vr_hook_lock_release "$VR__LOCK"         # 시험용 주입 지점(해제 직전)
+    vr__lock_owned || return 1
+    rmdir -- "$VR__LOCK" 2>/dev/null || return 1
+    eval "exec $VR__LOCK_FD<&-" 2>/dev/null
+    VR__LOCK=""; VR__LOCK_ID=""; VR__LOCK_FD=""
+    return 0
+}
+# ── 추가 기록 파일(expected_steps.txt·_violations.txt) ── vr_init 에서 vr__new_placed(append)로 만들고 O_APPEND fd 를 끝까지 가진다.
+# 매번 경로를 다시 열지 않는다. 경로 변수가 vr_init 때와 다르면 쓰지 않고 실패(기록 실패로 기억). 하위 셸은 fd 를 물려받고, run 이 실행하는
+# 외부 명령에는 닫아서 넘긴다. O_APPEND 라 여러 프로세스의 한 줄 쓰기가 서로 덮어쓰지 않는다(쓰는 순서대로).
+vr__append() {   # vr__append <notes|exp> <줄>
+    local fd at cur
+    case $1 in notes) fd=$VR__NOTES_FD; at=$VR__NOTES_AT; cur=$VR_NOTES ;; exp) fd=$VR__EXP_FD; at=$VR__EXP_AT; cur=$VR_EXPECTED ;; *) return 1 ;; esac
+    [ -n "$fd" ] && [ -n "$at" ] && [ "$cur" = "$at" ] || return 1
+    printf '%s\n' "$2" 2>/dev/null >&"$fd"
+}
 vr__write_verified() {
     local f=$1 content=$2 retract=${3-} back w="" id0 id1 tmp hc=0 r hs
     VR__WV_LEFT=""
@@ -409,6 +546,7 @@ vr__write_verified() {
     tmp=$(mktemp -u "${f%/*}/.vr.rep.XXXXXXXXXXXXXXXX" 2>/dev/null) || return 1      # 이름 생성 실패: 만든 것이 없으므로 1
     [ "${tmp%/*}" = "${f%/*}" ] && [[ "${tmp##*/}" =~ ^\.vr\.rep\.[A-Za-z0-9]{16}$ ]] && [ "${tmp##*.}" != XXXXXXXXXXXXXXXX ] || return 1
     declare -F vr_hook_report_preopen > /dev/null && vr_hook_report_preopen "$f" "$tmp"     # 시험용 주입 지점(첫 확인 뒤·열기 직전)
+    if [ -e "$tmp" ] || [ -L "$tmp" ]; then return 1; fi      # 선점(무엇이든) — 열지 않는다(FIFO·장치에서 멈추거나 쓰지 않게)
     [[ $- == *C* ]] && hc=1
     set -C; { exec {w}>"$tmp"; } 2>/dev/null; r=$?; [ $hc -eq 1 ] || set +C
     # 열기 실패(O_EXCL: 그 이름에 무엇이든 이미 있음) — 아무것도 만들지 않았으므로 지울 것도 없다(선점된 것은 남의 것으로 보고 그대로 둔다).
@@ -435,6 +573,7 @@ vr__write_verified() {
     if [ -L "$f" ] || [ ! -f "$f" ] || ! [ "$f" -ef "/dev/fd/$w" ] || ! vr__read_path_bytes back "$f" || [ -L "$f" ] || ! [ "$f" -ef "/dev/fd/$w" ] || [ "$back" != "$content" ]; then
         vr__wv_fail "$w" "$retract"; return $?
     fi
+    if [ -n "$VR__WV_KEEP" ]; then VR__WV_FD=$w; return 0; fi     # 호출자가 fd 를 닫는다(vr_finish 의 99_done.log — 잠금 해제 실패 시 철회용)
     eval "exec $w>&-"
     return 0
 }
@@ -472,14 +611,14 @@ vr__wv_fail() {
 }
 vr__violation() {   # 위반은 메모리에 먼저 기억하고, 파일 기록은 보조다. 파일 기록이 실패하면 기록 실패로도 기억한다
     VR_VIOLATED=1; VR_RUN_ERRS+=("$1")
-    printf '%s\n' "$1" >> "$VR_NOTES" 2>/dev/null || vr__ioerr "_violations.txt"
+    vr__append notes "$1" || vr__ioerr "_violations.txt"
 }
 
 vr_expect() {
     local n
     for n in "$@"; do
         VR_EXP+=("$n"); VR_EXPN[$n]=$(( ${VR_EXPN[$n]:-0} + 1 ))
-        printf '%s\n' "$n" >> "$VR_EXPECTED" 2>/dev/null || vr__ioerr "expected_steps.txt"
+        vr__append exp "$n" || vr__ioerr "expected_steps.txt"
     done
 }
 
@@ -491,18 +630,34 @@ run() {
     # 선점: mkdir 는 원자적이라 같은 이름을 동시에 불러도 한쪽만 성공한다
     if ! mkdir "$VR_ST/$name.claim" 2>/dev/null; then vr__violation "$name 중복 실행 시도"; return 2; fi
     local code
-    local rd="" v
-    for v in VR_LIFE_W VR_LDONE_R VR_MSGS_R VR_LIFE_R; do [ -n "${!v:-}" ] && rd+=" {$v}>&-"; done
-    eval '"$@"'"$rd"' > "$VR_L/$name.log" 2>&1'; code=$?
+    local rd="" v lfd="" lr
+    for v in VR_LIFE_W VR_LDONE_R VR_MSGS_R VR_LIFE_R VR__NOTES_FD VR__EXP_FD VR__LOCK_FD; do [ -n "${!v:-}" ] && rd+=" {$v}>&-"; done
+    # 로그(C): 실행 전에 빈 로그를 안전하게 만들어 최종 경로에 놓고, 그 fd 로 스트리밍한다(경로를 열지 않음). 로그가 있어도 상태 기록이
+    # 없거나 손상이면 그 항목은 실패다(판정은 상태 기록만 쓴다). 놓지 못하면 명령을 실행하지 않는다(상태 없음 → 실패).
+    vr__new_placed "$VR_L/$name.log" lfd; lr=$?
+    if [ $lr -ne 0 ]; then vr__ioerr "$name.log 생성"; [ $lr -eq 3 ] && vr__ioerr "임시 파일 정리 $VR__WV_LEFT"; return 2; fi
+    eval '"$@"'"$rd"' >&'"$lfd"' 2>&1 '"$lfd"'>&-'; code=$?
     # 여기까지 왔다는 것은 래퍼가 명령의 종료를 실제로 확인했다는 뜻이다. 그때에만 상태를 기록한다.
     # 로그 끝의 "exit=N" 줄은 사람이 읽기 위한 표시이며 판정에 쓰지 않는다(이전 출력 형식과 F1 기록 로그 비교의 호환을 위해 유지).
-    echo "exit=$code" >> "$VR_L/$name.log" 2>/dev/null || vr__ioerr "$name.log 표시 줄"
+    printf 'exit=%s\n' "$code" 2>/dev/null >&"$lfd" || vr__ioerr "$name.log 표시 줄"
+    { [ ! -L "$VR_L/$name.log" ] && [ "$VR_L/$name.log" -ef "/dev/fd/$lfd" ]; } || vr__ioerr "$name.log 경로 변경"
+    eval "exec $lfd>&-"
     declare -F vr_hook_before_status > /dev/null && vr_hook_before_status "$name"     # 시험용 주입 지점(평소에는 정의되지 않음)
-    local tag tmp="$VR_ST/$name.status.tmp.$BASHPID"
+    # 상태(D): 임시 이름은 그대로(미완료 판정·시험 호환) 두되 vr__new_obj 로 만들어 그 fd 로만 쓰고, rename 으로 놓은 뒤 같은 객체인지 확인
+    local tag tmp="$VR_ST/$name.status.tmp.$BASHPID" sfd="" sr
     tag=$(vr_tag "$name") && [ ${#tag} -eq 64 ] || { vr__ioerr "$name 상태 태그 계산"; return 2; }
-    printf 'v1 %s %s %s\n' "$tag" "$name" "$code" > "$tmp" 2>/dev/null || { vr__ioerr "$name 상태 임시 파일"; return 2; }
+    vr__new_obj "$tmp" sfd; sr=$?
+    if [ $sr -ne 0 ]; then vr__ioerr "$name 상태 임시 파일"; [ $sr -eq 3 ] && vr__ioerr "임시 파일 정리 $VR__WV_LEFT"; return 2; fi
+    if ! printf 'v1 %s %s %s\n' "$tag" "$name" "$code" 2>/dev/null >&"$sfd"; then
+        vr__wv_drop "$tmp" "$sfd" || { :; }; [ -n "$VR__WV_LEFT" ] && vr__ioerr "임시 파일 정리 $VR__WV_LEFT"
+        vr__ioerr "$name 상태 임시 파일"; return 2
+    fi
     declare -F vr_hook_before_commit > /dev/null && vr_hook_before_commit "$name"     # 시험용 주입 지점
-    mv -f "$tmp" "$VR_ST/$name.status" 2>/dev/null || { vr__ioerr "$name 상태 파일 놓기"; return 2; }   # rename: 한 번에 놓인다
+    if [ -L "$tmp" ] || ! [ "$tmp" -ef "/dev/fd/$sfd" ] || ! mv -f "$tmp" "$VR_ST/$name.status" 2>/dev/null; then   # rename: 한 번에 놓인다
+        eval "exec $sfd>&-"; vr__ioerr "$name 상태 파일 놓기"; return 2
+    fi
+    { [ ! -L "$VR_ST/$name.status" ] && [ "$VR_ST/$name.status" -ef "/dev/fd/$sfd" ]; } || vr__ioerr "$name 상태 파일 놓기"
+    eval "exec $sfd>&-"
     return $code
 }
 
@@ -678,10 +833,15 @@ vr__bg_finish() {   # vr__bg_finish <코드> : 자식을 회수하고, 종료 �
     # 종료 기록 놓기: tmp 에 쓰고 배타 이동(같은 이름의 기록이 이미 있으면 덮어쓰지 않고 실패).
     # 실패하면 2 로 끝나고(부모: "종료 기록 없음"), 원인을 기록 폴더와 무관한 경로 — 생명주기 FIFO — 로 최상위에 알린다:
     # 한 줄 "E <작업 경로>"(PIPE_BUF 보다 작아 원자적으로 쓰임). 최상위는 이를 "기록 실패: bg:<경로> 종료 기록 쓰기"(3)로 판정한다.
+    # 기록 임시 파일(D): vr__new_obj 로 만든 fd 로만 쓰고, 경로가 그 객체인지 확인한 뒤 배타 이동
+    local rfd=""
     if ! vr__inject recwrite && tag=$(vr_tag "bg:$vr__bg_id") && [ ${#tag} -eq 64 ] \
-       && { printf 'v1 %s %s\n' "$tag" "$vr__bg_id"; vr__bg_record_lines "$code"; } 2>/dev/null > "$f.tmp" \
-       && vr__mv_excl "$f.tmp" "$f"; then :
+       && vr__new_obj "$f.tmp" rfd \
+       && { printf 'v1 %s %s\n' "$tag" "$vr__bg_id"; vr__bg_record_lines "$code"; } 2>/dev/null >&"$rfd" \
+       && [ ! -L "$f.tmp" ] && [ "$f.tmp" -ef "/dev/fd/$rfd" ] \
+       && vr__mv_excl "$f.tmp" "$f" && [ "$f" -ef "/dev/fd/$rfd" ]; then eval "exec $rfd>&-"
     else
+        [ -n "$rfd" ] && eval "exec $rfd>&-" 2>/dev/null
         code=2
         vr__bg_notify_recfail
     fi
@@ -693,16 +853,17 @@ vr_bg() {
     # 작업 ID = <실행 ID>_<만든 셸 PID>_<순번>. 자식을 만들기 전에 실행 표식 <id>.run 을 배타 생성(noclobber)해 ID 를 예약한다.
     # 그 ID 의 기록·.read·.done·.tmp 가 이미 있으면(비정상 종료 뒤 PID 재사용 등) 그 파일은 건드리지 않고 "작업 ID 충돌"로
     # 실패를 남긴 뒤 다음 순번으로 다시 시도한다. 5번 안에 예약하지 못하면 작업을 시작하지 않고 기록 실패.
-    local id pid tries=0 x clash
+    local id pid tries=0 x clash rfd=""
     while :; do
         VR_BG_SEQ=$((VR_BG_SEQ + 1)); id="${VR_RUN_ID}_${BASHPID}_${VR_BG_SEQ}"; clash=""
         for x in "" .run .read .done .tmp; do if [ -e "$VR_BGREC/$id$x" ] || [ -L "$VR_BGREC/$id$x" ]; then clash=1; fi; done
-        if [ -z "$clash" ] && ! vr__inject reserve && ( set -C; printf 'reserved\n' > "$VR_BGREC/$id.run" ) 2>/dev/null; then break; fi
+        if [ -z "$clash" ] && ! vr__inject reserve && vr__new_obj "$VR_BGREC/$id.run" rfd; then break; fi      # 예약(D): 만든 fd 를 PID 기록 때까지 가짐
         [ -n "$clash" ] && VR_BG_FAILS+=("bg:$label 작업 ID 충돌: $id")
         tries=$((tries + 1))
         if [ "$tries" -ge 5 ]; then vr__ioerr "bg:$label 작업 ID 확보"; return 1; fi
     done
     ( # 최상위 전용 fd(완료 FIFO 읽기·알림 파일 읽기·생명주기 FIFO 읽기)는 작업에 넘기지 않는다(R 줄 가로채기·읽기 위치 변경 방지)
+      eval "exec $rfd>&-"      # 실행 표식 fd 는 부모만 쓴다
       for vr__v in VR_LDONE_R VR_MSGS_R VR_LIFE_R; do if [ -n "${!vr__v:-}" ]; then eval "exec {$vr__v}<&-"; fi; eval "$vr__v=''"; done
       VR_VIOLATED=0; VR_IOERR=0; VR_RUN_ERRS=(); VR_BG_PIDS=(); VR_BG_LABELS=(); VR_BG_IDS=(); VR_BG_ST=(); VR_BG_RC=(); VR_BG_FAILS=()
       VR_BG_PATH=$label; vr__bg_id=$id; vr__bg_code=""; vr__bg_depth=0; vr__bg_reentered=""; vr__bg_self=$BASHPID
@@ -719,7 +880,9 @@ vr_bg() {
     pid=$!
     declare -F vr_hook_bg_before_mark > /dev/null && vr_hook_bg_before_mark "$pid"     # 시험용 주입 지점(평소에는 정의되지 않음)
     VR_BG_PIDS+=("$pid"); VR_BG_LABELS+=("$label"); VR_BG_IDS+=("$id")
-    { printf '%s\n' "$pid" > "$VR_BGREC/$id.run"; } 2>/dev/null || vr__ioerr "bg:$label 실행 표식"   # 예약한 자기 표식에 PID 를 적는다
+    # 예약한 자기 표식에 PID 를 적는다(만든 fd 로 — 경로를 열지 않음). 그 뒤 경로가 여전히 그 객체인지 확인
+    if ! printf '%s\n' "$pid" 2>/dev/null >&"$rfd" || [ -L "$VR_BGREC/$id.run" ] || ! [ "$VR_BGREC/$id.run" -ef "/dev/fd/$rfd" ]; then vr__ioerr "bg:$label 실행 표식"; fi
+    eval "exec $rfd>&-"
 }
 vr_wait() {
     local i rc f id label
@@ -875,6 +1038,7 @@ vr_finish() {
     fi
     vr_wait                                    # 남은 백그라운드 작업이 있으면 여기서 수집한다
     [ -d "$VR_BGREC" ] && vr__bg_collect_orphans   # 모든 후손이 끝날 때까지 기다리고, 부모가 회수하지 못한 기록을 흡수한다(판정 뒤에 늦게 생기는 기록이 없도록)
+    declare -F vr_hook_after_drain > /dev/null && vr_hook_after_drain      # 시험용 주입 지점(생명주기 FIFO 정리 직후 — 잠금은 아직 유지)
     local -a fails=() ioerrs=()
     local e name code rc base f l notes steps="" r
     local total=${#VR_EXP[@]}
@@ -882,8 +1046,11 @@ vr_finish() {
     for e in "${VR_RUN_ERRS[@]}"; do case "$e" in "기록 실패: "*) ioerrs+=("$e") ;; *) fails+=("$e") ;; esac; done
     fails+=("${VR_BG_FAILS[@]}")
     # (2) 다른 하위 셸이 남긴 위반 기록(보조. 유실되어도 그 하위 셸의 종료 코드로 이미 실패가 잡힌다)
-    if [ -f "$VR_NOTES" ]; then
-        if notes=$(cat "$VR_NOTES" 2>/dev/null); then
+    # 위반 기록은 우리 객체(fd)로 읽는다 — 경로가 남의 것으로 바뀌었어도 남의 내용을 읽지 않음(경로 변경은 (5b)에서 기록 실패)
+    local nsrc=$VR_NOTES
+    [ -n "$VR__NOTES_FD" ] && [ "$VR_NOTES" = "$VR__NOTES_AT" ] && nsrc="/dev/fd/$VR__NOTES_FD"
+    if [ -f "$nsrc" ]; then
+        if notes=$(cat "$nsrc" 2>/dev/null); then
             while IFS= read -r l; do [ -n "$l" ] && fails+=("$l"); done <<< "$notes"
         else ioerrs+=("기록 실패: _violations.txt 읽기"); fi
     fi
@@ -936,12 +1103,14 @@ vr_finish() {
         # 임시 파일: 그 자리에 아무것도 없을 때 noclobber 로 만들고 곧바로 연 fd(sfd)로 쓴다. 읽기는 경로로 하되 그 fd 와 같은 객체인지
         # 확인하고, 지우기는 소유 확인 삭제(vr__rm_owned)로 한다(경로가 바뀌어도 남의 것에 쓰거나 지우지 않음).
         local sfd="" r
-        if ! ( set -C; : > "$stmp" ) 2>/dev/null || ! { exec {sfd}>"$stmp"; } 2>/dev/null || [ -L "$stmp" ] || [ ! -f "$stmp" ]; then
-            ioerrs+=("기록 실패: sort 임시 파일 생성")
+        # 정렬 임시(E): vr__new_obj 의 fd 로 쓰고, 경로로 다시 열지 않고 /dev/fd/N 으로 읽는다
+        if ! vr__new_obj "$stmp" sfd; then
+            [ -n "$VR__WV_LEFT" ] && ioerrs+=("기록 실패: 임시 파일 정리 $VR__WV_LEFT")
+            ioerrs+=("기록 실패: sort 임시 파일 생성"); sfd=""
         elif ! (set -o pipefail; printf '%s\n' "${list[@]}" | sort -u 2>/dev/null >&"$sfd"); then ioerrs+=("기록 실패: sort")
         else
             declare -F vr_hook_sort_after_write > /dev/null && vr_hook_sort_after_write "$stmp"     # 시험용 주입 지점
-            if [ -L "$stmp" ] || [ ! -f "$stmp" ] || ! [ "$stmp" -ef "/dev/fd/$sfd" ] || ! mapfile -t sorted_list < "$stmp" 2>/dev/null; then
+            if [ -L "$stmp" ] || [ ! -f "$stmp" ] || ! [ "$stmp" -ef "/dev/fd/$sfd" ] || ! mapfile -t sorted_list < "/dev/fd/$sfd" 2>/dev/null; then
                 ioerrs+=("기록 실패: sort 임시 파일 읽기"); sorted_list=()
             else sort_ok=1; fi
         fi
@@ -966,6 +1135,11 @@ vr_finish() {
             [ $okset -eq 1 ] || { ioerrs+=("기록 실패: sort 결과 불일치"); sorted_list=("${list[@]}"); }
         else sorted_list=("${list[@]}"); fi      # 정렬하지 못했으면 원래 목록을 그대로 쓴다(사유는 위에서 기록)
     fi
+    # (5b) 추가 기록 파일이 여전히 그 fd 의 객체인지(경로 변수를 바꾸지 않은 경우에만 — 바꾼 경우는 쓰기 때 이미 기록 실패),
+    #      출력 폴더 잠금을 아직 소유하는지(마지막 보고 전에 확인 — 아니면 성공으로 가지 않음)
+    if [ -n "$VR__NOTES_FD" ] && [ "$VR_NOTES" = "$VR__NOTES_AT" ] && { [ -L "$VR_NOTES" ] || ! [ "$VR_NOTES" -ef "/dev/fd/$VR__NOTES_FD" ]; }; then ioerrs+=("기록 실패: _violations.txt 경로 변경"); fi
+    if [ -n "$VR__EXP_FD" ] && [ "$VR_EXPECTED" = "$VR__EXP_AT" ] && { [ -L "$VR_EXPECTED" ] || ! [ "$VR_EXPECTED" -ef "/dev/fd/$VR__EXP_FD" ]; }; then ioerrs+=("기록 실패: expected_steps.txt 경로 변경"); fi
+    if [ -n "$VR__LOCK" ] && ! vr__lock_owned; then ioerrs+=("기록 실패: 출력 폴더 잠금 확인"); fi
     local body=""
     [ ${#sorted_list[@]} -gt 0 ] && body=$(printf '%s\n' "${sorted_list[@]}")$'\n'
     [ ${#ioerrs[@]} -gt 0 ] && body+=$(printf '%s\n' "${ioerrs[@]}")$'\n'
@@ -973,11 +1147,21 @@ vr_finish() {
     local -a report=("${sorted_list[@]}" "${ioerrs[@]}")      # 99_done.log 와 표준 출력에는 failed_steps.txt 기록 실패까지 포함
     # (6) 최종 판정
     if [ ${#list[@]} -eq 0 ] && [ ${#ioerrs[@]} -eq 0 ]; then
-        local msg="ALL_DONE: 모든 항목 종료 코드 0 ($total 개 항목)"
-        vr__write_verified "$VR_DONE" "$msg"$'\n' "NOT_DONE: 99_done.log 에 ALL_DONE 을 기록하거나 확인하지 못함 — 성공으로 판정하지 않음"$'\n'
-        r=$?
+        local msg="ALL_DONE: 모든 항목 종료 코드 0 ($total 개 항목)" nd="NOT_DONE: 99_done.log 에 ALL_DONE 을 기록하거나 확인하지 못함 — 성공으로 판정하지 않음"$'\n'
+        # 순서: 99_done.log 기록(fd 를 열어 둠) → 잠금 해제 → fd 닫기. 해제 뒤에는 어떤 보고 파일도 쓰지 않는다.
+        # 해제 실패 = 잠금이 아직 그대로 → 열어 둔 fd 로 ALL_DONE 을 철회하고 3.
+        VR__WV_KEEP=1; VR__WV_FD=""
+        vr__write_verified "$VR_DONE" "$msg"$'\n' "$nd"; r=$?
+        VR__WV_KEEP=""
+        if [ $r -eq 0 ]; then
+            if vr__lock_release; then eval "exec $VR__WV_FD>&-"; VR__WV_FD=""; vr__app_close; echo "$msg"; return 0; fi
+            vr__wv_fail "$VR__WV_FD" "$nd"; r=$?; VR__WV_FD=""
+            echo "기록 실패: 출력 폴더 잠금 해제(${VR__LOCK:-?}) — 성공으로 판정하지 않음. $([ $r -eq 1 ] && echo '99_done.log 의 ALL_DONE 은 철회함(NOT_DONE)' || echo 'ALL_DONE 철회도 실패')" >&2
+            vr__app_close; return 3
+        fi
+        vr__lock_release || echo "기록 실패: 출력 폴더 잠금 해제(${VR__LOCK:-?})" >&2
+        vr__app_close
         case $r in
-            0) echo "$msg"; return 0 ;;
             3) echo "기록 실패: 99_done.log (ALL_DONE 을 기록하거나 확인하지 못함 — 성공으로 판정하지 않음. 임시 파일 정리 실패: $VR__WV_LEFT)" >&2 ;;
             1) echo "기록 실패: 99_done.log (ALL_DONE 을 기록하거나 확인하지 못함 — 성공으로 판정하지 않음. 그 파일의 ALL_DONE 은 철회함(NOT_DONE))" >&2 ;;
             *) echo "기록 실패: 99_done.log (ALL_DONE 을 기록하거나 확인하지 못함 — 성공으로 판정하지 않음. ALL_DONE 철회도 실패 — 그 파일에 ALL_DONE 이 남았을 수 있음)" >&2 ;;
@@ -989,6 +1173,8 @@ vr_finish() {
     if [ $r -ne 0 ]; then ioerrs+=("기록 실패: 99_done.log"); report+=("기록 실패: 99_done.log"); fi
     if [ $r -eq 3 ]; then ioerrs+=("기록 실패: 임시 파일 정리 $VR__WV_LEFT"); report+=("기록 실패: 임시 파일 정리 $VR__WV_LEFT"); fi
     echo "$head"; printf '%s\n' "${report[@]}"
-    [ ${#ioerrs[@]} -eq 0 ] && return 1
+    local unl=0; vr__lock_release || { unl=1; echo "기록 실패: 출력 폴더 잠금 해제(${VR__LOCK:-?})" >&2; }      # 마지막 보고 뒤 — 이후 보고 파일 쓰기 없음
+    vr__app_close
+    [ ${#ioerrs[@]} -eq 0 ] && [ $unl -eq 0 ] && return 1
     return 3
 }
