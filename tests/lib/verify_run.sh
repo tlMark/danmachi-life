@@ -43,7 +43,7 @@
 #   "등록된 항목 없음"                          vr_expect 로 등록한 항목이 0개
 #   "기록 실패: <대상>"                         판정에 필요한 I/O 가 실패함(이 경우 종료 코드는 3)
 
-VR_OUT=""; VR_L=""; VR_ST=""; VR_TOKEN=""; VR_RUN_ID=""; VR_LIFE=""; VR_LIFE_W=""; VR_LDONE=""; VR_LDONE_R=""; VR_MSGS=""; VR_LIFE_RD=""; VR_MSGS_R=""; VR_LIFE_R=""; VR__READER_STATE=""; VR__INIT_ERR=""; VR__INIT_PID=""; VR__WV_LEFT=""; VR__INIT_OK=0; VR__LOCK=""; VR__LOCK_ID=""; VR__LOCK_FD=""; VR__NOTES_FD=""; VR__NOTES_AT=""; VR__EXP_FD=""; VR__EXP_AT=""; VR__WV_KEEP=""; VR__WV_FD=""
+VR_OUT=""; VR_L=""; VR_ST=""; VR_TOKEN=""; VR_RUN_ID=""; VR_LIFE=""; VR_LIFE_W=""; VR_LDONE=""; VR_LDONE_R=""; VR_MSGS=""; VR_LIFE_RD=""; VR_MSGS_R=""; VR_LIFE_R=""; VR__READER_STATE=""; VR__INIT_ERR=""; VR__INIT_PID=""; VR__WV_LEFT=""; VR__INIT_OK=0; VR__HELD_OUT=""; VR__LOCK=""; VR__LOCK_ID=""; VR__LOCK_FD=""; VR__NOTES_FD=""; VR__NOTES_AT=""; VR__EXP_FD=""; VR__EXP_AT=""; VR__WV_KEEP=""; VR__WV_FD=""
 VR_FAILS=""; VR_EXPECTED=""; VR_NOTES=""; VR_STEPS=""; VR_DONE=""
 VR_EXP=(); declare -A VR_EXPN=()
 VR_VIOLATED=0; VR_IOERR=0; VR_RUN_ERRS=()
@@ -174,7 +174,7 @@ vr__reader_stop() {
         VR__READER_STATE=""
         vr__life_reset; return $?           # 정리 실패(남긴 것)는 그대로 전파
     fi
-    VR__READER_STATE=stuck; VR__INIT_ERR="알림 읽기 프로세스 종료 확인 실패: ${VR_OUT:-?}"
+    VR__READER_STATE=stuck; VR__INIT_ERR="알림 읽기 프로세스 종료 확인 실패: ${VR__HELD_OUT:-${VR_OUT:-?}}(읽기 프로세스 PID ${VR_LIFE_RD:-?})"
     printf 'vr_init: %s — 자원을 남겨 두며, 종료가 확인될 때까지 다시 초기화하지 않음\n' "$VR__INIT_ERR" >&2
     return 1
 }
@@ -259,12 +259,16 @@ vr_init() {
     # 이전 초기화의 읽기 프로세스가 남아 있으면(running: 판정 없이 다시 부름, stuck: 이전에 종료를 확인하지 못함) 먼저 끝내고 확인한다.
     # 확인하지 못하면 새 초기화를 하지 않는다(이전 실행의 자원을 가진 프로세스가 남은 상태에서 성공하지 않음).
     # 초기화 성공 표시(VR__INIT_OK)는 맨 먼저 내린다 — 이후 어느 단계에서 실패해도 vr_finish 는 아무것도 쓰지 않고 3(이전 실행의 출력 폴더를 쓰지 않음)
+    # vr__state_clear 는 일반 실행 변수만 지운다. 이전 실행이 가진 자원(읽기 프로세스 fd·PID·상태, 생명주기 객체, 추가 기록 fd, 잠금 fd)과
+    # 그 자원을 가진 출력 폴더 이름(VR__HELD_OUT — 진단용, 성공한 초기화 때 기록)은 남겨 두고, 아래 정리가 모두 성공한 뒤에만 비운다.
+    # 정리 중 하나라도 실패하면(예: 읽기 프로세스 종료를 확인하지 못함 = stuck) 그 자원과 잠금은 그대로 두고 2 — 새 출력 폴더에는 손대지 않는다.
     VR__INIT_OK=0; VR__INIT_ERR=""; VR__INIT_PID=$BASHPID
     vr__state_clear      # 이전 실행의 경로·실행 ID·토큰·배열·플래그 무효화(정리에 필요한 생명주기·잠금 변수는 아래 정리 함수가 다룸)
     if [ -n "${VR__READER_STATE:-}" ]; then vr__reader_stop || return 2; fi
     vr__life_reset || return 2
     vr__app_close
     vr__lock_release || { VR__INIT_ERR="이전 출력 폴더 잠금 해제 실패: $VR__LOCK"; printf 'vr_init: %s\n' "$VR__INIT_ERR" >&2; return 2; }
+    VR__HELD_OUT=""      # 이전 자원 정리 완료
     vr__platform_check || return 2
     vr__init_body "$1"; local rc=$?
     if [ $rc -ne 0 ]; then
@@ -273,7 +277,7 @@ vr_init() {
         vr__state_clear
         return $rc
     fi
-    VR__INIT_OK=1
+    VR__INIT_OK=1; VR__HELD_OUT=$VR_OUT
     return 0
 }
 vr__state_clear() {   # 실행 상태 무효화: 경로·토큰·실행 ID·등록 목록·실패 목록·bg 상태. 생명주기 fd·잠금·추가 기록 fd 는 각자의 정리 함수가 닫는다

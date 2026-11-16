@@ -1321,6 +1321,48 @@ for kind in lnk reg; do
   [ $rc -eq 0 ] && ok "잠금 생성 직후 확인 실패($kind 로 바뀜): vr_init 2, 그 객체를 지우지 않음(외부 소유로 간주), 링크 대상에 아무것도 만들지 않음" || bad "잠금 확인 실패 $kind (rc=$rc)"
 done
 
+# ── a928959 재검수: 읽기 프로세스 stuck 과 상태 무효화의 결합(합성: 읽기 프로세스가 R 을 쓰기 전 주입 지점 end 에서 잠듦) ──────────────────
+# A: 성공한 vr_init(A) → 읽기 프로세스 stuck. B: vr_init(B) 2, 자원·잠금 보존, B 에 아무것도 없음, vr_finish 3·어디에도 쓰지 않음.
+# C: vr_init(C) 도 다시 확인하고 2, 다른 프로세스는 A 의 잠금을 얻지 못함. D: 읽기 프로세스가 실제로 끝난 뒤 vr_init(D) 성공·정리.
+( . "$HERE/lib/verify_run.sh"; R="$TMP/rs"; mkdir -p "$R"; A="$R/A"; B="$R/B"; C="$R/C"; D="$R/D"; RS_SLEEP=8; VR__READER_STOP_TIMEOUT=1
+  vr_hook_reader() { [ "$1" = end ] && sleep "$RS_SLEEP"; return 0; }
+  snapA() { ( cd "$A" && { find . | sort; find . -type f ! -name '.vr_*' -exec sha256sum {} + | sort; } ); }
+  vr_init "$A" || exit 9; vr_expect a; run a true
+  li=$(stat -c %i "$A/.vr_lock"); lfd=$VR__LOCK_FD; rpid=$VR_LIFE_RD; s0=$(snapA)
+  # B
+  vr_init "$B" 2> "$R/B.err"; r=$?
+  [ $r -eq 2 ] && [ "$VR__INIT_OK" = 0 ] && [ "$VR__READER_STATE" = stuck ] || { echo "B: r=$r ok=$VR__INIT_OK st=$VR__READER_STATE"; exit 1; }
+  grep -qF "알림 읽기 프로세스 종료 확인 실패: $A(읽기 프로세스 PID $rpid)" "$R/B.err" || { echo "B: 진단 $(cat "$R/B.err")"; exit 2; }
+  [ ! -e "$B" ] || { echo 'B: B 가 만들어짐'; exit 3; }
+  [ "$(stat -c %i "$A/.vr_lock")" = "$li" ] && [ "$VR__LOCK_FD" = "$lfd" ] && [ "$A/.vr_lock" -ef "/dev/fd/$lfd" ] && vr__lock_owned || { echo 'B: 잠금 보존'; exit 4; }
+  [ -p "$A/.vr_life" ] && [ -p "$A/.vr_done" ] && [ -n "$VR_LDONE_R" ] && [ -n "$VR_LIFE_R" ] && kill -0 "$rpid" 2>/dev/null || { echo 'B: 읽기 자원 보존'; exit 5; }
+  vr_finish > "$R/B.fin" 2>&1; r=$?
+  [ $r -eq 3 ] && grep -q '초기화가 성공한 상태가 아님' "$R/B.fin" && [ ! -e "$B" ] && [ "$(snapA)" = "$s0" ] || { echo "B: vr_finish r=$r"; exit 6; }
+  # C
+  vr_init "$C" 2> "$R/C.err"; r=$?
+  [ $r -eq 2 ] && [ "$VR__READER_STATE" = stuck ] && grep -qF "$A(읽기 프로세스 PID $rpid)" "$R/C.err" && [ ! -e "$C" ] && [ "$(snapA)" = "$s0" ] || { echo "C: r=$r"; exit 7; }
+  ( unset -f vr_hook_reader; . "$HERE/lib/verify_run.sh"; vr_init "$A" 2> "$R/other.err"; echo $? > "$R/other.rc" )
+  [ "$(cat "$R/other.rc")" = 2 ] && grep -q '잠금 실패' "$R/other.err" && [ "$(stat -c %i "$A/.vr_lock")" = "$li" ] && [ "$(snapA)" = "$s0" ] || { echo "C: 다른 프로세스 $(cat "$R/other.rc")"; exit 8; }
+  vr_finish > /dev/null 2>&1; [ $? -eq 3 ] && [ ! -e "$B" ] && [ ! -e "$C" ] && [ ! -e "$A/logs/99_done.log" ] || { echo 'C: vr_finish'; exit 9; }
+  # D: 읽기 프로세스가 실제로 끝날 때까지 기다린 뒤(최대 15초)
+  for k in $(seq 1 150); do kill -0 "$rpid" 2>/dev/null || break; sleep 0.1; done
+  kill -0 "$rpid" 2>/dev/null && { echo 'D: 읽기 프로세스가 끝나지 않음'; exit 10; }
+  RS_SLEEP=0
+  vr_init "$D" 2> "$R/D.err"; r=$?
+  [ $r -eq 0 ] && [ "$VR__INIT_OK" = 1 ] && [ -z "$VR__READER_STATE" -o "$VR__READER_STATE" = running ] || { echo "D: r=$r $(cat "$R/D.err")"; exit 11; }
+  [ ! -e "$A/.vr_lock" ] && [ ! -e "$A/.vr_life" ] && [ ! -e "$A/.vr_done" ] && [ ! -e "$A/.vr_msgs" ] || { echo 'D: A 정리'; exit 12; }
+  [ ! -e "$A/logs/99_done.log" ] && [ ! -e "$B" ] && [ ! -e "$C" ] || { echo 'D: 잘못된 보고'; exit 13; }
+  vr_expect d; run d true; vr_finish > /dev/null 2>&1; r=$?
+  [ $r -eq 0 ] && grep -qx 'ALL_DONE: 모든 항목 종료 코드 0 (1 개 항목)' "$D/logs/99_done.log" && [ ! -e "$D/.vr_lock" ] && [ ! -e "$A/logs/99_done.log" ] || { echo "D: vr_finish r=$r"; exit 14; } ) > "$TMP/rs.out" 2>&1; rc=$?
+[ $rc -eq 0 ] && ok '읽기 프로세스 stuck: B·C 초기화 2(진단에 A 와 PID), A 의 잠금·읽기 자원 보존, B·C 를 만들지 않음, vr_finish 3·어디에도 쓰지 않음, 다른 프로세스는 A 잠금 못 얻음, 종료 확인 뒤 D 정상(A 정리)' || bad "읽기 프로세스 stuck (단계 $rc: $(tr '\n' ';' < "$TMP/rs.out"))"
+# D': 읽기 프로세스는 끝났지만 이전 잠금의 소유를 입증하지 못함 → 자동 삭제 없이 2(기존 정책 유지)
+( . "$HERE/lib/verify_run.sh"; A="$TMP/rs2_A"; vr_init "$A" || exit 9; vr_expect a; run a true
+  rmdir "$A/.vr_lock"; mkdir "$A/.vr_lock"; i2=$(stat -c %i "$A/.vr_lock")
+  vr_init "$TMP/rs2_D" 2> "$TMP/rs2.err"; r=$?
+  [ $r -eq 2 ] && grep -q '이전 출력 폴더 잠금 해제 실패' "$TMP/rs2.err" && [ "$(stat -c %i "$A/.vr_lock")" = "$i2" ] && [ ! -e "$TMP/rs2_D" ] && [ "$VR__INIT_OK" = 0 ] || exit 1
+  vr_finish > /dev/null 2>&1; [ $? -eq 3 ] && [ ! -e "$A/logs/99_done.log" ] ); rc=$?
+[ $rc -eq 0 ] && ok '읽기 프로세스 정상 종료 + 이전 잠금 소유 입증 실패: vr_init 2, 남의 잠금 지우지 않음, 새 폴더 만들지 않음, vr_finish 3' || bad "이전 잠금 소유 입증 실패 (rc=$rc)"
+
 # ── 재현성: 처리기 return 3 + builtin exit 5 를 10번 반복(매번 5) ──────────────────────────────────────────────
 rep_ok=0; for k in 1 2 3 4 5 6 7 8 9 10; do
     eval "s_rep_$k() { body() { trap 'return 3' EXIT; builtin exit 5; }; vr_expect a; run a true; vr_bg B body; vr_wait; }"
