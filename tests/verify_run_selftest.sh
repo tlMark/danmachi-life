@@ -1460,6 +1460,81 @@ scenario stexl s_stexl; rc=$?
   vr_expect d; run d true; vr_finish > /dev/null 2>&1; [ $? -eq 0 ] && grep -qx 'ALL_DONE: 모든 항목 종료 코드 0 (1 개 항목)' "$D/logs/99_done.log" && [ ! -e "$A/logs/99_done.log" ] || { echo '8: D 판정'; exit 11; } ) > "$TMP/fs.out" 2>&1; rc=$?
 [ $rc -eq 0 ] && ok '첫 초기화 중 읽기 프로세스 stuck: 2·진단에 A·PID, A 잠금·생명주기 객체·읽기 프로세스 보존, vr_finish 3·무기록 / 재초기화 거부·B 미생성·다른 프로세스 잠금 불가 / 종료 확인 전 잠금 유지, 확인 뒤 정리·새 초기화 성공' || bad "첫 초기화 중 stuck (단계 $rc: $(tr '\n' ';' < "$TMP/fs.out"))"
 
+# ── 5edf4a4 재검수: 이전 fd 교체 예외의 범위, 초기화 실패 정리 실패 전파, ln 확인(합성 주입) ─────────────────────────────────────────────
+rsnap() { ( cd "$1" && { find . \( -name .vr_life -o -name .vr_done -o -name .vr_msgs -o -name .vr_lock \) -prune -o -print | sort; find . -type f ! -name '.vr_*' -exec stat -c '%n %i' {} + | sort; find . -type f ! -name '.vr_*' -exec sha256sum {} + | sort; } ); }
+# 30-1. A → B → A: A 의 이전 fd 는 B 의 파일(같은 inode 의 다른 이름 포함) 교체에 쓰이지 않음, B 뒤에는 A 의 이전 fd 가 닫혀 A 재사용도 거부
+( . "$HERE/lib/verify_run.sh"; R="$TMP/xab"; A="$R/A"; B="$R/B"; B2="$R/B2"; mkdir -p "$R"
+  vr_init "$A" || exit 9; vr_expect a; run a true; s0=$(rsnap "$A")
+  mkdir -p "$B"; ln "$A/failed_steps.txt" "$B/failed_steps.txt"; ib=$(stat -c %i "$B/failed_steps.txt")
+  vr_init "$B" 2> "$R/B.err"; r=$?
+  [ $r -eq 2 ] && grep -q 'failed_steps.txt 생성 실패' "$R/B.err" && [ "$(stat -c %i "$B/failed_steps.txt")" = "$ib" ] && [ "$B/failed_steps.txt" -ef "$A/failed_steps.txt" ] || { echo "B: r=$r"; exit 1; }
+  [ "$(rsnap "$A")" = "$s0" ] || { echo 'B 뒤 A 변경'; exit 2; }
+  vr_init "$B2" || { echo 'B2 실패'; exit 3; }; [ "$(rsnap "$A")" = "$s0" ] || { echo 'B2 뒤 A 변경'; exit 4; }
+  vr_init "$A" 2> "$R/A2.err"; r=$?
+  [ $r -eq 2 ] && grep -q 'failed_steps.txt 생성 실패' "$R/A2.err" && [ "$(rsnap "$A")" = "$s0" ] || { echo "A 재사용 r=$r"; exit 5; } ) > "$TMP/xab.out" 2>&1; rc=$?
+[ $rc -eq 0 ] && ok '이전 fd 범위(A→B→A): B 의 failed_steps 가 A 의 같은 inode 하드 링크여도 경로가 달라 교체하지 않음(2·그대로), B2 성공 뒤 A 재사용은 이전 fd 가 닫혀 거부, A 의 보고·상태 무변경' || bad "이전 fd 범위 A→B→A (단계 $rc: $(tr '\n' ';' < "$TMP/xab.out"))"
+# 30-1b. A 의 failed_steps.txt 를 B 의 같은 이름으로 옮김(같은 inode, 링크 수 1) → A 의 이전 fd 로 B 경로의 객체를 지우지 않음(경로가 다름)
+( . "$HERE/lib/verify_run.sh"; A="$TMP/xmv_A"; B="$TMP/xmv_B"; vr_init "$A" || exit 9; vr_expect a; run a true
+  mkdir -p "$B"; mv "$A/failed_steps.txt" "$B/failed_steps.txt"; i0=$(stat -c %i "$B/failed_steps.txt")
+  vr_init "$B" 2>/dev/null; r=$?; [ $r -eq 2 ] && [ "$(stat -c %i "$B/failed_steps.txt")" = "$i0" ] && [ ! -e "$B/.vr_lock" ] ); rc=$?
+[ $rc -eq 0 ] && ok '이전 fd 범위: A 의 보고 객체가 B 의 경로로 옮겨져 있어도(같은 inode) 경로가 달라 교체하지 않음 — 2, 그 객체 보존' || bad "이전 fd 범위 경로 결속 (rc=$rc)"
+# 30-2. A → A: 같은 경로의 이전 우리 객체만 교체(새 inode·빈 내용)
+( . "$HERE/lib/verify_run.sh"; A="$TMP/xaa"; vr_init "$A" || exit 9; vr_expect a; run a true
+  i1=$(stat -c %i "$A/failed_steps.txt"); i2=$(stat -c %i "$A/expected_steps.txt"); i3=$(stat -c %i "$A/status/_violations.txt"); [ -s "$A/expected_steps.txt" ] || exit 1
+  vr_init "$A" || exit 2
+  [ "$(stat -c %i "$A/expected_steps.txt")" != "$i2" ] && [ ! -s "$A/expected_steps.txt" ] && [ "$(stat -c %i "$A/failed_steps.txt")" != "$i1" ] && [ "$(stat -c %i "$A/status/_violations.txt")" != "$i3" ] || exit 3
+  [ -z "$(ls -A "$A" "$A/status" | grep '\.vr\.new\.')" ] ); rc=$?
+[ $rc -eq 0 ] && ok '이전 fd 범위(A→A): 같은 경로의 이전 우리 객체 3개를 소유 확인 뒤 교체(새 inode·빈 내용), 임시 이름 없음' || bad "이전 fd 범위 A→A (단계 $rc)"
+# 30-3. A 실패 → A 재시도: 이번에 만든 파일을 지우고 잠금 해제 → 재시도 성공
+( . "$HERE/lib/verify_run.sh"; A="$TMP/xaf"; vr_hook_init_fail() { [ "$1" = list ]; }; vr_init "$A" 2>/dev/null; r=$?; unset -f vr_hook_init_fail
+  [ $r -eq 2 ] && [ ! -e "$A/failed_steps.txt" ] && [ ! -e "$A/expected_steps.txt" ] && [ ! -e "$A/status/_violations.txt" ] && [ ! -e "$A/.vr_lock" ] || exit 1
+  vr_init "$A" || exit 2; vr_expect a; run a true; vr_finish > /dev/null 2>&1 ); rc=$?
+[ $rc -eq 0 ] && ok '이전 fd 범위(A 실패→A 재시도): 실패한 초기화가 만든 보고·추가 기록 파일을 소유 확인 삭제·잠금 해제, 재시도 성공·판정 0' || bad "A 실패→A 재시도 (단계 $rc)"
+# 30-4. 소유 증거 없는 기존 보고 파일 → 덮어쓰지 않고 거부, 이번에 만든 것만 정리
+( . "$HERE/lib/verify_run.sh"; A="$TMP/xnp"; mkdir -p "$A"; printf FOREIGN > "$A/expected_steps.txt"; i0=$(stat -c %i "$A/expected_steps.txt")
+  vr_init "$A" 2>/dev/null; r=$?
+  [ $r -eq 2 ] && [ "$(stat -c %i "$A/expected_steps.txt")" = "$i0" ] && [ "$(cat "$A/expected_steps.txt")" = FOREIGN ] && [ ! -e "$A/failed_steps.txt" ] && [ ! -e "$A/.vr_lock" ] ); rc=$?
+[ $rc -eq 0 ] && ok '소유 증거 없는 기존 보고 파일(expected_steps.txt): 대체하지 않고 2, 그 파일 inode·내용 그대로, 이번에 먼저 만든 failed_steps.txt 는 정리, 잠금 해제' || bad "소유 증거 없는 기존 보고 파일 (rc=$rc)"
+# 30-5. (주입 함수 안에서는 n·d 를 쓰지 않는다 — vr__rm_owned 의 local 이 동적 범위로 가림) 초기화 실패 시 보고 파일 삭제 실패 조합(1~3개, 모든 부분집합): 실패한 것은 남기고 경로를 진단에, 나머지는 삭제, 잠금 해제, fd 없음, 다음 vr_init 거부
+XN=0
+for combo in "failed_steps.txt" "expected_steps.txt" "_violations.txt" "failed_steps.txt expected_steps.txt" "failed_steps.txt _violations.txt" "expected_steps.txt _violations.txt" "failed_steps.txt expected_steps.txt _violations.txt"; do
+  XN=$((XN + 1))
+  ( . "$HERE/lib/verify_run.sh"; A="$TMP/xdf_$XN"; KEEP=" $combo "; CUR=""
+    vr_hook_init_fail() { [ "$1" = list ]; }
+    vr_hook_rm_owned() { CUR=$1; }
+    vr_hook_rm_stage() { [ "$1" = verified ] && case "$KEEP" in *" ${CUR##*/} "*) ln "$2" "$TMP/xdf_$XN.keep.${CUR##*/}" ;; esac; return 0; }
+    vr_init "$A" 2> "$TMP/xdf_$XN.err"; r=$?
+    unset -f vr_hook_init_fail vr_hook_rm_owned vr_hook_rm_stage
+    [ $r -eq 2 ] && grep -q '초기화 실패 뒤 정리 실패' "$TMP/xdf_$XN.err" && [[ "$VR__INIT_ERR" == *"정리 실패"* ]] || { echo "r=$r"; exit 1; }
+    for f in failed_steps.txt expected_steps.txt status/_violations.txt; do
+      b=${f##*/}
+      case "$KEEP" in
+        *" $b "*) [ -f "$A/$f" ] && grep -qF "$A/$f" "$TMP/xdf_$XN.err" || { echo "남김 $f"; exit 2; }
+                  for x in /proc/$BASHPID/fd/*; do [ "$x" -ef "$A/$f" ] && { echo "fd 남음 $f"; exit 3; }; done ;;
+        *) [ ! -e "$A/$f" ] && ! grep -qF "$A/$f" "$TMP/xdf_$XN.err" || { echo "삭제 $f"; exit 4; } ;;
+      esac
+    done
+    [ ! -e "$A/.vr_lock" ] || exit 5
+    s1=$(rsnap "$A"); vr_init "$A" 2>/dev/null; [ $? -eq 2 ] && [ "$(rsnap "$A")" = "$s1" ] || exit 6 ) > "$TMP/xdf_$XN.out" 2>&1; rc=$?
+  [ $rc -eq 0 ] && ok "초기화 실패 정리 실패 조합($combo): 2·VR__INIT_ERR·진단에 남긴 경로, 그 파일만 남김·나머지 삭제, 잠금 해제, 남긴 파일을 가리키는 fd 없음, 다음 vr_init 거부·무변경" || bad "초기화 실패 정리 실패 조합 $combo (단계 $rc: $(tr '\n' ';' < "$TMP/xdf_$XN.out"))"
+done
+# 30-6. ln 확인: GNU 아님 / 없음 / -T 미지원 / -T 를 무시 → vr_init 2(사유), 성공으로 진행하지 않음 / 기능 확인 정리 실패도 2
+( . "$HERE/lib/verify_run.sh"; ln() { if [ "$1" = --version ]; then echo 'ln (BusyBox) 1.0'; else command ln "$@"; fi; }
+  vr_init "$TMP/xln1" 2> "$TMP/xln1.err"; [ $? -eq 2 ] && grep -q 'GNU coreutils 의 ln 필요' "$TMP/xln1.err" && [ ! -e "$TMP/xln1" ] ); rc=$?
+[ $rc -eq 0 ] && ok 'ln 확인: GNU coreutils 가 아닌 ln → vr_init 2·사유, 출력 폴더를 만들지 않음' || bad "ln 비 GNU (rc=$rc)"
+mkdir -p "$TMP/noln"; for f in /usr/bin/* /bin/*; do b=${f##*/}; [ "$b" = ln ] && continue; [ -e "$TMP/noln/$b" ] || ln -s "$f" "$TMP/noln/$b" 2>/dev/null; done
+( PATH="$TMP/noln"; . "$HERE/lib/verify_run.sh"; vr_init "$TMP/xln2" 2> "$TMP/xln2.err"; [ $? -eq 2 ] && grep -q 'ln 없음' "$TMP/xln2.err" && [ ! -e "$TMP/xln2" ] ); rc=$?
+[ $rc -eq 0 ] && ok 'ln 확인: ln 이 없음 → vr_init 2·"ln 없음", 출력 폴더를 만들지 않음' || bad "ln 없음 (rc=$rc)"
+( . "$HERE/lib/verify_run.sh"; ln() { local a; for a in "$@"; do [ "$a" = -T ] && { echo "ln: invalid option -- 'T'" >&2; return 1; }; done; command ln "$@"; }
+  vr_init "$TMP/xln3" 2> "$TMP/xln3.err"; [ $? -eq 2 ] && grep -q 'ln -T(덮어쓰지 않는 놓기) 동작 이상' "$TMP/xln3.err" && [ ! -e "$TMP/xln3/.vr_lock" ] && [ -z "$(ls -A "$TMP/xln3" | grep 'vr\.plat')" ] ); rc=$?
+[ $rc -eq 0 ] && ok 'ln 확인: -T 미지원 → 기능 확인 실패로 vr_init 2·사유, 잠금·확인용 폴더 남지 않음' || bad "ln -T 미지원 (rc=$rc)"
+( . "$HERE/lib/verify_run.sh"; ln() { local a b=(); for a in "$@"; do [ "$a" = -T ] || b+=("$a"); done; command ln "${b[@]}"; }
+  vr_init "$TMP/xln4" 2> "$TMP/xln4.err"; [ $? -eq 2 ] && grep -q 'ln -T(덮어쓰지 않는 놓기) 동작 이상' "$TMP/xln4.err" && [ ! -e "$TMP/xln4/.vr_lock" ] ); rc=$?
+[ $rc -eq 0 ] && ok 'ln 확인: -T 를 무시하는 ln(폴더 안으로 링크) → 기능 확인 실패로 vr_init 2' || bad "ln -T 무시 (rc=$rc)"
+( . "$HERE/lib/verify_run.sh"; rmdir() { case "$*" in *.vr.plat.*) return 1 ;; esac; command rmdir "$@"; }
+  vr_init "$TMP/xln5" 2> "$TMP/xln5.err"; [ $? -eq 2 ] && grep -q '확인용 폴더 정리 실패' "$TMP/xln5.err" && [ ! -e "$TMP/xln5/.vr_lock" ] && [ "$VR__INIT_OK" = 0 ] ); rc=$?
+[ $rc -eq 0 ] && ok '기능 확인 정리 실패(확인용 폴더를 지우지 못함) → 성공으로 보지 않고 vr_init 2·사유, 잠금 해제' || bad "기능 확인 정리 실패 (rc=$rc)"
+
 # ── 재현성: 처리기 return 3 + builtin exit 5 를 10번 반복(매번 5) ──────────────────────────────────────────────
 rep_ok=0; for k in 1 2 3 4 5 6 7 8 9 10; do
     eval "s_rep_$k() { body() { trap 'return 3' EXIT; builtin exit 5; }; vr_expect a; run a true; vr_bg B body; vr_wait; }"

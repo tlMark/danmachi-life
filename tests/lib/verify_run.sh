@@ -1,7 +1,7 @@
 # F1D4A — 검증 스크립트 공통 부품(시험 전용). tests/p1_verify.sh 가 source 해서 쓴다. 게임 코드·F1 기준 파일을 바꾸지 않는다.
 # 목적: 항목별 종료 상태를 모으고, 종료 상태를 남기지 못한 항목·비정상 종료한 백그라운드 작업·기록 실패를 모두 실패로 잡는다.
 # 지원 대상: Linux + GNU coreutils + Bash 4.4 이상(개발자 실행 확인은 Linux x86_64, GNU bash 5.2.21, GNU coreutils 9.4 뿐).
-#   필요한 것: procfs(/proc/self/fd)와 /dev/fd(→ /proc/self/fd), GNU coreutils 의 timeout·mv(-n = RENAME_NOREPLACE, -T)·stat(-L -c %h)·
+#   필요한 것: procfs(/proc/self/fd)와 /dev/fd(→ /proc/self/fd), GNU coreutils 의 timeout·mv(-n = RENAME_NOREPLACE, -T)·stat(-L -c %h)·ln(-T)·
 #   mktemp(-d TEMPLATE)·mkfifo·od(-An -v -tx1)·tr·ln(-T = link(2), 덮어쓰지 않는 놓기), 같은 파일시스템 안의 rename·link.
 #   vr_init 은 (1) 시작할 때(출력 폴더를 만들기 전) bash 버전·Linux·procfs·/dev/fd·위 명령이 GNU coreutils 인지 확인하고,
 #   (2) 출력 폴더를 만든 직후 그 파일시스템에서 실제로 쓰는 옵션·동작(vr__platform_probe)을 직접 해 본다.
@@ -43,7 +43,7 @@
 #   "등록된 항목 없음"                          vr_expect 로 등록한 항목이 0개
 #   "기록 실패: <대상>"                         판정에 필요한 I/O 가 실패함(이 경우 종료 코드는 3)
 
-VR_OUT=""; VR_L=""; VR_ST=""; VR_TOKEN=""; VR_RUN_ID=""; VR_LIFE=""; VR_LIFE_W=""; VR_LDONE=""; VR_LDONE_R=""; VR_MSGS=""; VR_LIFE_RD=""; VR_MSGS_R=""; VR_LIFE_R=""; VR__READER_STATE=""; VR__INIT_ERR=""; VR__INIT_PID=""; VR__WV_LEFT=""; VR__INIT_OK=0; VR__HELD_OUT=""; VR__LOCK=""; VR__LOCK_ID=""; VR__LOCK_FD=""; VR__NOTES_FD=""; VR__NOTES_AT=""; VR__EXP_FD=""; VR__EXP_AT=""; VR__FAILS_FD=""; VR__PREV_FAILS_FD=""; VR__PREV_NOTES_FD=""; VR__PREV_EXP_FD=""; VR__WV_KEEP=""; VR__WV_FD=""
+VR_OUT=""; VR_L=""; VR_ST=""; VR_TOKEN=""; VR_RUN_ID=""; VR_LIFE=""; VR_LIFE_W=""; VR_LDONE=""; VR_LDONE_R=""; VR_MSGS=""; VR_LIFE_RD=""; VR_MSGS_R=""; VR_LIFE_R=""; VR__READER_STATE=""; VR__INIT_ERR=""; VR__INIT_PID=""; VR__WV_LEFT=""; VR__INIT_OK=0; VR__HELD_OUT=""; VR__LOCK=""; VR__LOCK_ID=""; VR__LOCK_FD=""; VR__NOTES_FD=""; VR__NOTES_AT=""; VR__EXP_FD=""; VR__EXP_AT=""; VR__FAILS_FD=""; VR__FAILS_AT=""; VR__PREV_FAILS_FD=""; VR__PREV_NOTES_FD=""; VR__PREV_EXP_FD=""; VR__PREV_FAILS_AT=""; VR__PREV_NOTES_AT=""; VR__PREV_EXP_AT=""; VR__WV_KEEP=""; VR__WV_FD=""
 VR_FAILS=""; VR_EXPECTED=""; VR_NOTES=""; VR_STEPS=""; VR_DONE=""
 VR_EXP=(); declare -A VR_EXPN=()
 VR_VIOLATED=0; VR_IOERR=0; VR_RUN_ERRS=()
@@ -215,7 +215,7 @@ vr__platform_check() {
     if [ "${BASH_VERSINFO[0]}" -lt 4 ] || { [ "${BASH_VERSINFO[0]}" -eq 4 ] && [ "${BASH_VERSINFO[1]}" -lt 4 ]; }; then why+=" bash 4.4 이상 필요(현재 $BASH_VERSION)"; fi
     [ "$(uname -s 2>/dev/null)" = Linux ] || why+=" Linux 전용(현재 $(uname -s 2>/dev/null))"
     { [ -d /proc/self/fd ] && [ -e /dev/fd/0 ] && [ /dev/fd/0 -ef /proc/self/fd/0 ]; } || why+=" procfs(/proc/self/fd)와 /dev/fd 필요"
-    local c; for c in timeout mv stat mktemp mkfifo od tr; do
+    local c; for c in timeout mv stat mktemp mkfifo od tr ln; do
         command -v "$c" > /dev/null 2>&1 || { why+=" $c 없음"; continue; }
         "$c" --version 2>/dev/null | head -1 | grep -q 'GNU coreutils' || why+=" GNU coreutils 의 $c 필요"
     done
@@ -312,18 +312,33 @@ vr_init() {
 }
 vr__app_to_prev() {   # 지금의 보고·추가 기록 fd 를 "이전" 으로 옮긴다(남아 있던 이전 fd 는 닫음)
     vr__prev_close
+    # fd 와 함께 그 fd 의 객체를 놓은 경로도 옮긴다 — 교체 예외는 "같은 경로 + 같은 객체(-ef)" 일 때만(다른 폴더의 파일에는 쓰이지 않음)
     VR__PREV_FAILS_FD=$VR__FAILS_FD; VR__PREV_NOTES_FD=$VR__NOTES_FD; VR__PREV_EXP_FD=$VR__EXP_FD
-    VR__FAILS_FD=""; VR__NOTES_FD=""; VR__EXP_FD=""; VR__NOTES_AT=""; VR__EXP_AT=""
+    VR__PREV_FAILS_AT=$VR__FAILS_AT; VR__PREV_NOTES_AT=$VR__NOTES_AT; VR__PREV_EXP_AT=$VR__EXP_AT
+    VR__FAILS_FD=""; VR__NOTES_FD=""; VR__EXP_FD=""; VR__FAILS_AT=""; VR__NOTES_AT=""; VR__EXP_AT=""
 }
 vr__prev_close() {
     local v
     for v in VR__PREV_FAILS_FD VR__PREV_NOTES_FD VR__PREV_EXP_FD; do if [ -n "${!v:-}" ]; then eval "exec ${!v}>&-" 2>/dev/null; fi; eval "$v=''"; done
+    VR__PREV_FAILS_AT=""; VR__PREV_NOTES_AT=""; VR__PREV_EXP_AT=""
 }
-vr__app_drop_new() {  # 초기화 실패: 이번에 만든 파일만(fd 로 소유 확인) 지우고 fd 를 닫는다. 소유를 입증 못 하면 지우지 않음
-    [ -n "$VR__FAILS_FD" ] && [ -n "$VR_FAILS" ] && vr__drop_own "$VR_FAILS" "$VR__FAILS_FD"
-    [ -n "$VR__EXP_FD" ] && [ -n "$VR_EXPECTED" ] && vr__drop_own "$VR_EXPECTED" "$VR__EXP_FD"
-    [ -n "$VR__NOTES_FD" ] && [ -n "$VR_NOTES" ] && vr__drop_own "$VR_NOTES" "$VR__NOTES_FD"
+# 초기화 실패: 이번에 만든 보고·추가 기록 파일만(만든 경로 + 그 fd 의 같은 객체) 소유 확인 삭제하고 fd 를 닫는다. 소유를 입증 못 하거나 삭제를
+# 확인하지 못한 것은 지우지 않고 남기며, 그 경로를 VR__INIT_ERR·표준 오류에 남기고 1(호출자는 잠금을 놓더라도 그 객체는 남아 다음 vr_init 이
+# 그 경로의 기존 객체로 보고 거부한다 — 우리 것이라는 증거(fd)는 닫히므로 다시 대체되지 않음).
+vr__app_drop_new() {
+    local bad="" fd at k
+    for k in FAILS EXP NOTES; do
+        fd=VR__${k}_FD; at=VR__${k}_AT; fd=${!fd:-}; at=${!at:-}
+        [ -n "$fd" ] && [ -n "$at" ] || continue
+        vr__drop_own "$at" "$fd" || bad+=" $at"
+    done
     vr__app_close
+    if [ -n "$bad" ]; then
+        VR__INIT_ERR="${VR__INIT_ERR:+$VR__INIT_ERR; }초기화 실패 뒤 정리 실패(소유 확인 삭제를 하지 못해 남김):$bad"
+        printf 'vr_init: 기록 실패: %s\n' "초기화 실패 뒤 정리 실패(소유 확인 삭제를 하지 못해 남김):$bad" >&2
+        return 1
+    fi
+    return 0
 }
 vr__state_clear() {   # 실행 상태 무효화: 경로·토큰·실행 ID·등록 목록·실패 목록·bg 상태. 생명주기 fd·잠금·추가 기록 fd 는 각자의 정리 함수가 닫는다
     VR_OUT=""; VR_L=""; VR_ST=""; VR_FAILS=""; VR_EXPECTED=""; VR_STEPS=""; VR_NOTES=""; VR_DONE=""; VR_BGREC=""; VR_TOKEN=""; VR_RUN_ID=""
@@ -333,7 +348,7 @@ vr__state_clear() {   # 실행 상태 무효화: 경로·토큰·실행 ID·등�
 vr__app_close() {   # 보고·추가 기록 fd 를 닫는다
     local v
     for v in VR__NOTES_FD VR__EXP_FD VR__FAILS_FD; do if [ -n "${!v:-}" ]; then eval "exec ${!v}>&-" 2>/dev/null; fi; eval "$v=''"; done
-    VR__NOTES_AT=""; VR__EXP_AT=""
+    VR__NOTES_AT=""; VR__EXP_AT=""; VR__FAILS_AT=""
 }
 # 순서(파일·하위 폴더 접근은 모두 잠금 뒤): 출력 폴더(링크 거부) → 잠금 → 하위 폴더(링크 거부, -p 없이) → 기능 확인 → 보고·추가 파일 → 생명주기 객체
 vr__init_body() {
@@ -356,12 +371,13 @@ vr__init_body() {
     done
     vr__platform_probe "$VR_OUT" || return 2      # 실제 동작 확인은 출력 폴더와 같은 파일시스템에서(출력 폴더를 만든 직후)
     local ar
-    vr__new_placed "$VR_FAILS" VR__FAILS_FD "" "$VR__PREV_FAILS_FD"; ar=$?      # 덮어쓰지 않는 생성(A) — fd 는 vr_finish 의 교체에 씀
+    vr__new_placed "$VR_FAILS" VR__FAILS_FD "" "$VR__PREV_FAILS_FD" "$VR__PREV_FAILS_AT"; ar=$?      # 덮어쓰지 않는 생성(A) — fd 는 vr_finish 의 교체에 씀
     if [ $ar -ne 0 ]; then VR__INIT_ERR="failed_steps.txt 생성 실패($ar)${VR__WV_LEFT:+: $VR__WV_LEFT}"; printf 'vr_init: %s\n' "$VR__INIT_ERR" >&2; return 2; fi
-    vr__new_placed "$VR_EXPECTED" VR__EXP_FD append "$VR__PREV_EXP_FD"; ar=$?      # 추가 기록(B)
+    VR__FAILS_AT=$VR_FAILS
+    vr__new_placed "$VR_EXPECTED" VR__EXP_FD append "$VR__PREV_EXP_FD" "$VR__PREV_EXP_AT"; ar=$?      # 추가 기록(B)
     if [ $ar -ne 0 ]; then VR__INIT_ERR="expected_steps.txt 생성 실패($ar)${VR__WV_LEFT:+: $VR__WV_LEFT}"; printf 'vr_init: %s\n' "$VR__INIT_ERR" >&2; return 2; fi
     VR__EXP_AT=$VR_EXPECTED
-    vr__new_placed "$VR_NOTES" VR__NOTES_FD append "$VR__PREV_NOTES_FD"; ar=$?
+    vr__new_placed "$VR_NOTES" VR__NOTES_FD append "$VR__PREV_NOTES_FD" "$VR__PREV_NOTES_AT"; ar=$?
     if [ $ar -ne 0 ]; then VR__INIT_ERR="_violations.txt 생성 실패($ar)${VR__WV_LEFT:+: $VR__WV_LEFT}"; printf 'vr_init: %s\n' "$VR__INIT_ERR" >&2; return 2; fi
     VR__NOTES_AT=$VR_NOTES
     VR_TOKEN=$(head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n') || return 2
@@ -561,24 +577,26 @@ vr__link_place() {
     VR__WV_LEFT="$t(놓은 뒤 임시 이름 정리 실패: vr__rm_owned=$r)"; return 3
 }
 # vr__drop_own <경로> <fd> : 경로의 객체가 그 fd 의 우리 객체일 때만 소유 확인 삭제(0). 아니면 건드리지 않고 1. 경로에 아무것도 없으면 0.
-vr__drop_own() {
-    [ -e "$1" ] || [ -L "$1" ] || return 0
-    [ -n "$2" ] && [ ! -L "$1" ] && [ "$1" -ef "/dev/fd/$2" ] || return 1
+vr__drop_own() {   # 경로에 아무것도 없으면: fd 로 본 우리 객체의 링크 수가 0 일 때만 0(다른 이름으로 남았으면 1)
+    [ -n "$2" ] || return 1
+    if [ ! -e "$1" ] && [ ! -L "$1" ]; then [ "$(stat -L -c %h "/dev/fd/$2" 2>/dev/null)" = 0 ]; return; fi
+    [ ! -L "$1" ] && [ "$1" -ef "/dev/fd/$2" ] || return 1
     vr__rm_owned "$1" "$2" 1 > /dev/null 2>&1
 }
-# vr__new_placed <최종 경로> <fd 변수> [append] [이전 fd] : 같은 폴더의 무작위 임시 이름에 새 객체를 만들어 최종 경로에 덮어쓰지 않고 놓는다(내용 비어 있음).
-# 최종 경로에 이미 무엇이 있으면 실패한다. 단, 그것이 [이전 fd] 의 우리 객체(같은 셸의 이전 vr_init 이 만든 것)이면 소유 확인 삭제 뒤 놓는다.
+# vr__new_placed <최종 경로> <fd 변수> [append] [이전 fd] [이전 경로] : 같은 폴더의 무작위 임시 이름에 새 객체를 만들어 최종 경로에 덮어쓰지
+# 않고 놓는다(내용 비어 있음). 최종 경로에 이미 무엇이 있으면 실패한다. 단, 최종 경로가 [이전 경로]와 같고 그 자리의 것이 [이전 fd] 의 같은
+# 객체(같은 셸의 이전 vr_init 이 그 경로에 만든 것)이면 소유 확인 삭제 뒤 놓는다 — 다른 폴더의 fd·같은 inode 의 다른 이름에는 쓰이지 않는다.
 # 반환: 0 = 성공(fd 변수), 1 = 실패·우리 것 남지 않음, 3 = 정리 실패(우리 객체가 남았거나 위치 미확인 — VR__WV_LEFT),
 #       4 = 놓았으나 최종 경로가 바뀜(그 자리의 남의 것은 건드리지 않음) + 우리 객체는 어떤 이름으로도 남지 않음(fd 로 링크 수 0 확인).
 # 실패 시 fd 는 닫힌다. 놓은 뒤 최종 경로가 바뀌었는데 우리 객체의 링크 수가 0 이 아니면(다른 이름으로 옮겨짐) 위치를 알 수 없으므로 3.
 vr__new_placed() {
-    local np_f=$1 np_v=$2 np_ap=${3:-} np_old=${4:-} np_t np_fd np_r
+    local np_f=$1 np_v=$2 np_ap=${3:-} np_old=${4:-} np_oldat=${5:-} np_t np_fd np_r
     printf -v "$np_v" '%s' ''
     case "$np_f" in */*) ;; *) return 1 ;; esac
     np_t=$(mktemp -u "${np_f%/*}/.vr.new.XXXXXXXXXXXXXXXX" 2>/dev/null) || return 1
     [ "${np_t%/*}" = "${np_f%/*}" ] && [[ "${np_t##*/}" =~ ^\.vr\.new\.[A-Za-z0-9]{16}$ ]] && [ "${np_t##*.}" != XXXXXXXXXXXXXXXX ] || return 1
     if [ -e "$np_f" ] || [ -L "$np_f" ]; then
-        [ -n "$np_old" ] && vr__drop_own "$np_f" "$np_old" || return 1     # 이전 우리 객체만 지움 — 그 밖의 것이면 실패(건드리지 않음)
+        [ -n "$np_old" ] && [ "$np_f" = "$np_oldat" ] && vr__drop_own "$np_f" "$np_old" || return 1     # 같은 경로의 이전 우리 객체만 지움 — 그 밖의 것이면 실패(건드리지 않음)
     fi
     vr__new_obj "$np_t" np_fd "$np_ap"; np_r=$?
     [ $np_r -eq 0 ] || { [ $np_r -eq 2 ] && return 1; return $np_r; }
@@ -1260,7 +1278,8 @@ vr_finish() {
     local body=""
     [ ${#sorted_list[@]} -gt 0 ] && body=$(printf '%s\n' "${sorted_list[@]}")$'\n'
     [ ${#ioerrs[@]} -gt 0 ] && body+=$(printf '%s\n' "${ioerrs[@]}")$'\n'
-    vr__write_verified "$VR_FAILS" "$body" "" "$VR__FAILS_FD"; vr__wv_note $? failed_steps.txt      # vr_init 이 만든 우리 객체만 교체
+    local ffd=""; [ "$VR_FAILS" = "$VR__FAILS_AT" ] && ffd=$VR__FAILS_FD      # vr_init 이 그 경로에 만든 우리 객체만 교체(경로 변수가 바뀌었으면 교체 권한 없음)
+    vr__write_verified "$VR_FAILS" "$body" "" "$ffd"; vr__wv_note $? failed_steps.txt
     local -a report=("${sorted_list[@]}" "${ioerrs[@]}")      # 99_done.log 와 표준 출력에는 failed_steps.txt 기록 실패까지 포함
     # (6) 최종 판정
     if [ ${#list[@]} -eq 0 ] && [ ${#ioerrs[@]} -eq 0 ]; then
