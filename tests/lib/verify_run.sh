@@ -2,7 +2,8 @@
 # 목적: 항목별 종료 상태를 모으고, 종료 상태를 남기지 못한 항목·비정상 종료한 백그라운드 작업·기록 실패를 모두 실패로 잡는다.
 # 지원 대상: Linux + GNU coreutils + Bash 4.4 이상(개발자 실행 확인은 Linux x86_64, GNU bash 5.2.21, GNU coreutils 9.4 뿐).
 #   필요한 것: procfs(/proc/self/fd)와 /dev/fd(→ /proc/self/fd), GNU coreutils 의 timeout·mv(-n = RENAME_NOREPLACE, -T)·stat(-L -c %h)·ln(-T)·
-#   mktemp(-d TEMPLATE)·mkfifo·od(-An -v -tx1)·tr·ln(-T = link(2), 덮어쓰지 않는 놓기), 같은 파일시스템 안의 rename·link.
+#   mktemp(-d TEMPLATE)·mkfifo·od(-An -v -tx1)·tr·ln(-T -L /proc/self/fd/N = linkat(AT_SYMLINK_FOLLOW), fd 의 객체를 덮어쓰지 않고 놓기),
+#   같은 파일시스템 안의 rename·link.
 #   vr_init 은 (1) 시작할 때(출력 폴더를 만들기 전) bash 버전·Linux·procfs·/dev/fd·위 명령이 GNU coreutils 인지 확인하고,
 #   (2) 출력 폴더를 만든 직후 그 파일시스템에서 실제로 쓰는 옵션·동작(vr__platform_probe)을 직접 해 본다.
 #   어느 하나라도 맞지 않으면 사유를 표준 오류(VR__INIT_ERR)에 쓰고 2 로 끝난다(성공으로 진행하지 않음).
@@ -20,7 +21,8 @@
 #   1. 명령 출력(logs/)은 판정에 쓰지 않는다. 명령이 "exit=0" 같은 글자를 출력해도, 자식 프로세스가 뒤늦게 로그에 써도 판정과 무관하다.
 #   2. 종료 상태는 래퍼(run)만 쓰는 전용 파일에 있다. 형식은 정확히 한 줄: "v1 <태그> <이름> <종료 코드>".
 #      <태그> = sha256(실행 토큰 ":" 이름). 실행 토큰은 내보내지 않는 셸 변수라 명령이 알 수 없어 상태 기록을 흉내 낼 수 없다.
-#   3. 상태 기록은 원자적이다: 임시 파일에 다 쓴 뒤 mv(rename)로 한 번에 놓는다. 쓰는 도중이나 직전에 래퍼가 죽으면 상태 파일이 없다.
+#   3. 상태 기록은 원자적이다: 임시 파일에 다 쓴 뒤 그 fd 의 객체를 link(2)(vr__link_place)로 한 번에 놓는다. 쓰는 도중이나 직전에 래퍼가
+#      죽으면 상태 파일이 없다.
 #   4. 같은 이름의 중복 실행은 mkdir(원자적)로 만든 선점 표식(status/<이름>.claim)으로 막는다.
 #   5. **판정은 메모리에서 한다.** 등록 목록·실행 중 위반·기록 실패·백그라운드 작업의 종료 상태를 셸 변수로 갖고,
 #      vr_finish 가 등록한 모든 항목의 상태 기록을 다시 읽어 실패 목록을 메모리에서 만든다.
@@ -185,11 +187,14 @@ vr__reader_stop() {
 vr__inject() {   # 시험용 실패 주입(평소에는 정의되지 않음): vr_hook_fail <지점> 이 0 을 돌려주면 그 지점을 실패로 본다
     declare -F vr_hook_fail > /dev/null && vr_hook_fail "$1"
 }
-# 배타 이동: 목적 경로가 이미 있으면(무엇이든) 실패하고 아무것도 덮어쓰지 않는다. ln 은 목적 경로가 있으면 실패하는 원자적 생성.
-# 옮긴 뒤 목적 경로가 일반 파일이고 원본이 없어야 성공.
-# vr__mv_excl <원본> <목적> [원본 fd] : link(2)(ln -T — 목적에 무엇이든 있으면 실패, 대체·추종 없음)로 목적에 놓은 뒤, 원본 이름은 소유 확인
-# 삭제(vr__rm_owned, 기대 링크 수 2)로 지운다 — 원본 이름이 그 사이 남의 것으로 바뀌어도 지우지 않음. 원본 fd 가 없으면 읽기·쓰기로 열어
-# 증거를 얻는다(<> 는 FIFO 에서도 멈추지 않음, 일반 파일이 아니면 실패). 성공 = 목적이 그 객체이고 원본 이름이 없어짐.
+# 배타 이동: 목적 경로가 이미 있으면(무엇이든) 실패하고 아무것도 덮어쓰지 않는다. 옮긴 뒤 목적 경로가 일반 파일이고 원본이 없어야 성공.
+# vr__mv_excl <원본> <목적> [원본 fd] : 원본 **fd 의 객체**를 link(2)(ln -T -L /proc/self/fd/N — 원본 경로를 다시 해석하지 않음, 목적에
+# 무엇이든 있으면 EEXIST, 대체·추종 없음)로 목적에 놓은 뒤, 원본 이름은 여전히 그 객체일 때만 소유 확인 삭제(vr__rm_owned, 기대 링크 수 2)로
+# 지운다 — 원본 이름이 그 사이 남의 것으로 바뀌면 지우지도 옮기지도 않는다(실패).
+# 원본 fd 가 없으면 원본을 읽기·쓰기로 열어 증거를 얻는다(<> 는 FIFO 에서도 멈추지 않음). 증거 조건: 일반 파일, 원본 경로가 링크 아니고 그
+# fd 와 같은 객체. 놓기 직전 그 객체의 링크 수가 정확히 1(원본 이름 하나뿐)이어야 한다 — 남의 파일을 하드 링크해 원본 자리에 넣은 경우
+# (링크 수 2 이상)에는 놓지 않는다. fd 를 얻은 뒤 원본 경로가 바뀌어도 놓이는 것은 fd 의 객체다(RACE-1 과 같은 유형 차단).
+# 반환: 0 = 목적이 그 객체이고 원본 이름이 없어짐, 1 = 그 밖(놓지 못했거나, 놓았지만 원본 이름을 정리하지 못함 — 남의 것은 건드리지 않음).
 vr__mv_excl() {
     local src=$1 dst=$2 fd=${3:-} own="" r
     [ -f "$src" ] && [ ! -L "$src" ] || return 1
@@ -198,8 +203,13 @@ vr__mv_excl() {
         { exec {fd}<>"$src"; } 2>/dev/null || return 1; own=1
         if [ ! -f "/dev/fd/$fd" ] || [ -L "$src" ] || ! [ "$src" -ef "/dev/fd/$fd" ]; then eval "exec $fd>&-"; return 1; fi
     fi
-    if ! ln -T -- "$src" "$dst" 2>/dev/null || [ -L "$dst" ] || ! [ "$dst" -ef "/dev/fd/$fd" ]; then [ -n "$own" ] && eval "exec $fd>&-"; return 1; fi
-    vr__rm_owned "$src" "$fd" 2 nohook > /dev/null 2>&1; r=$?
+    if [[ ! "$fd" =~ ^[0-9]+$ ]] || [ ! -f "/dev/fd/$fd" ] || [ "$(stat -L -c %h "/dev/fd/$fd" 2>/dev/null)" != 1 ]; then
+        [ -n "$own" ] && eval "exec $fd>&-"; return 1
+    fi
+    declare -F vr_hook_mv_excl_before > /dev/null && vr_hook_mv_excl_before "$src" "$dst"        # 시험용 주입 지점(확인 뒤·놓기 직전)
+    if ! ln -T -L -- "/proc/self/fd/$fd" "$dst" 2>/dev/null || [ -L "$dst" ] || ! [ "$dst" -ef "/dev/fd/$fd" ]; then [ -n "$own" ] && eval "exec $fd>&-"; return 1; fi
+    r=1
+    if [ ! -L "$src" ] && [ "$src" -ef "/dev/fd/$fd" ]; then vr__rm_owned "$src" "$fd" 2 nohook > /dev/null 2>&1; r=$?; fi   # 남의 것이면 건드리지 않음
     [ -n "$own" ] && eval "exec $fd>&-"
     [ $r -eq 0 ] && [ -f "$dst" ] && [ ! -L "$dst" ] && [ ! -e "$src" ] && [ ! -L "$src" ]
 }
@@ -224,7 +234,8 @@ vr__platform_check() {
 }
 # 기능 확인: 버전 글자가 아니라 이 라이브러리가 실제로 쓰는 옵션·동작을, 출력 폴더와 같은 파일시스템에서 직접 해 본다.
 #   mktemp -d TEMPLATE(난수 자리 치환·디렉터리 생성), mkfifo, mv -n -T(있으면 덮어쓰지 않음·디렉터리를 대상 폴더로 보지 않음·없으면 이동),
-#   /dev/fd/N 과 /proc/self/fd/N 이 같은 객체, stat -L -c %h(링크 수 1 → 2 → 지운 뒤 fd 로 0), od -An -v -tx1(NUL 보존), tr(NUL → \001).
+#   /dev/fd/N 과 /proc/self/fd/N 이 같은 객체, stat -L -c %h(링크 수 1 → 2 → 지운 뒤 fd 로 0), od -An -v -tx1(NUL 보존), tr(NUL → \001),
+#   ln -T(목적에 무엇이 있으면 실패), ln -T -L /proc/self/fd/N(원래 이름이 남의 파일·링크로 바뀌어도 fd 의 객체를 놓음, 링크 수 0 이면 실패).
 # 확인용 폴더는 방금 mktemp 로 만든 것이며, 그 안의 확인용 파일만 지운다. 하나라도 맞지 않으면 사유를 남기고 1.
 vr__platform_probe() {
     local base=$1 p why="" x="" n1="" n2="" n0="" o=""
@@ -263,6 +274,20 @@ vr__platform_probe() {
         [ "$(cat "$p/t" 2>/dev/null)" = T ] && [ ! -e "$p/nx" ] || lk+=" 대상"
         ln -T -- "$p/n" "$p/nn" 2>/dev/null && [ "$p/nn" -ef "$p/n" ] || lk+=" 없음"
         [ -z "$lk" ] || why+=" ln -T(덮어쓰지 않는 놓기) 동작 이상:$lk"
+        # fd 기반 놓기(ln -T -L /proc/self/fd/N): 원래 이름(n)을 다른 곳으로 옮기고 그 자리에 남의 파일(t 의 하드 링크)·링크를 넣어도 fd 의
+        # 객체가 놓여야 하고(남의 파일에 링크가 늘지 않음), 링크 수 0 인 fd 는 놓지 못해야 한다.
+        local q="" lf=""
+        if { exec {q}<"$p/n"; } 2>/dev/null; then
+            mv -n -T -- "$p/n" "$p/nm" 2>/dev/null; ln -T -- "$p/t" "$p/n" 2>/dev/null
+            { ln -T -L -- "/proc/self/fd/$q" "$p/fa" 2>/dev/null && [ "$p/fa" -ef "/dev/fd/$q" ] && ! [ "$p/fa" -ef "$p/t" ] && [ "$(stat -c %h "$p/t" 2>/dev/null)" = 2 ]; } || lf+=" 하드 링크 교체"
+            rm -f -- "$p/n"; ln -s "$p/t" "$p/n"
+            { ln -T -L -- "/proc/self/fd/$q" "$p/fb" 2>/dev/null && [ "$p/fb" -ef "/dev/fd/$q" ] && ! [ "$p/fb" -ef "$p/t" ]; } || lf+=" 링크 교체"
+            ln -T -L -- "/proc/self/fd/$q" "$p/t" 2>/dev/null && lf+=" 목적 있음"
+            rm -f -- "$p/n" "$p/nm" "$p/nn" "$p/fa" "$p/fb"
+            [ "$(stat -L -c %h "/dev/fd/$q" 2>/dev/null)" = 0 ] && ! ln -T -L -- "/proc/self/fd/$q" "$p/fc" 2>/dev/null && [ ! -e "$p/fc" ] || lf+=" 링크 수 0"
+            exec {q}<&-; rm -f -- "$p/fc"
+        else lf+=" 확인용 파일 열기 실패"; fi
+        [ -z "$lf" ] || why+=" ln -T -L /proc/self/fd(fd 기반 놓기) 동작 이상:$lf"
         rm -f -- "$p/nn"; rmdir -- "$p/dd" 2>/dev/null; rm -f -- "$p/ff"
         rm -f -- "$p/t" "$p/l1" "$p/l2" "$p/n" "$p/nx" 2>/dev/null
         o=$(printf 'a\000\n' | od -An -v -tx1 2>/dev/null | tr -d ' \n')
@@ -507,14 +532,17 @@ vr__read_fd_bytes() {   # vr__read_fd_bytes <변수> <fd> : 그 fd 에서 EOF �
 #     않는다(noclobber 는 없는 이름만 O_CREAT|O_EXCL 로 열고, 이미 있는 FIFO·장치·그 링크는 O_TRUNC 없이 열 수 있다 — vr__new_obj 주석).
 #     연 fd 가 링크 수 1·크기 0 인 일반 파일이고 그 이름과 같은 객체인지 확인한다. 아니면 쓰지 않고 닫는다(아무것도 자르거나 쓰지 않음).
 #  3. 내용은 그 fd(우리가 방금 만든 객체)에만 쓴다.
-#  4. 경로의 객체가 1 과 같은지 lstat 으로 다시 확인한 뒤, 새 파일을 rename(mv -T)으로 경로에 놓는다. rename 은 경로의 **이름**을
-#     바꿔 놓을 뿐 그 자리에 있던 것(링크라면 링크 자체)의 대상·내용을 열거나 바꾸지 않는다.
+#  4. 경로의 객체가 1 과 같은지 lstat 으로 다시 확인한 뒤(1 에 이전 우리 객체가 있었으면 그것만 소유 확인 삭제), 2 의 fd 객체를
+#     vr__link_place 로 경로에 놓는다: ln -T -L /proc/self/fd/N(= linkat(AT_SYMLINK_FOLLOW) 한 번) — 원본은 임시 경로가 아니라 fd 이고,
+#     경로에 무엇이든 있으면 커널이 EEXIST 로 거부한다. **덮어쓰기(rename·mv -T)는 쓰지 않는다**: 그 자리에 있던 것(링크라면 링크 자체)을
+#     대체하지도, 그 대상·내용을 열거나 바꾸지도 않는다. 놓은 뒤 임시 이름은 여전히 우리 객체일 때만 소유 확인 삭제한다.
 #  5. 놓은 뒤 경로가 링크 아닌 일반 파일이고 fd 와 같은 객체인지, 경로로 다시 읽은 바이트가 쓴 내용과 같은지 확인한다.
 # 어느 단계에서든 쓰기·자르기·철회 쓰기의 대상은 2 에서 만든 우리 객체뿐이다(fd 또는 /dev/fd/N — 경로를 다시 해석하지 않음).
 # 1~4 에서 실패하면 만든 임시 이름을 소유 확인 삭제(vr__rm_owned)로 지운다. 철회 내용이 있고 5 에서 실패하면 우리 객체를 철회한다.
 # 위협 모델 경계: 보고 파일이 들어 있는 폴더 자체가 바뀌는 경우(폴더를 링크로 교체)는 다루지 않는다(출력 폴더 구조는 vr_init 이 만든
-#   그대로라고 본다). 4 의 확인과 rename 사이에 경로가 바뀌면 rename 은 그 이름을 우리 파일로 바꿔 놓는다 — 그 자리에 있던 객체의
-#   바이트는 바뀌지 않는다(이름만 대체). 2 의 이름을 미리 알아내 링크 아닌 FIFO·장치를 먼저 만들어 두는 경우(난수 64비트 예측)에는
+#   그대로라고 본다). 4 의 확인과 놓기 사이에 경로에 무엇이 생기면 놓기가 EEXIST 로 실패하고 그것은 그대로 남는다(대체 없음 — 우리 임시
+#   객체는 정리). 4 직전에 임시 이름이 남의 파일·링크로 바뀌어도 놓이는 것은 fd 의 우리 객체다(남의 파일이 경로에 하드 링크되지 않음 —
+#   vr__link_place 반환 3, 임시 이름 자리의 것은 건드리지 않음). 2 의 이름을 미리 알아내 링크 아닌 FIFO·장치를 먼저 만들어 두는 경우(난수 64비트 예측)에는
 #   bash noclobber 가 그것을 자르지 않고 열 수 있으나, 일반 파일 확인에서 걸려 쓰지 않는다(FIFO 열기에서 멈출 수는 있음).
 vr__lid() { stat -c '%d:%i:%F' -- "$1" 2>/dev/null || echo none; }      # lstat 식별자(링크를 따라가지 않음). 없으면 none
 # ── 안전 생성·배치 도우미 ────────────────────────────────────────────────────────────────────────────────────────────
@@ -557,28 +585,52 @@ vr__new_obj() {
     fi
     printf -v "$vno_v" '%s' "$vno_w"; return 0
 }
-# vr__link_place <임시 경로> <최종 경로> <fd> : 우리 임시 객체를 최종 경로에 **덮어쓰지 않고** 놓는다.
-#   ln -T(= link(2) 한 번): 최종 경로에 무엇이든(파일·링크·대상 없는 링크·폴더·FIFO) 있으면 커널이 EEXIST 로 거부 — 확인과 놓기 사이의
-#   경쟁 구간이 없고, 그 자리의 객체를 대체하거나 링크를 따라가지 않는다(실측 strace: linkat(..., 0) 한 번). 그 뒤 임시 이름은 소유 확인
-#   삭제(vr__rm_owned, 기대 링크 수 2)로 지운다. (일반 mv -T 는 RENAME_NOREPLACE 가 EEXIST 면 renameat 로 다시 시도해 대체하므로 쓰지 않는다.)
-# 반환: 0 = 놓았고 임시 이름도 지움, 1 = 놓지 못함(최종 경로에 무엇이 있음 — 임시 객체는 그대로, 호출자가 vr__wv_drop),
-#       4 = 놓은 직후 최종 경로가 남의 것으로 바뀜 + 우리 객체는 남지 않음(임시 이름까지 소유 확인 삭제), 3 = 우리 객체나 임시 이름이 남음(VR__WV_LEFT).
+# vr__link_place <임시 경로> <최종 경로> <fd> : fd 가 가리키는 우리 객체를 최종 경로에 **덮어쓰지 않고** 놓는다.
+#   놓기 = ln -T -L -- /proc/self/fd/<fd> <최종>(= linkat(AT_FDCWD, "/proc/self/fd/N", ..., AT_SYMLINK_FOLLOW) 한 번, 실측 strace).
+#   - 원본은 **임시 경로가 아니라 fd** 다: /proc/self/fd/N 은 열린 파일 자체를 가리키는 procfs 링크라, 임시 경로를 다시 해석하지 않는다.
+#     임시 경로가 확인 뒤·놓기 직전에 남의 파일(하드 링크·복사본)이나 심볼릭 링크로 바뀌어도 놓이는 것은 fd 의 우리 객체다 —
+#     남의 파일이 최종 경로에 하드 링크되는 경로가 없다(RACE-1). 우리 객체의 링크 수가 0 이면(임시 이름이 지워짐) 커널이 ENOENT 로 거부
+#     (vfs_link) → 놓지 않음(1).
+#   - 최종 경로에 무엇이든(파일·링크·대상 없는 링크·폴더·FIFO) 있으면 커널이 EEXIST 로 거부 — 확인과 놓기 사이의 경쟁 구간이 없고,
+#     그 자리의 객체를 대체하거나 링크를 따라가지 않는다. (일반 mv -T 는 RENAME_NOREPLACE 가 EEXIST 면 renameat 로 다시 시도해 대체하므로
+#     쓰지 않는다.)
+#   - 놓은 뒤 임시 이름은 그것이 여전히 우리 객체(링크 아님·fd 와 같은 객체)일 때만 소유 확인 삭제(vr__rm_owned, 기대 링크 수 2)로
+#     지운다. 임시 이름이 남의 것으로 바뀌었으면 건드리지 않는다(옮기지도 않음).
+# 반환(호출자: vr__new_placed·vr__write_verified·run 의 상태 기록):
+#   0 = 놓았고, 최종 경로가 우리 객체이며, 우리 객체의 이름은 최종 경로 하나뿐(임시 이름은 지웠거나 이미 없었음 — fd 로 링크 수 1 확인).
+#   1 = 놓지 못함(최종 경로에 무엇이 있음, fd 가 일반 파일이 아님, 우리 객체의 링크 수 0) — 최종 경로는 건드리지 않음.
+#       임시 경로도 건드리지 않았으므로 호출자가 vr__wv_drop 으로 정리한다(남의 것이면 그쪽이 지우지 않고 3).
+#   4 = 놓은 직후 최종 경로가 남의 것으로 바뀜 + 우리 객체는 어떤 이름으로도 남지 않음(임시 이름까지 소유 확인 삭제, 링크 수 0).
+#   3 = 정리 실패: 우리 객체가 다른 이름으로 남았거나(위치 미확인), 임시 이름 자리에 남의 객체가 있어 건드리지 않음 — VR__WV_LEFT.
+#       최종 경로에 우리 객체를 놓은 경우에도 3 이면 호출자는 실패로 처리한다(외부 개입의 흔적).
 vr__link_place() {
     local t=$1 f=$2 fd=$3 r h
+    [[ "$fd" =~ ^[0-9]+$ ]] && [ -f "/dev/fd/$fd" ] || return 1
     if [ -e "$f" ] || [ -L "$f" ]; then return 1; fi
-    declare -F vr_hook_place_before > /dev/null && vr_hook_place_before "$f"                   # 시험용 주입 지점(확인 뒤·놓기 직전)
-    ln -T -- "$t" "$f" 2>/dev/null || return 1
-    declare -F vr_hook_place_after > /dev/null && vr_hook_place_after "$f"                     # 시험용 주입 지점(놓은 직후·확인 전)
+    declare -F vr_hook_place_before > /dev/null && vr_hook_place_before "$f" "$t"              # 시험용 주입 지점(확인 뒤·놓기 직전)
+    ln -T -L -- "/proc/self/fd/$fd" "$f" 2>/dev/null || return 1
+    declare -F vr_hook_place_after > /dev/null && vr_hook_place_after "$f" "$t"                # 시험용 주입 지점(놓은 직후·확인 전)
     if [ -L "$f" ] || [ ! -f "$f" ] || ! [ "$f" -ef "/dev/fd/$fd" ]; then
-        # 최종 경로의 것은 남의 것 — 건드리지 않는다. 우리 객체에 남은 이름이 임시 이름 하나뿐이면 그것을 지우고 4, 아니면 3.
+        # 최종 경로의 것은 남의 것 — 건드리지 않는다. 우리 객체에 남은 이름이 우리 임시 이름 하나뿐이면 그것을 지우고 4, 아니면 3.
         h=$(stat -L -c %h "/dev/fd/$fd" 2>/dev/null)
-        [[ "$h" =~ ^[1-9][0-9]*$ ]] && vr__rm_owned "$t" "$fd" "$h" nohook > /dev/null 2>&1 && h=$((h - 1))   # 임시 이름은 지운다(소유 확인)
+        if [[ "$h" =~ ^[1-9][0-9]*$ ]] && [ ! -L "$t" ] && [ "$t" -ef "/dev/fd/$fd" ]; then
+            vr__rm_owned "$t" "$fd" "$h" nohook > /dev/null 2>&1 && h=$((h - 1))   # 임시 이름은 지운다(소유 확인)
+        fi
         if [ "$h" = 0 ]; then return 4; fi
         VR__WV_LEFT="$f(놓은 뒤 최종 경로가 바뀜 — 우리 객체가 다른 이름으로 남음: 링크 수 ${h:-?}, 위치 미확인)"; return 3
     fi
-    vr__rm_owned "$t" "$fd" 2 nohook > /dev/null 2>&1; r=$?
-    [ $r -eq 0 ] && return 0
-    VR__WV_LEFT="$t(놓은 뒤 임시 이름 정리 실패: vr__rm_owned=$r)"; return 3
+    if [ ! -L "$t" ] && [ "$t" -ef "/dev/fd/$fd" ]; then
+        vr__rm_owned "$t" "$fd" 2 nohook > /dev/null 2>&1; r=$?
+        [ $r -eq 0 ] && return 0
+        VR__WV_LEFT="$t(놓은 뒤 임시 이름 정리 실패: vr__rm_owned=$r)"; return 3
+    fi
+    # 임시 이름이 우리 객체가 아님(없거나, 남의 파일·링크로 바뀜). 그 자리의 것은 건드리지 않는다.
+    h=$(stat -L -c %h "/dev/fd/$fd" 2>/dev/null)
+    if [ -e "$t" ] || [ -L "$t" ]; then
+        VR__WV_LEFT="$t(임시 이름 자리가 남의 객체로 바뀜 — 건드리지 않음. 최종 경로의 우리 객체 링크 수 ${h:-?})"; return 3
+    fi
+    [ "$h" = 1 ] && return 0                     # 임시 이름은 이미 없고 우리 객체의 이름은 최종 경로 하나뿐
+    VR__WV_LEFT="$t(임시 이름이 사라짐 — 우리 객체가 다른 이름으로 남음: 링크 수 ${h:-?}, 위치 미확인)"; return 3
 }
 # vr__drop_own <경로> <fd> : 경로의 객체가 그 fd 의 우리 객체일 때만 소유 확인 삭제(0). 아니면 건드리지 않고 1.
 # 경로에 아무것도 없으면: fd 로 본 우리 객체의 링크 수가 0 일 때만 0(다른 이름으로 남았으면 1).
@@ -720,7 +772,11 @@ vr__wv_drop() {   # vr__wv_drop <임시 이름> <fd> : 경로에 놓기 전 실�
     #  1(보존: 남의 것이거나 링크가 여럿 — 소유를 입증 못 함) → 지우지 않고 3 / 3(삭제 결과 미확인) → 3 / fd 닫기 실패 → 3
     local t=$1 fd=$2 r h c=0
     [[ "$fd" =~ ^[0-9]+$ ]] || { VR__WV_LEFT="$t(fd 없음)"; return 3; }
-    vr__rm_owned "$t" "$fd" > /dev/null 2>&1; r=$?
+    if { [ -e "$t" ] || [ -L "$t" ]; } && { [ -L "$t" ] || ! [ "$t" -ef "/dev/fd/$fd" ]; }; then
+        r=1                                        # 임시 이름 자리가 남의 것 — 옮기지도 지우지도 않는다(vr__rm_owned 를 부르지 않음)
+    else
+        vr__rm_owned "$t" "$fd" > /dev/null 2>&1; r=$?
+    fi
     h=$(stat -L -c %h "/dev/fd/$fd" 2>/dev/null)
     eval "exec $fd>&-" 2>/dev/null || c=1
     [ -e "/dev/fd/$fd" ] && c=1                    # 닫히지 않음
@@ -780,7 +836,8 @@ run() {
     { [ ! -L "$VR_L/$name.log" ] && [ "$VR_L/$name.log" -ef "/dev/fd/$lfd" ]; } || vr__ioerr "$name.log 경로 변경"
     eval "exec $lfd>&-"
     declare -F vr_hook_before_status > /dev/null && vr_hook_before_status "$name"     # 시험용 주입 지점(평소에는 정의되지 않음)
-    # 상태(D): 임시 이름은 그대로(미완료 판정·시험 호환) 두되 vr__new_obj 로 만들어 그 fd 로만 쓰고, rename 으로 놓은 뒤 같은 객체인지 확인
+    # 상태(D): 임시 이름은 그대로(미완료 판정·시험 호환) 두되 vr__new_obj 로 만들어 그 fd 로만 쓰고, 그 fd 의 객체를 vr__link_place(link(2),
+    # 덮어쓰지 않음)로 놓은 뒤 같은 객체인지 확인
     local tag tmp="$VR_ST/$name.status.tmp.$BASHPID" sfd="" sr
     tag=$(vr_tag "$name") && [ ${#tag} -eq 64 ] || { vr__ioerr "$name 상태 태그 계산"; return 2; }
     vr__new_obj "$tmp" sfd; sr=$?
@@ -805,7 +862,7 @@ run() {
 # 백그라운드 작업(vr_bg / vr_wait).
 # 파일($VR_BGREC = <출력>/bg):
 #   <id>.run   실행 표식. 부모가 작업을 만든 직후 그 PID 를 적는다. 부모가 회수를 마치면 <id>.done 으로 바꾼다.
-#   <id>       종료 기록. 하위 셸이 끝나기 직전에 쓴다(tmp → mv). 첫 줄 "v1 <태그> <id>", 이후 줄 "<종류> <내용>":
+#   <id>       종료 기록. 하위 셸이 끝나기 직전에 쓴다(tmp → vr__mv_excl: fd 의 객체를 덮어쓰지 않고 놓음). 첫 줄 "v1 <태그> <id>", 이후 줄 "<종류> <내용>":
 #              L = 작업 이름(경로), C = 하위 셸이 끝낸 종료 코드, V = 위반, I = 기록 실패, B = 그 하위 셸이 회수한 자식 작업의 실패.
 #   <id>.read  회수한 종료 기록(부모가 읽고 반영한 뒤 이름을 바꾼다. 목적 경로가 이미 있으면 실패).
 # 부모(vr_wait)는 자기가 만든 작업만 PID 마다 wait 하고(PID 목록은 셸마다 따로이며 하위 셸은 빈 목록으로 시작), 종료 기록을 검증해

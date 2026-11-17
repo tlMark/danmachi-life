@@ -1567,6 +1567,89 @@ mkdir -p "$TMP/noln"; for f in /usr/bin/* /bin/*; do b=${f##*/}; [ "$b" = ln ] &
   exit $e ) > "$TMP/icf.out" 2>&1; rc=$?
 [ $rc -eq 0 ] && ok 'vr_init 반환 규약: 초기화 실패는 정리 성공·실패와 관계없이 2, 정리 실패는 VR__INIT_CLEANUP_FAIL=1·VR__INIT_ERR(남긴 경로)·표준 오류로 따로, 다음 vr_init 에서 0 으로 초기화' || bad "vr_init 반환 규약 $(tr '\n' ';' < "$TMP/icf.out")"
 
+
+# ── 6e1d082 Codex 반려(RACE-1): 임시 원본 경로 교체 — fd 기반 놓기(합성 주입) ────────────────────────────────────────────────
+# 공통 확인: 외부 파일(X)의 inode·내용·링크 수가 주입 직후와 같고, 목적 경로가 X 의 하드 링크가 아님(목적이 있으면 fd 의 우리 객체).
+xstate() { stat -c '%i:%h' "$1" 2>/dev/null; sha256sum < "$1"; }
+# 32-1. vr__link_place: 확인 뒤·놓기 직전에 임시 경로를 바꿈
+#   hl   = 우리 임시 이름을 옆으로 옮기고 그 자리에 외부 일반 파일의 하드 링크를 넣음 → 놓이는 것은 우리 객체, 3(임시 이름 자리의 남의 것은 건드리지 않음)
+#   copy = 옆으로 옮기고 외부 내용의 다른 일반 파일을 넣음 → 우리 객체, 3
+#   sym  = 옆으로 옮기고 외부 파일을 가리키는 심볼릭 링크를 넣음 → 우리 객체, 3
+#   gone = 우리 임시 이름을 지우고(링크 수 0) 외부 하드 링크를 넣음 → 놓지 않음(ENOENT), 1, 목적 경로 없음
+for kind in hl copy sym gone; do
+  ( . "$HERE/lib/verify_run.sh"; D="$TMP/rc1_$kind"; mkdir -p "$D"; X="$TMP/rc1_$kind.ext"; mkext "$X"; T="$D/.vr.new.TESTTESTTESTTEST"
+    vr__new_obj "$T" fd || exit 1; printf OURS >&$fd
+    vr_hook_place_before() { case $kind in
+        hl)   mv "$T" "$T.moved"; ln "$X" "$T" ;;
+        copy) mv "$T" "$T.moved"; cp "$X" "$T" ;;
+        sym)  mv "$T" "$T.moved"; ln -s "$X" "$T" ;;
+        gone) rm -f "$T"; ln "$X" "$T" ;;
+      esac; xstate "$X" > "$D.xs"; oid "$T" > "$D.ts"; }
+    vr__link_place "$T" "$D/f.txt" "$fd"; r=$?
+    [ "$(xstate "$X")" = "$(cat "$D.xs")" ] && extsame "$X" && [ "$(oid "$T")" = "$(cat "$D.ts")" ] || exit 2      # 외부 파일·임시 자리의 남의 것 보존
+    ! [ "$D/f.txt" -ef "$X" ] || exit 3                                                                      # 외부 파일의 하드 링크가 목적에 없음
+    if [ $kind = gone ]; then [ $r -eq 1 ] && [ ! -e "$D/f.txt" ] && [ ! -L "$D/f.txt" ] || exit 4; exit 0; fi
+    [ $r -eq 3 ] && [ ! -L "$D/f.txt" ] && [ "$D/f.txt" -ef "/dev/fd/$fd" ] && [ "$(cat "$D/f.txt")" = OURS ] || exit 5
+    [[ "$VR__WV_LEFT" == "$T("*"남의 객체"* ]] || exit 6                                                       # 정확한 진단(임시 이름 자리)
+    [ "$T.moved" -ef "/dev/fd/$fd" ] && [ "$(stat -L -c %h "/dev/fd/$fd")" = 2 ] || exit 7 ); rc=$?          # 우리 객체 = 목적 + 옮겨진 이름(주입이 만든 것)
+  [ $rc -eq 0 ] && ok "RACE-1 vr__link_place: 놓기 직전 임시 경로 교체($kind) → 외부 파일 inode·내용·링크 수 보존, 목적에 외부 하드 링크 없음, $([ $kind = gone ] && echo '놓지 않음(1)' || echo '목적 = fd 의 우리 객체·3·임시 자리 진단')" || bad "RACE-1 vr__link_place $kind (단계 $rc)"
+done
+# 32-2. vr__link_place: 임시 이름만 사라지고 우리 객체가 다른 이름으로 남음 → 3(위치 미확인 진단) / 임시 이름만 사라짐(다른 이름 없음) → 0(우리 객체 = 목적 하나)
+( . "$HERE/lib/verify_run.sh"; D="$TMP/rc2"; mkdir -p "$D"; T="$D/.vr.new.TESTTESTTESTTEST"; e=0
+  vr__new_obj "$T" fd || exit 9
+  vr_hook_place_after() { mv "$T" "$T.away"; }
+  vr__link_place "$T" "$D/a" "$fd"; r=$?; [ $r -eq 3 ] && [ "$D/a" -ef "/dev/fd/$fd" ] && [[ "$VR__WV_LEFT" == "$T("*"다른 이름으로 남음"* ]] || { echo "  옮겨짐 r=$r"; e=1; }
+  exec {fd}>&-; vr__new_obj "$T" fd || exit 9
+  vr_hook_place_after() { rm -f "$T"; }
+  vr__link_place "$T" "$D/b" "$fd"; r=$?; [ $r -eq 0 ] && [ "$D/b" -ef "/dev/fd/$fd" ] && [ "$(stat -L -c %h "/dev/fd/$fd")" = 1 ] || { echo "  사라짐 r=$r"; e=1; }
+  exit $e ) > "$TMP/rc2.out" 2>&1; rc=$?
+[ $rc -eq 0 ] && ok 'RACE-1 vr__link_place: 놓은 뒤 임시 이름이 옮겨짐 → 3·"다른 이름으로 남음" 진단 / 임시 이름이 지워짐 → 0(우리 객체의 이름은 목적 하나)' || bad "RACE-1 임시 이름 사라짐 $(tr '\n' ';' < "$TMP/rc2.out")"
+# 32-3. 호출 경로: vr__write_verified(보고 파일)·vr__new_placed(로그·추가 기록)에서 놓기 직전 임시 이름(.vr.rep.*·.vr.new.*)을 외부 하드 링크로 교체
+for via in report placed; do
+  ( . "$HERE/lib/verify_run.sh"; D="$TMP/rc3_$via"; mkdir -p "$D"; X="$TMP/rc3_$via.ext"; mkext "$X"
+    vr_hook_place_before() { local t; for t in "$D"/.vr.rep.* "$D"/.vr.new.*; do [ -f "$t" ] || continue; mv "$t" "$D/kept"; ln "$X" "$t"; echo "$t" > "$D.tn"; done; xstate "$X" > "$D.xs"; }
+    if [ $via = report ]; then vr__write_verified "$D/r.txt" $'ALL_DONE: x\n' $'NOT_DONE\n'; r=$?; f="$D/r.txt"
+    else vr__new_placed "$D/r.txt" nfd append; r=$?; f="$D/r.txt"; fi
+    T=$(cat "$D.tn")
+    [ "$(xstate "$X")" = "$(cat "$D.xs")" ] && extsame "$X" && ! [ "$f" -ef "$X" ] || exit 2
+    [ $r -eq 3 ] && [ "$T" -ef "$X" ] && [ -f "$f" ] && ! [ -L "$f" ] && [ "$f" -ef "$D/kept" ] || exit 3
+    [[ "$VR__WV_LEFT" == "$T("* ]] || exit 4 ); rc=$?
+  [ $rc -eq 0 ] && ok "RACE-1 호출 경로($via): 놓기 직전 임시 이름을 외부 하드 링크로 교체 → 3(실패로 전파), 목적은 우리 객체, 외부 파일·그 이름 보존, 임시 자리 진단" || bad "RACE-1 호출 경로 $via (단계 $rc)"
+done
+# 32-4. vr_finish 까지: step_status.txt 놓기 직전 임시 이름 교체 → 종료 코드 3, 외부 파일 보존, 보고 파일 어디에도 외부 하드 링크 없음
+s_rc4() { vr_hook_place_before() { case "$1" in */step_status.txt) local t; for t in "${1%/*}"/.vr.rep.*; do mv "$t" "$t.kept"; ln "$RC4X" "$t"; done ;; esac; }; vr_expect a; run a true; }
+RC4X="$TMP/rc4.ext"; mkext "$RC4X"; scenario rc4 s_rc4; rc=$?
+{ [ $rc -eq 3 ] && extsame "$RC4X" && [ "$(stat -c %h "$RC4X")" = 2 ] && ! find "$TMP/rc4" -samefile "$RC4X" ! -name '.vr.rep.*' | grep -q .; } \
+  && ok 'RACE-1 vr_finish: step_status.txt 놓기 직전 임시 이름을 외부 하드 링크로 교체 → 3, 외부 파일 내용·링크 수 보존, 출력 폴더의 보고 파일 중 외부 하드 링크 없음' || bad "RACE-1 vr_finish (rc=$rc, nlink=$(stat -c %h "$RC4X"))"
+# 32-5. vr__mv_excl: fd 확인 뒤·놓기 직전에 원본 경로를 바꿈(fd 있음·없음) / 원본이 처음부터 외부 파일의 하드 링크(링크 수 2) → 놓지 않음
+for kind in fd_hl fd_sym nofd_hl nofd_copy pre_hl; do
+  ( . "$HERE/lib/verify_run.sh"; D="$TMP/rc5_$kind"; mkdir -p "$D"; X="$TMP/rc5_$kind.ext"; mkext "$X"; S="$D/rec"
+    if [ $kind = pre_hl ]; then ln "$X" "$S"; else printf OURS > "$S"; fi
+    xstate "$X" > "$D.xs0"; fd=""; case $kind in fd_*) exec {fd}<>"$S" ;; esac
+    vr_hook_mv_excl_before() { case $kind in
+        *_hl)      mv "$S" "$S.moved"; ln "$X" "$S" ;;
+        fd_sym)    mv "$S" "$S.moved"; ln -s "$X" "$S" ;;
+        nofd_copy) mv "$S" "$S.moved"; cp "$X" "$S" ;;
+      esac; xstate "$X" > "$D.xs"; oid "$S" > "$D.ss"; }
+    vr__mv_excl "$S" "$D/rec.done" $fd; r=$?
+    [ $r -eq 1 ] && extsame "$X" && ! [ "$D/rec.done" -ef "$X" ] || exit 2
+    if [ $kind = pre_hl ]; then [ "$(xstate "$X")" = "$(cat "$D.xs0")" ] && [ ! -e "$D/rec.done" ] && [ ! -e "$D.xs" ] && [ "$S" -ef "$X" ] || exit 3; exit 0; fi
+    [ "$(xstate "$X")" = "$(cat "$D.xs")" ] && [ "$(oid "$S")" = "$(cat "$D.ss")" ] || exit 4                   # 외부 파일·원본 자리의 남의 것 보존
+    [ "$D/rec.done" -ef "$D/rec.moved" ] && [ "$(cat "$D/rec.done")" = OURS ] || exit 5 ); rc=$?               # 놓인 것은 처음 확인한 우리 객체
+  [ $rc -eq 0 ] && ok "RACE-1 vr__mv_excl($kind): $([ $kind = pre_hl ] && echo '원본이 외부 파일의 하드 링크 → 놓지 않음·1' || echo '놓기 직전 원본 교체 → 놓이는 것은 확인한 우리 객체, 원본 자리의 남의 것은 건드리지 않음·1'), 외부 파일 inode·내용·링크 수 보존, 목적에 외부 하드 링크 없음" || bad "RACE-1 vr__mv_excl $kind (단계 $rc)"
+done
+# 32-7. 호출자 정리(vr__wv_drop): 놓기 직전 우리 임시 이름을 지우고(링크 수 0) 외부 하드 링크를 넣음 → 놓지 않음, 3(임시 자리 진단),
+#        외부 파일은 옮겨지지도 않음(rename 이면 바뀌는 ctime 까지 같음), 목적 경로 없음
+( . "$HERE/lib/verify_run.sh"; D="$TMP/rc7"; mkdir -p "$D"; X="$TMP/rc7.ext"; mkext "$X"
+  vr_hook_place_before() { local t; for t in "$D"/.vr.rep.*; do [ -f "$t" ] || continue; rm -f "$t"; ln "$X" "$t"; echo "$t" > "$D.tn"; done; sleep 0.05; stat -c '%i:%h:%z' "$X" > "$D.xs"; }
+  vr__write_verified "$D/r.txt" $'ALL_DONE: x\n' $'NOT_DONE\n'; r=$?; T=$(cat "$D.tn")
+  [ $r -eq 3 ] && [ ! -e "$D/r.txt" ] && [ ! -L "$D/r.txt" ] && [ "$T" -ef "$X" ] && extsame "$X" && [ "$(stat -c '%i:%h:%z' "$X")" = "$(cat "$D.xs")" ] \
+    && [[ "$VR__WV_LEFT" == "$T("*"소유를 입증하지 못해"* ]] && [ -z "$(ls -A "$D" | grep '\.vr\.del\.')" ] ); rc=$?
+[ $rc -eq 0 ] && ok 'RACE-1 정리: 우리 임시 이름이 지워지고 외부 하드 링크로 바뀜 → 놓지 않음·3·진단, 외부 파일은 옮기지도 않음(inode·링크 수·ctime 그대로), 목적 경로 없음' || bad "RACE-1 정리 vr__wv_drop (rc=$rc)"
+# 32-6. 기능 확인: fd 기반 놓기를 하지 못하는 ln(-L 무시 = 경로 기준 링크) → vr_init 2·사유
+( . "$HERE/lib/verify_run.sh"; ln() { local a b=(); for a in "$@"; do [ "$a" = -L ] || b+=("$a"); done; command ln "${b[@]}"; }
+  vr_init "$TMP/xln6" 2> "$TMP/xln6.err"; [ $? -eq 2 ] && grep -q 'fd 기반 놓기) 동작 이상' "$TMP/xln6.err" && [ ! -e "$TMP/xln6/.vr_lock" ] && [ -z "$(ls -A "$TMP/xln6" | grep 'vr\.plat')" ] ); rc=$?
+[ $rc -eq 0 ] && ok 'ln 확인: -L 을 무시하는 ln(/proc/self/fd 를 따라가지 않음) → 기능 확인 실패로 vr_init 2·사유, 잠금·확인용 폴더 남지 않음' || bad "ln -L 무시 (rc=$rc)"
 # ── 재현성: 처리기 return 3 + builtin exit 5 를 10번 반복(매번 5) ──────────────────────────────────────────────
 rep_ok=0; for k in 1 2 3 4 5 6 7 8 9 10; do
     eval "s_rep_$k() { body() { trap 'return 3' EXIT; builtin exit 5; }; vr_expect a; run a true; vr_bg B body; vr_wait; }"
