@@ -1699,7 +1699,7 @@ FC3X="$TMP/fc3.ext"; mkext "$FC3X"; scenario fc3 s_fc3; rc=$?
   && grep -q '최종 확인' "$TMP/fc3/failed_steps.txt" && ! find "$TMP/fc3" -samefile "$FC3X" ! -path "$TMP/fc3/status/a.status" | grep -q .; } \
   && ok 'A 최종 확인 vr_finish: 상태 기록 반환 직전 최종 경로를 외부 하드 링크로 교체 → 3, "a 상태 파일 놓기"·최종 확인 진단, 외부 파일 보존(주입한 이름 말고 외부 하드 링크 없음)' \
   || bad "A 최종 확인 vr_finish (rc=$rc, $(tr '\n' ';' < "$TMP/fc3/failed_steps.txt" 2>/dev/null))"
-# 33-4. vr__mv_excl: 놓은 뒤·원본 정리 전에 원본 이름을 바꿈(시험용 주입 지점 vr_hook_mv_excl_after) → 1, 목적에는 우리 객체가 남음(지우지 않음)
+# 33-4. vr__mv_excl: 놓은 뒤·원본 정리 전에 원본 이름을 바꿈(시험용 주입 지점 vr_hook_mv_excl_after) → 1, 목적은 삭제하지 않음(이 주입 조건에서는 목적이 우리 객체로 남아 있음을 inode·내용으로 확인 — 모든 반환 1 에서의 보장은 아님)
 #   fd_hl / nofd_hl = 원본 이름을 지우고 외부 파일의 하드 링크를 넣음 → 원본 자리의 외부 파일은 건드리지 않음, 우리 객체의 이름은 목적 하나(링크 수 1)
 #   fd_move         = 원본 이름을 다른 이름으로 옮김 → 우리 객체의 이름은 목적 + 옮겨진 이름(링크 수 2), 둘 다 건드리지 않음
 for kind in fd_hl nofd_hl fd_move; do
