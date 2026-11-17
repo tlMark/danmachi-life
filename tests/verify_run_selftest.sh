@@ -1650,6 +1650,105 @@ done
 ( . "$HERE/lib/verify_run.sh"; ln() { local a b=(); for a in "$@"; do [ "$a" = -L ] || b+=("$a"); done; command ln "${b[@]}"; }
   vr_init "$TMP/xln6" 2> "$TMP/xln6.err"; [ $? -eq 2 ] && grep -q 'fd 기반 놓기) 동작 이상' "$TMP/xln6.err" && [ ! -e "$TMP/xln6/.vr_lock" ] && [ -z "$(ls -A "$TMP/xln6" | grep 'vr\.plat')" ] ); rc=$?
 [ $rc -eq 0 ] && ok 'ln 확인: -L 을 무시하는 ln(/proc/self/fd 를 따라가지 않음) → 기능 확인 실패로 vr_init 2·사유, 잠금·확인용 폴더 남지 않음' || bad "ln -L 무시 (rc=$rc)"
+# ── a8e3c0f ChatGPT 재검수 A·B: 반환 0 직전 최종 확인(vr__link_place)·놓은 뒤 원본 교체(vr__mv_excl)와 호출자 판정(합성 주입) ──────
+# 33-1. vr__link_place 최종 확인: 임시 이름 정리 뒤·반환 직전에 최종 경로를 바꿈(시험용 주입 지점 vr_hook_place_final)
+#   p1_move  = 정리 경로(임시 이름이 우리 것 → 소유 확인 삭제) 뒤 최종 경로를 옆으로 옮김 → 3·최종 확인 진단, 옮겨진 이름이 우리 객체
+#   p1_ext   = 옮기고 그 자리에 외부 파일의 하드 링크 → 3, 그 자리의 외부 파일은 건드리지 않음, 우리 객체는 외부와 다른 객체
+#   p1_gone  = 최종 경로를 지움(우리 객체의 이름이 하나도 남지 않음) → 4
+#   p1_extra = 최종 경로는 그대로 두고 우리 객체에 다른 이름을 붙임 → 3·"다른 이름이 생김"
+#   p2_move  = 임시 이름이 놓은 직후 사라진 경로(정리 없이 링크 수 1 확인) 뒤 최종 경로를 옮김 → 3
+#   none     = 주입 지점은 있으나 아무것도 하지 않음 → 0·링크 수 1(정상 경로가 깨지지 않음)
+for kind in p1_move p1_ext p1_gone p1_extra p2_move none; do
+  ( . "$HERE/lib/verify_run.sh"; D="$TMP/fc1_$kind"; mkdir -p "$D"; X="$TMP/fc1_$kind.ext"; mkext "$X"; T="$D/.vr.new.TESTTESTTESTTEST"; F="$D/f.txt"
+    vr__new_obj "$T" fd || exit 1; printf OURS >&$fd
+    [ $kind = p2_move ] && vr_hook_place_after() { rm -f "$T"; }
+    vr_hook_place_final() { case $kind in
+        p1_move|p2_move) mv "$F" "$F.away" ;;
+        p1_ext)   mv "$F" "$F.away"; ln "$X" "$F" ;;
+        p1_gone)  rm -f "$F" ;;
+        p1_extra) ln "$F" "$F.extra" ;;
+      esac; xstate "$X" > "$D.xs"; }
+    vr__link_place "$T" "$F" "$fd"; r=$?
+    [ "$(xstate "$X")" = "$(cat "$D.xs")" ] && extsame "$X" && ! [ "/dev/fd/$fd" -ef "$X" ] || exit 2       # 외부 파일 보존, 우리 객체 ≠ 외부
+    [ ! -e "$T" ] && [ ! -L "$T" ] || exit 3                                                                # 임시 이름은 남지 않음
+    case $kind in
+      none)     [ $r -eq 0 ] && [ "$F" -ef "/dev/fd/$fd" ] && [ "$(stat -L -c %h "/dev/fd/$fd")" = 1 ] || exit 4 ;;
+      p1_gone)  [ $r -eq 4 ] && [ "$(stat -L -c %h "/dev/fd/$fd")" = 0 ] && [ ! -e "$F" ] || exit 4 ;;
+      p1_extra) [ $r -eq 3 ] && [ "$F" -ef "/dev/fd/$fd" ] && [ "$F.extra" -ef "/dev/fd/$fd" ] && [[ "$VR__WV_LEFT" == "$F(최종 확인"*"다른 이름이 생김"* ]] || exit 4 ;;
+      p1_ext)   [ $r -eq 3 ] && [ "$F" -ef "$X" ] && [ "$F.away" -ef "/dev/fd/$fd" ] && [ "$(cat "$F.away")" = OURS ] && [[ "$VR__WV_LEFT" == "$F(최종 확인"*"바뀜"* ]] || exit 4 ;;
+      *)        [ $r -eq 3 ] && [ ! -e "$F" ] && [ "$F.away" -ef "/dev/fd/$fd" ] && [ "$(stat -L -c %h "/dev/fd/$fd")" = 1 ] && [[ "$VR__WV_LEFT" == "$F(최종 확인"*"바뀜"* ]] || exit 4 ;;
+    esac ); rc=$?
+  case $kind in none) want='0·링크 수 1(정상 경로 유지)' ;; p1_gone) want='4(우리 객체 남지 않음)' ;; p1_extra) want='3·"다른 이름이 생김" 진단' ;; p1_ext) want='3·최종 경로의 외부 파일은 건드리지 않음·우리 객체는 옮겨진 이름' ;; *) want='3·최종 확인 진단·우리 객체는 옮겨진 이름' ;; esac
+  [ $rc -eq 0 ] && ok "A 최종 확인 vr__link_place($kind): 정리 뒤·반환 직전 최종 경로 변경 → $want, 외부 파일 inode·내용·링크 수 보존, 임시 이름 남지 않음" || bad "A 최종 확인 vr__link_place $kind (단계 $rc)"
+done
+# 33-2. 호출 경로: vr__write_verified(보고 파일) — 최종 확인 직전 최종 경로를 외부 하드 링크로 바꿈 → 3(실패), 그 자리의 외부 파일은 그대로,
+#        vr__new_placed(로그·추가 기록) — 같은 주입 → 3(실패로 전파)
+for via in report placed; do
+  ( . "$HERE/lib/verify_run.sh"; D="$TMP/fc2_$via"; mkdir -p "$D"; X="$TMP/fc2_$via.ext"; mkext "$X"; F="$D/r.txt"
+    vr_hook_place_final() { mv "$F" "$D/kept"; ln "$X" "$F"; xstate "$X" > "$D.xs"; }
+    if [ $via = report ]; then vr__write_verified "$F" $'ALL_DONE: x\n' $'NOT_DONE\n'; r=$?; else vr__new_placed "$F" nfd append; r=$?; fi
+    [ "$(xstate "$X")" = "$(cat "$D.xs")" ] && extsame "$X" && [ "$F" -ef "$X" ] || exit 2
+    [ $r -eq 3 ] && ! [ "$D/kept" -ef "$X" ] && [[ "$VR__WV_LEFT" == "$F(최종 확인"* ]] || exit 3
+    [ -z "$(ls -A "$D" | grep -E '^\.vr\.(rep|new)\.')" ] || exit 4 ); rc=$?
+  [ $rc -eq 0 ] && ok "A 최종 확인 호출 경로($via): 반환 직전 최종 경로를 외부 하드 링크로 교체 → 3(실패로 전파)·진단, 외부 파일 보존, 임시 이름 남지 않음" || bad "A 최종 확인 호출 경로 $via (단계 $rc)"
+done
+# 33-3. vr_finish 까지(run 상태 기록): a.status 최종 확인 직전 최종 경로를 외부 하드 링크로 교체 → 3, "a 상태 파일 놓기"·진단, 외부 파일 보존
+s_fc3() { vr_hook_place_final() { case "$1" in */a.status) mv "$1" "$1.kept"; ln "$FC3X" "$1" ;; esac; }; vr_expect a; run a true; }
+FC3X="$TMP/fc3.ext"; mkext "$FC3X"; scenario fc3 s_fc3; rc=$?
+{ [ $rc -eq 3 ] && extsame "$FC3X" && [ "$(stat -c %h "$FC3X")" = 2 ] && grep -q '^기록 실패: a 상태 파일 놓기$' "$TMP/fc3/failed_steps.txt" \
+  && grep -q '최종 확인' "$TMP/fc3/failed_steps.txt" && ! find "$TMP/fc3" -samefile "$FC3X" ! -path "$TMP/fc3/status/a.status" | grep -q .; } \
+  && ok 'A 최종 확인 vr_finish: 상태 기록 반환 직전 최종 경로를 외부 하드 링크로 교체 → 3, "a 상태 파일 놓기"·최종 확인 진단, 외부 파일 보존(주입한 이름 말고 외부 하드 링크 없음)' \
+  || bad "A 최종 확인 vr_finish (rc=$rc, $(tr '\n' ';' < "$TMP/fc3/failed_steps.txt" 2>/dev/null))"
+# 33-4. vr__mv_excl: 놓은 뒤·원본 정리 전에 원본 이름을 바꿈(시험용 주입 지점 vr_hook_mv_excl_after) → 1, 목적에는 우리 객체가 남음(지우지 않음)
+#   fd_hl / nofd_hl = 원본 이름을 지우고 외부 파일의 하드 링크를 넣음 → 원본 자리의 외부 파일은 건드리지 않음, 우리 객체의 이름은 목적 하나(링크 수 1)
+#   fd_move         = 원본 이름을 다른 이름으로 옮김 → 우리 객체의 이름은 목적 + 옮겨진 이름(링크 수 2), 둘 다 건드리지 않음
+for kind in fd_hl nofd_hl fd_move; do
+  ( . "$HERE/lib/verify_run.sh"; D="$TMP/fc4_$kind"; mkdir -p "$D"; X="$TMP/fc4_$kind.ext"; mkext "$X"; S="$D/rec"; printf OURS > "$S"; ino=$(stat -c %i "$S")
+    fd=""; case $kind in fd_*) exec {fd}<>"$S" ;; esac
+    vr_hook_mv_excl_after() { case $kind in *_hl) rm -f "$S"; ln "$X" "$S" ;; fd_move) mv "$S" "$S.moved" ;; esac; xstate "$X" > "$D.xs"; }
+    vr__mv_excl "$S" "$D/rec.done" $fd; r=$?
+    [ $r -eq 1 ] && [ "$(xstate "$X")" = "$(cat "$D.xs")" ] && extsame "$X" && ! [ "$D/rec.done" -ef "$X" ] || exit 2
+    [ -f "$D/rec.done" ] && [ ! -L "$D/rec.done" ] && [ "$(stat -c %i "$D/rec.done")" = "$ino" ] && [ "$(cat "$D/rec.done")" = OURS ] || exit 3     # 목적 = 처음의 우리 객체
+    case $kind in
+      *_hl)    [ "$S" -ef "$X" ] && [ "$(stat -c %h "$D/rec.done")" = 1 ] || exit 4 ;;
+      fd_move) [ ! -e "$S" ] && [ "$S.moved" -ef "$D/rec.done" ] && [ "$(stat -c %h "$D/rec.done")" = 2 ] || exit 4 ;;
+    esac ); rc=$?
+  [ $rc -eq 0 ] && ok "B vr__mv_excl($kind): 놓은 뒤 원본 이름 변경 → 1, 목적 = 처음의 우리 객체(inode·내용·링크 수 확인, 지우지 않음), 원본 자리의 것은 건드리지 않음, 외부 파일 inode·내용·링크 수 보존" || bad "B vr__mv_excl $kind (단계 $rc)"
+done
+# 33-5. 호출자 판정(vr_finish 까지): 놓은 뒤 원본 이름을 외부 하드 링크로 바꿈 — 종료 기록(<ID>.tmp → <ID>) / 회수 표시(<ID> → <ID>.read) / 실행 표식 정리(<ID>.run → <ID>.done)
+#   모두 3. 목적에 남은 우리 객체는 외부 파일이 아님(종료 기록은 부모가 읽어 "손상"으로 판정한 뒤 <ID>.read 로 회수 표시). 외부 파일 내용 보존, 출력 폴더에서 외부 하드 링크는 주입한 이름 하나뿐.
+for kind in rec read done; do
+  eval "s_fc5_$kind() { vr_hook_mv_excl_after() { case \"\$2\" in
+      *.read) [ $kind = read ] || return 0 ;; *.done) [ $kind = done ] || return 0 ;; *) [ $kind = rec ] || return 0 ;; esac
+      rm -f \"\$1\"; ln \"$TMP/fc5_$kind.ext\" \"\$1\"; printf '%s\n%s\n' \"\$1\" \"\$2\" > \"$TMP/fc5_$kind.names\"; }; vr_expect a; run a true; vr_bg B true; vr_wait; }"
+  mkext "$TMP/fc5_$kind.ext"; scenario "fc5_$kind" "s_fc5_$kind"; rc=$?; X="$TMP/fc5_$kind.ext"
+  src=$(sed -n 1p "$TMP/fc5_$kind.names" 2>/dev/null); dst=$(sed -n 2p "$TMP/fc5_$kind.names" 2>/dev/null)
+  [ $kind = rec ] && [ -n "$dst" ] && dst="$dst.read"      # 종료 기록은 부모가 읽고(C 불일치 → 손상) 회수 표시로 <ID>.read 가 됨 — 그것이 놓인 우리 객체
+  case $kind in rec) need='기록 실패: bg:B 종료 기록 쓰기' ;; read) need='기록 실패: bg:B 회수 표시' ;; done) need='기록 실패: bg:B 실행 표식 정리' ;; esac
+  if [ $rc -eq 3 ] && grep -qxF "$need" "$TMP/fc5_$kind/failed_steps.txt" && extsame "$X" && [ -n "$src" ] && [ "$src" -ef "$X" ] && [ -f "$dst" ] && ! [ "$dst" -ef "$X" ] \
+     && [ "$(find "$TMP/fc5_$kind" -samefile "$X" | wc -l)" = 1 ]; then
+    ok "B 호출자 판정($kind): 놓은 뒤 원본 이름을 외부 하드 링크로 교체 → vr_finish 3·\"$need\", 목적에 남은 것은 우리 객체(외부 아님), 외부 파일 보존 — 실패 목록: $(sed -E 's/[0-9a-f]{12}_[0-9]+_[0-9]+/<ID>/g' "$TMP/fc5_$kind/failed_steps.txt" | sort | tr '\n' ';')"
+  else bad "B 호출자 판정 $kind (rc=$rc, src=$src, dst=$dst, $(tr '\n' ';' < "$TMP/fc5_$kind/failed_steps.txt" 2>/dev/null))"; fi
+done
+# 33-6. 기능 확인 → vr_init 반환: fd 기반 놓기의 각 하위 확인이 실패하면 2·사유(가짜 ln 으로 하위 확인 하나씩 깨뜨림), 잠금·확인용 폴더 남지 않음
+#   symlink = /proc/self/fd 대상이 아니라 경로를 따라가는 ln(-L 무시·경로 기준) — 32-6 과 다른 방식: 원래 이름(n)을 해석해 링크
+#   exists  = 목적이 있어도 성공을 돌려주는 ln(-L 일 때만)
+#   zero    = 링크 수 0 인 fd 도 성공으로 보고하고 목적에 빈 파일을 만드는 ln(-L 일 때만)
+for kind in symlink exists zero; do
+  ( . "$HERE/lib/verify_run.sh"
+    ln() { local a L="" b=(); for a in "$@"; do if [ "$a" = -L ]; then L=1; else b+=("$a"); fi; done
+      if [ -z "$L" ]; then command ln "$@"; return; fi
+      local dst=${b[-1]} src=${b[-2]}
+      case $kind in
+        symlink) [ -e "$dst" ] && return 1; command ln -T -- "$(dirname "$dst")/n" "$dst" 2>/dev/null || command ln "$@" ;;
+        exists)  [ -e "$dst" ] && return 0; command ln "$@" ;;
+        zero)    command ln "$@" 2>/dev/null && return 0; [ -e "$dst" ] || : > "$dst"; return 0 ;;
+      esac; }
+    vr_init "$TMP/fc6_$kind" 2> "$TMP/fc6_$kind.err"; r=$?
+    [ $r -eq 2 ] && [ "${VR__INIT_OK:-0}" != 1 ] && grep -q 'fd 기반 놓기) 동작 이상' "$TMP/fc6_$kind.err" && [ ! -e "$TMP/fc6_$kind/.vr_lock" ] && [ -z "$(ls -A "$TMP/fc6_$kind" | grep 'vr\.plat')" ] || exit 1
+    vr_finish > /dev/null 2>&1; [ $? -eq 3 ] || exit 2 ); rc=$?
+  [ $rc -eq 0 ] && ok "C 기능 확인($kind): fd 기반 놓기 하위 확인 실패 → vr_init 2·사유(성공 표시 없음), 잠금·확인용 폴더 남지 않음, 이후 vr_finish 3(보고 파일 쓰지 않음)" || bad "C 기능 확인 $kind (단계 $rc, $(tr '\n' ' ' < "$TMP/fc6_$kind.err" 2>/dev/null))"
+done
 # ── 재현성: 처리기 return 3 + builtin exit 5 를 10번 반복(매번 5) ──────────────────────────────────────────────
 rep_ok=0; for k in 1 2 3 4 5 6 7 8 9 10; do
     eval "s_rep_$k() { body() { trap 'return 3' EXIT; builtin exit 5; }; vr_expect a; run a true; vr_bg B body; vr_wait; }"
