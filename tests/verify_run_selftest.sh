@@ -1535,6 +1535,38 @@ mkdir -p "$TMP/noln"; for f in /usr/bin/* /bin/*; do b=${f##*/}; [ "$b" = ln ] &
   vr_init "$TMP/xln5" 2> "$TMP/xln5.err"; [ $? -eq 2 ] && grep -q '확인용 폴더 정리 실패' "$TMP/xln5.err" && [ ! -e "$TMP/xln5/.vr_lock" ] && [ "$VR__INIT_OK" = 0 ] ); rc=$?
 [ $rc -eq 0 ] && ok '기능 확인 정리 실패(확인용 폴더를 지우지 못함) → 성공으로 보지 않고 vr_init 2·사유, 잠금 해제' || bad "기능 확인 정리 실패 (rc=$rc)"
 
+# ── 876c5f2 추가 확인(R1·R2) 경계 시험 ───────────────────────────────────────────────────────────────────────────────
+# 31-1. 전제(커널 동작 고정): 링크 수 0 인 inode 에는 /proc/self/fd 를 통한 linkat(AT_SYMLINK_FOLLOW, ln -L)로도 새 링크를 만들 수 없음(대조: 링크 1 이면 가능)
+( D="$TMP/nl0"; mkdir -p "$D"; printf X > "$D/a"; exec {f}<"$D/a"
+  ln -L "/proc/$BASHPID/fd/$f" "$D/ctl" 2>/dev/null && [ "$(stat -L -c %h "/dev/fd/$f")" = 2 ] || exit 1
+  rm -f "$D/a" "$D/ctl"; [ "$(stat -L -c %h "/dev/fd/$f")" = 0 ] || exit 2
+  ! ln -L "/proc/$BASHPID/fd/$f" "$D/b" 2>/dev/null && [ ! -e "$D/b" ] && [ "$(stat -L -c %h "/dev/fd/$f")" = 0 ] ); rc=$?
+[ $rc -eq 0 ] && ok '전제: 링크 수 0 인 inode 는 /proc/self/fd 경유 linkat 으로도 다시 이름을 얻지 못함(ENOENT, 링크 수 0 유지) — 링크 1 일 때는 가능(대조)' || bad "전제: 링크 수 0 재링크 (단계 $rc)"
+# 31-2. vr__drop_own 경로 부재 판정: 완전히 사라짐 → 0(이후 재링크 불가) / 다른 이름으로 옮겨짐 → 1·그 객체 보존 / 부재 확인 뒤 다른 이름이 생김 → 1
+( . "$HERE/lib/verify_run.sh"; D="$TMP/dop"; mkdir -p "$D"; e=0
+  printf A > "$D/a"; exec {fa}<"$D/a"; rm -f "$D/a"
+  vr__drop_own "$D/a" "$fa"; [ $? -eq 0 ] && ! ln -L "/proc/$BASHPID/fd/$fa" "$D/a2" 2>/dev/null || { echo '  사라짐'; e=1; }
+  printf B > "$D/b"; exec {fb}<"$D/b"; mv "$D/b" "$D/b.moved"
+  vr__drop_own "$D/b" "$fb"; [ $? -eq 1 ] && [ "$(cat "$D/b.moved")" = B ] && [ "$D/b.moved" -ef "/dev/fd/$fb" ] || { echo '  옮겨짐'; e=1; }
+  printf C > "$D/c"; exec {fc}<"$D/c"; ln "$D/c" "$D/c.other"; rm -f "$D/c"
+  stat() { if [ "$*" = "-L -c %h /dev/fd/$fc" ]; then ln -f "$D/c.other" "$D/c.third"; fi; command stat "$@"; }   # 부재 확인 직후·링크 수 확인 직전에 이름이 더 생김
+  vr__drop_own "$D/c" "$fc"; r=$?; unset -f stat
+  [ $r -eq 1 ] && [ -e "$D/c.other" ] && [ -e "$D/c.third" ] || { echo "  부재 뒤 링크 생성 r=$r"; e=1; }
+  exit $e ) > "$TMP/dop.out" 2>&1; rc=$?
+[ $rc -eq 0 ] && ok 'vr__drop_own 경로 부재: 완전히 사라짐 → 0(재링크 불가) / 다른 이름으로 옮겨짐 → 1·보존 / 부재 확인 뒤 다른 이름이 생김 → 1(남음으로 판정, 지우지 않음)' || bad "vr__drop_own 경로 부재 $(tr '\n' ';' < "$TMP/dop.out")"
+# 31-3. vr_init 반환 규약과 정리 실패 표시: 반환은 실패면 항상 2, 정리 실패는 VR__INIT_CLEANUP_FAIL=1 로 따로 — 정리 성공 실패면 0, 다음 vr_init 에서 초기화
+( . "$HERE/lib/verify_run.sh"; e=0
+  vr_hook_init_fail() { [ "$1" = list ]; }
+  vr_init "$TMP/icf_a" 2>/dev/null; r=$?; [ $r -eq 2 ] && [ "$VR__INIT_CLEANUP_FAIL" = 0 ] || { echo "  정리 성공 r=$r f=$VR__INIT_CLEANUP_FAIL"; e=1; }
+  CUR=""; vr_hook_rm_owned() { CUR=$1; }
+  vr_hook_rm_stage() { [ "$1" = verified ] && case "$CUR" in */expected_steps.txt) ln "$2" "$TMP/icf_b.keep" ;; esac; return 0; }
+  vr_init "$TMP/icf_b" 2> "$TMP/icf_b.err"; r=$?
+  [ $r -eq 2 ] && [ "$VR__INIT_CLEANUP_FAIL" = 1 ] && [[ "$VR__INIT_ERR" == *"정리 실패"*"icf_b/expected_steps.txt"* ]] && grep -q '정리 실패' "$TMP/icf_b.err" || { echo "  정리 실패 r=$r f=$VR__INIT_CLEANUP_FAIL"; e=1; }
+  unset -f vr_hook_init_fail vr_hook_rm_owned vr_hook_rm_stage
+  vr_init "$TMP/icf_c" || { echo '  성공'; e=1; }; [ "$VR__INIT_CLEANUP_FAIL" = 0 ] || { echo '  표시 초기화'; e=1; }
+  exit $e ) > "$TMP/icf.out" 2>&1; rc=$?
+[ $rc -eq 0 ] && ok 'vr_init 반환 규약: 초기화 실패는 정리 성공·실패와 관계없이 2, 정리 실패는 VR__INIT_CLEANUP_FAIL=1·VR__INIT_ERR(남긴 경로)·표준 오류로 따로, 다음 vr_init 에서 0 으로 초기화' || bad "vr_init 반환 규약 $(tr '\n' ';' < "$TMP/icf.out")"
+
 # ── 재현성: 처리기 return 3 + builtin exit 5 를 10번 반복(매번 5) ──────────────────────────────────────────────
 rep_ok=0; for k in 1 2 3 4 5 6 7 8 9 10; do
     eval "s_rep_$k() { body() { trap 'return 3' EXIT; builtin exit 5; }; vr_expect a; run a true; vr_bg B body; vr_wait; }"

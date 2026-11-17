@@ -43,7 +43,7 @@
 #   "등록된 항목 없음"                          vr_expect 로 등록한 항목이 0개
 #   "기록 실패: <대상>"                         판정에 필요한 I/O 가 실패함(이 경우 종료 코드는 3)
 
-VR_OUT=""; VR_L=""; VR_ST=""; VR_TOKEN=""; VR_RUN_ID=""; VR_LIFE=""; VR_LIFE_W=""; VR_LDONE=""; VR_LDONE_R=""; VR_MSGS=""; VR_LIFE_RD=""; VR_MSGS_R=""; VR_LIFE_R=""; VR__READER_STATE=""; VR__INIT_ERR=""; VR__INIT_PID=""; VR__WV_LEFT=""; VR__INIT_OK=0; VR__HELD_OUT=""; VR__LOCK=""; VR__LOCK_ID=""; VR__LOCK_FD=""; VR__NOTES_FD=""; VR__NOTES_AT=""; VR__EXP_FD=""; VR__EXP_AT=""; VR__FAILS_FD=""; VR__FAILS_AT=""; VR__PREV_FAILS_FD=""; VR__PREV_NOTES_FD=""; VR__PREV_EXP_FD=""; VR__PREV_FAILS_AT=""; VR__PREV_NOTES_AT=""; VR__PREV_EXP_AT=""; VR__WV_KEEP=""; VR__WV_FD=""
+VR_OUT=""; VR_L=""; VR_ST=""; VR_TOKEN=""; VR_RUN_ID=""; VR_LIFE=""; VR_LIFE_W=""; VR_LDONE=""; VR_LDONE_R=""; VR_MSGS=""; VR_LIFE_RD=""; VR_MSGS_R=""; VR_LIFE_R=""; VR__READER_STATE=""; VR__INIT_ERR=""; VR__INIT_PID=""; VR__WV_LEFT=""; VR__INIT_OK=0; VR__INIT_CLEANUP_FAIL=0; VR__HELD_OUT=""; VR__LOCK=""; VR__LOCK_ID=""; VR__LOCK_FD=""; VR__NOTES_FD=""; VR__NOTES_AT=""; VR__EXP_FD=""; VR__EXP_AT=""; VR__FAILS_FD=""; VR__FAILS_AT=""; VR__PREV_FAILS_FD=""; VR__PREV_NOTES_FD=""; VR__PREV_EXP_FD=""; VR__PREV_FAILS_AT=""; VR__PREV_NOTES_AT=""; VR__PREV_EXP_AT=""; VR__WV_KEEP=""; VR__WV_FD=""
 VR_FAILS=""; VR_EXPECTED=""; VR_NOTES=""; VR_STEPS=""; VR_DONE=""
 VR_EXP=(); declare -A VR_EXPN=()
 VR_VIOLATED=0; VR_IOERR=0; VR_RUN_ERRS=()
@@ -282,7 +282,9 @@ vr_init() {
     # vr__state_clear 는 일반 실행 변수만 지운다. 이전 실행이 가진 자원(읽기 프로세스 fd·PID·상태, 생명주기 객체, 추가 기록 fd, 잠금 fd)과
     # 그 자원을 가진 출력 폴더 이름(VR__HELD_OUT — 진단용, 성공한 초기화 때 기록)은 남겨 두고, 아래 정리가 모두 성공한 뒤에만 비운다.
     # 정리 중 하나라도 실패하면(예: 읽기 프로세스 종료를 확인하지 못함 = stuck) 그 자원과 잠금은 그대로 두고 2 — 새 출력 폴더에는 손대지 않는다.
-    VR__INIT_OK=0; VR__INIT_ERR=""; VR__INIT_PID=$BASHPID
+    # 반환 규약: vr_init 은 0(성공) 또는 2(초기화 실패)만 돌려준다. 초기화 실패 뒤 정리(이번에 만든 파일의 소유 확인 삭제)까지 실패하면
+    # 반환은 그대로 2 이고, 그 사실은 VR__INIT_CLEANUP_FAIL=1 · VR__INIT_ERR · 표준 오류로 따로 남긴다(판정 기록 실패 3 은 vr_finish 의 규약).
+    VR__INIT_OK=0; VR__INIT_CLEANUP_FAIL=0; VR__INIT_ERR=""; VR__INIT_PID=$BASHPID
     vr__state_clear      # 이전 실행의 경로·실행 ID·토큰·배열·플래그 무효화(정리에 필요한 생명주기·잠금 변수는 아래 정리 함수가 다룸)
     if [ -n "${VR__READER_STATE:-}" ]; then vr__reader_stop || return 2; fi
     vr__life_reset || return 2
@@ -298,7 +300,9 @@ vr_init() {
             vr__prev_close; vr__state_clear
             return $rc
         fi
-        vr__app_drop_new          # 이번 초기화가 만든 보고·추가 기록 파일을 소유 확인 삭제(같은 경로 재시도가 가능하게), fd 닫기
+        local drc=0
+        vr__app_drop_new || drc=$?    # 이번 초기화가 만든 보고·추가 기록 파일을 소유 확인 삭제(같은 경로 재시도가 가능하게), fd 닫기
+        [ $drc -eq 0 ] || VR__INIT_CLEANUP_FAIL=1     # 남긴 경로는 vr__app_drop_new 가 VR__INIT_ERR·표준 오류에 이미 남김
         vr__prev_close
         if [ -n "$VR__LOCK" ]; then
             if vr__lock_release; then VR__HELD_OUT=""; else printf 'vr_init: 출력 폴더 잠금 해제 실패(그대로 둠): %s\n' "$VR__LOCK" >&2; fi
@@ -576,8 +580,15 @@ vr__link_place() {
     [ $r -eq 0 ] && return 0
     VR__WV_LEFT="$t(놓은 뒤 임시 이름 정리 실패: vr__rm_owned=$r)"; return 3
 }
-# vr__drop_own <경로> <fd> : 경로의 객체가 그 fd 의 우리 객체일 때만 소유 확인 삭제(0). 아니면 건드리지 않고 1. 경로에 아무것도 없으면 0.
-vr__drop_own() {   # 경로에 아무것도 없으면: fd 로 본 우리 객체의 링크 수가 0 일 때만 0(다른 이름으로 남았으면 1)
+# vr__drop_own <경로> <fd> : 경로의 객체가 그 fd 의 우리 객체일 때만 소유 확인 삭제(0). 아니면 건드리지 않고 1.
+# 경로에 아무것도 없으면: fd 로 본 우리 객체의 링크 수가 0 일 때만 0(다른 이름으로 남았으면 1).
+#   근거: Linux 는 링크 수 0 인 inode 에 새 링크를 만들지 못하게 한다(vfs_link: i_nlink == 0 이면 ENOENT — O_TMPFILE 로 만든 것만 예외이며
+#   이 라이브러리는 쓰지 않음). /proc/self/fd/N 을 통한 linkat(AT_SYMLINK_FOLLOW)도 같다(실측 ENOENT, 자체 시험이 고정). 그래서 0 은 "우리
+#   객체가 어떤 이름으로도 남지 않았고 앞으로도 생길 수 없음" 으로 영구적이다. 경로 부재 확인과 링크 수 확인 사이에 다른 이름이 생기면 그
+#   이름이 있는 동안 링크 수가 1 이상이라 실패(1)로 판정된다(우리 객체가 남았다고 보고, 지우지 않음). 링크 수 0 을 읽은 뒤에는 새 이름을
+#   만들 수 없다. 위협 모델: 같은 권한의 프로세스가 우리 객체에 다른 이름을 붙이는 것 자체는 막지 않으며(막을 수 없음), 그 경우 "남음"(1)으로
+#   드러난다 — 남의 이름을 지우거나 "남지 않음" 으로 오판하는 경로는 없다.
+vr__drop_own() {
     [ -n "$2" ] || return 1
     if [ ! -e "$1" ] && [ ! -L "$1" ]; then [ "$(stat -L -c %h "/dev/fd/$2" 2>/dev/null)" = 0 ]; return; fi
     [ ! -L "$1" ] && [ "$1" -ef "/dev/fd/$2" ] || return 1
