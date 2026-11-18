@@ -257,6 +257,24 @@ const CONDSRC = { '없음': null, '{}': '{}', 'min 유효': '{ min: { hp: 1 } }'
   'max:NaN': '{ max: { hp: NaN } }', 'max:+Inf': '{ max: { hp: Infinity } }', 'max:-Inf': '{ max: { hp: -Infinity } }',
   'min 유효+max 잘못': '{ min: { hp: 1 }, max: {} }', 'min 둘 중 하나 NaN': '{ min: { hp: 1, mp: NaN } }' };
 const CONDOK = new Set(['없음', '{}', 'min 유효', 'max 유효', 'min·max 유효']);
+// P2 보완 2(44178ca 재검수): 프로토타입 우회·비일반 객체·접근자/비열거/심볼 속성. 기존 항목은 그대로 두고 추가만 한다.
+Object.assign(CONDSRC, {
+  'proto 상속 min NaN': 'Object.create({ min: { hp: NaN } })', 'proto 상속 max NaN': 'Object.create({ max: { hp: NaN } })',
+  'proto 상속 min 유효': 'Object.create({ min: { hp: 1 } })',
+  'min 상속 NaN': '{ min: Object.assign(Object.create({ mp: NaN }), { hp: 1 }) }', 'max 상속 NaN': '{ max: Object.assign(Object.create({ mp: NaN }), { hp: 1000 }) }',
+  'class 인스턴스 cond': '(() => { class C { constructor() { this.min = { hp: 1 }; } } return new C(); })()', 'class 인스턴스(빈) cond': 'new (class X {})()',
+  'min 사용자 프로토타입': '{ min: Object.assign(Object.create({}), { hp: 1 }) }', 'max 사용자 프로토타입': '{ max: Object.assign(Object.create({ q: 1 }), { hp: 1000 }) }',
+  'min class 인스턴스': '{ min: new (class M { constructor() { this.hp = 1; } })() }',
+  'Date+toStringTag Object': '(() => { const d = new Date(0); Object.defineProperty(d, Symbol.toStringTag, { value: "Object" }); return d; })()',
+  'Array+toStringTag Object': '(() => { const a = []; Object.defineProperty(a, Symbol.toStringTag, { value: "Object" }); return a; })()',
+  'min Date+toStringTag': '{ min: (() => { const d = new Date(0); Object.defineProperty(d, Symbol.toStringTag, { value: "Object" }); d.hp = 1; return d; })() }',
+  'max Array+toStringTag': '{ max: (() => { const a = []; Object.defineProperty(a, Symbol.toStringTag, { value: "Object" }); a.hp = 1000; return a; })() }',
+  '위조 Object.prototype(constructor=Object)': '(() => { const p = Object.create(null); p.constructor = Object; p.min = { hp: NaN }; return Object.create(p); })()',
+  '위조 native 아님 생성자 Object': '(() => { const F = function Object() {}; const p = Object.create(null); F.prototype = p; p.constructor = F; p.min = { hp: NaN }; return Object.create(p); })()',
+  'getter min': '{ get min() { return { hp: 1 }; } }', '비열거 자체 min NaN': 'Object.defineProperty({}, "min", { value: { hp: NaN }, enumerable: false })',
+  '심볼 키 cond': '{ [Symbol("x")]: 1 }', 'min getter hp': '{ min: { get hp() { return 1; } } }',
+  'null 프로토타입 cond(정상)': 'Object.assign(Object.create(null), { min: { hp: 1 } })', 'null 프로토타입 min(정상)': '{ min: Object.assign(Object.create(null), { hp: 1 }) }' });
+CONDOK.add('null 프로토타입 cond(정상)'); CONDOK.add('null 프로토타입 min(정상)');
 const mkEv = (T, name) => T.G(`(() => { const ch = { label: 'X', text: 'xx', fx: { valis: 777 } }; ${CONDSRC[name] === null ? '' : 'ch.cond = ' + CONDSRC[name] + ';'}
   const ev = { id: '__en_fc', w: 0, text: 't', cond: {}, choices: [{ label: '보임', text: 'ok', fx: {} }, ch] }; EVENTS.push(ev); return ev; })()`);
 test('P2 보완 F-1: 조건 형식별 표시 여부(visibleChoices) = choiceMatch = 기대값', () => {
@@ -311,6 +329,50 @@ test('P2 보완 F-6: 판정 함수 순수성(잘못된 조건 포함) — S·난
   const T = makeCtx(); const s = life(T); const b = snap(s), c0 = T.calls(), d0 = T.G('followupDiagLog.length'), y0 = T.G('syncInvariantLog.length');
   for (const name of Object.keys(CONDSRC)) if (CONDSRC[name] !== null) T.G('choiceMatch(' + CONDSRC[name] + '); choiceVisible({ cond: ' + CONDSRC[name] + ' })');
   check('PF-6', snap(s) === b && T.calls() === c0 && T.G('followupDiagLog.length') === d0 && T.G('syncInvariantLog.length') === y0);
+});
+
+test('P2 보완 2 F-7: 다른 실행 영역(realm)의 정상 일반 객체 조건은 허용, 다른 realm 의 프로토타입 우회는 거부', () => {
+  const cases = [['외부 realm {min}', () => ({ min: { hp: 1 } }), true], ['외부 realm {}', () => ({}), true],
+    ['외부 realm null 프로토타입', () => Object.assign(Object.create(null), { max: { hp: 1000 } }), true],
+    ['외부 realm 형식 정상·조건 불충족(job)', () => ({ min: { hp: 1 }, job: ['__nobody__'] }), false, 'cond_unmet'],
+    ['외부 realm 상속 min NaN', () => Object.create({ min: { hp: NaN } }), false], ['외부 realm min 상속 NaN', () => ({ min: Object.assign(Object.create({ mp: NaN }), { hp: 1 }) }), false],
+    ['외부 realm class 인스턴스', () => new (class C { constructor() { this.min = { hp: 1 }; } })(), false]];
+  for (const [name, mk, want, why = 'cond_malformed'] of cases) {
+    const T = makeCtx(); const s = life(T); s.mp = 10; T.ctx.__outerCond = mk();
+    check('PF-7a ' + name + ' 실제로 다른 realm', T.G('Object.getPrototypeOf(__outerCond) !== Object.prototype') === true);
+    T.G("EVENTS.push({ id: '__en_fx', w: 0, text: 't', cond: {}, choices: [{ label: '보임', text: 'ok', fx: {} }, { label: 'X', cond: __outerCond, text: 'xx', fx: {} }] })");
+    const vis = T.G("visibleChoices(EVENTS.find(e => e.id === '__en_fx')).map(c => c.label).join()");
+    check('PF-7b ' + name + ' → ' + (want ? '보임' : '숨김') + ' · choiceMatch ' + want, vis === (want ? '보임,X' : '보임') && T.G('choiceMatch(__outerCond)') === want, vis);
+    T.G("showEvent(EVENTS.find(e => e.id === '__en_fx'))"); const b = snap(s), c0 = T.calls(), ui0 = T.el('choices').innerHTML;
+    T.G("chooseBody(EVENTS.find(e => e.id === '__en_fx').choices[1])"); const d = diags(T, 'hidden_choice_rejected');
+    if (want) check('PF-7c ' + name + ' 직접 호출 실행됨', s.logHistory.some(l => l.text === 'xx') && d.length === 0);
+    else check('PF-7c ' + name + ' 직접 호출 거부(S·난수·UI 불변, ' + why + ')', snap(s) === b && T.calls() === c0 && T.el('choices').innerHTML === ui0 && d.length === 1 && d[0].reason === why, d);
+  }
+});
+test('P2 보완 2 F-8: match() 가 받는 조건 = 검증한 자체 속성 스냅숏(상속 속성은 match 에 닿지 않음), match 자체는 기존 판정 유지', () => {
+  const T = makeCtx(); const s = life(T); s.hp = 50; s.mp = 10;
+  T.G('var __seen = []; var __origMatch = match; match = function (c, e) { __seen.push([Object.getPrototypeOf(c) === null, Object.keys(c).join(), c.min ? Object.keys(c.min).join() : null]); return __origMatch(c, e); };');
+  T.G('choiceMatch({ min: { hp: 1 }, job: [S.job] })');
+  check('PF-8a match 에 넘어간 것은 프로토타입 null 스냅숏(자체 키만)', JSON.stringify(T.G('__seen')) === JSON.stringify([[true, 'min,job', 'hp']]), T.G('__seen'));
+  T.G('__seen = []; choiceMatch(Object.create({ min: { hp: NaN } })); choiceMatch({ min: Object.assign(Object.create({ mp: NaN }), { hp: 1 }) })');
+  check('PF-8b 프로토타입 우회 조건은 match 를 호출하지 않음', T.G('__seen.length') === 0);
+  T.G('match = __origMatch');
+  check('PF-8c 사건 match() 는 그대로(상속 min 을 읽는 기존 동작 — 사건 조건 경로는 변경 없음)', T.G('match(Object.create({ min: { hp: 999 } }))') === false && T.G('match(Object.create({ min: { hp: 1 } }))') === true);
+});
+test('P2 보완 2 F-9: 객체가 아닌 선택지 직접 호출(chooseBody) → choices 비우기 전 거부, S·난수·연표·UI 불변, 진단 choice_not_object', () => {
+  for (const [name, src] of [['null', 'null'], ['undefined', 'undefined'], ['0', '0'], ["''", "''"], ['"x"', '"x"'], ['1', '1'], ['true', 'true']]) {
+    const T = makeCtx(); const s = life(T); push(T, MIX);
+    T.G("showEvent(EVENTS.find(e => e.id === '__en_mix2'))");
+    const b = snap(s), c0 = T.calls(), log0 = s.logHistory.length, ui0 = T.el('choices').innerHTML, n0 = T.buttons().length; let threw = null, r;
+    try { r = T.G('chooseBody(' + src + ')'); } catch (err) { threw = String(err); }
+    const d = diags(T, 'hidden_choice_rejected');
+    check('PF-9a ' + name + ' chooseBody: 예외 없음·반환 undefined·S·난수·연표·UI 불변', threw === null && r === undefined && snap(s) === b && T.calls() === c0 && s.logHistory.length === log0
+      && T.el('choices').innerHTML === ui0 && T.buttons().length === n0, threw);
+    check('PF-9b ' + name + ' 진단 1건 reason=choice_not_object', d.length === 1 && d[0].reason === 'choice_not_object' && d[0].eventId === '__en_mix2', d);
+    let threw2 = null; const c1 = T.calls();
+    try { T.G('choose(' + src + ')'); } catch (err) { threw2 = String(err); }
+    check('PF-9c ' + name + ' choose(래퍼) 경유: 예외 없음·난수 0·UI 불변(래퍼의 currentEventId 초기화는 기존 동작)', threw2 === null && T.calls() === c1 && T.el('choices').innerHTML === ui0, threw2);
+  }
 });
 
 R.finish('engine_p2_test');

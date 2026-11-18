@@ -183,21 +183,53 @@ const CHOICE_COND_KEYS = ['job', 'age', 'cage', 'origin', 'race', 'notRace', 'fl
 //   허용 목록 안이지만 아직 match() 가 판정하지 않는 키(atSiteOf·inRecruitAreaOf, P3)는 판정할 수 없으므로 숨김(fail-closed).
 //   P2 보완(ChatGPT 1차 재검수): 조건은 배열이 아닌 일반 객체여야 한다. min/max 가 있으면 비어 있지 않은 일반 객체이고,
 //   각 조건값과 비교 대상 S[k] 가 모두 유한수여야 한다. 형식이 틀리면 숨김.
-//   일반 객체 판정은 실행 영역(realm)과 무관한 toString 태그로 한다(배열·Date·Map·원시값 거부).
-const choiceIsPlainObj = v => v !== null && typeof v === 'object' && Object.prototype.toString.call(v) === '[object Object]';
+//   P2 보완 2(44178ca 재검수): toString 태그만으로는 일반 객체가 아니다(사용자 프로토타입·클래스 인스턴스·toStringTag 위조 통과).
+//   ① 일반 객체 = 프로토타입이 null 이거나, 어느 실행 영역(realm)의 기본 Object.prototype 인 객체.
+//      Object.prototype 판정: 그 프로토타입의 프로토타입이 null 이고, 자체 constructor 가 이름 'Object' 인 기본(native) 함수이며
+//      그 함수의 prototype 이 바로 그 객체(다른 realm 의 Object 도 성립, 위조 프로토타입은 성립하지 않음).
+//   ② 자체 속성만 본다: 모든 자체 속성은 열거 가능한 데이터 속성이어야 하고(접근자·비열거·심볼 키 거부),
+//      검증한 값을 프로토타입이 null 인 새 객체에 복사(스냅숏)한다. match() 에는 이 스냅숏만 넘기므로
+//      match() 가 읽는 속성(c.min · for…in 포함) = 검증한 자체 속성이다(상속 속성은 스냅숏에 없음). match() 자체는 변경하지 않는다.
+//   ③ cond · min · max 에 같은 규칙(①·②)을 쓴다.
 const choiceHasOwn = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
-function choiceCondValid(c) {
-    if (!choiceIsPlainObj(c)) return false;
-    for (const k of Object.keys(c)) if (!CHOICE_COND_KEYS.includes(k) || !MATCH_KEYS.includes(k)) return false;
-    for (const lim of ['min', 'max']) {
-        if (!choiceHasOwn(c, lim)) continue;
-        const m = c[lim], ks = choiceIsPlainObj(m) ? Object.keys(m) : [];
-        if (!ks.length) return false;   // null·false·0·scalar·배열·빈 객체
-        for (const k of ks) if (!Number.isFinite(m[k]) || !Number.isFinite(S[k])) return false;
-    }
-    return true;
+const CHOICE_NATIVE_OBJECT_SRC = /^function Object\(\) \{\s*\[native code\]\s*\}$/;
+function choiceIsPlainObj(v) {
+    if (v === null || typeof v !== 'object' || Array.isArray(v)) return false;
+    const p = Object.getPrototypeOf(v);
+    if (p === null) return true;
+    if (Object.getPrototypeOf(p) !== null) return false;
+    const d = Object.getOwnPropertyDescriptor(p, 'constructor'), C = d && d.value;
+    if (typeof C !== 'function' || C.prototype !== p) return false;
+    let src; try { src = Function.prototype.toString.call(C); } catch (err) { return false; }
+    return CHOICE_NATIVE_OBJECT_SRC.test(src);
 }
-function choiceMatch(c, e) { return choiceCondValid(c) && match(c, e); }
+// 일반 객체의 자체 속성 스냅숏(프로토타입 null). 형식이 틀리면 null.
+function choiceSnapshot(v) {
+    if (!choiceIsPlainObj(v) || Object.getOwnPropertySymbols(v).length) return null;
+    const out = Object.create(null);
+    for (const k of Object.getOwnPropertyNames(v)) {
+        const d = Object.getOwnPropertyDescriptor(v, k);
+        if (!d || !d.enumerable || !('value' in d)) return null;
+        out[k] = d.value;
+    }
+    return out;
+}
+// 선택지 조건을 검증해 match() 에 넘길 스냅숏을 만든다. 형식이 틀리면 null(숨김).
+function choiceCondNormalize(c) {
+    const n = choiceSnapshot(c);
+    if (!n) return null;
+    for (const k of Object.keys(n)) if (!CHOICE_COND_KEYS.includes(k) || !MATCH_KEYS.includes(k)) return null;
+    for (const lim of ['min', 'max']) {
+        if (!(lim in n)) continue;
+        const m = choiceSnapshot(n[lim]), ks = m ? Object.keys(m) : [];
+        if (!ks.length) return null;   // null·false·0·scalar·배열·빈 객체·비일반 객체
+        for (const k of ks) if (!Number.isFinite(m[k]) || !Number.isFinite(S[k])) return null;
+        n[lim] = m;
+    }
+    return n;
+}
+function choiceCondValid(c) { return choiceCondNormalize(c) !== null; }
+function choiceMatch(c, e) { const n = choiceCondNormalize(c); return n !== null && match(n, e); }
 // 선택지 표시 여부의 단일 규칙(visibleChoices·chooseBody 공용): cond 속성이 아예 없을 때만 무조건 표시.
 //   cond 속성이 있으면(undefined·null·false·0·''·배열 포함) choiceMatch 로 판정한다.
 function choiceVisible(ch, e) {
@@ -988,7 +1020,9 @@ function chooseBody(ch) {
     if (haltedEntry('chooseBody')) return;   // H1 정지 가드
     // E-1.4: 숨긴 선택지 직접 호출 거부(choices 비우기·확률 판정 전). 상태·난수 불변.
     //   P2 보완: visibleChoices 와 같은 규칙(choiceVisible). cond 가 falsy 이거나 형식이 틀려도 거부한다. 진단에 이유(cond_malformed / cond_unmet)를 남긴다.
-    if (ch && typeof ch === 'object' && !choiceVisible(ch, EVENTS.find(x => x.id === S.currentEventId))) {
+    //   P2 보완 2: 선택지가 객체가 아니면(null·undefined·원시값) choices 비우기 전에 거부한다(이전에는 비운 뒤 ch.chance 에서 TypeError).
+    if (!ch || typeof ch !== 'object') { followupDiag('hidden_choice_rejected', { eventId: S.currentEventId ?? null, reason: 'choice_not_object' }); return; }
+    if (!choiceVisible(ch, EVENTS.find(x => x.id === S.currentEventId))) {
         followupDiag('hidden_choice_rejected', { eventId: S.currentEventId ?? null, reason: choiceCondValid(ch.cond) ? 'cond_unmet' : 'cond_malformed' });
         return;
     }
