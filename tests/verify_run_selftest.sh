@@ -1835,7 +1835,7 @@ scenario i8e s_i8e; check 'I-8e: 같은 종료 기록을 다시 읽음(재진입
 [ "$(cat "$TMP/i8e.r")" = "0 2 0" ] && ok 'I-8e: 다시 읽어도 유효(0), 실행 기록 2개(a·b) 그대로' || bad "I-8e: $(cat "$TMP/i8e.r")"
 s_i8f() { vr_expect a b; run a true; vr_bg B run b true; vr_wait
           local id="${VR_RUN_ID}_99999_99" rb=$'L X\nC 0\nS 1:b 1\n'; printf 'v2 %s %s\n%s' "$(vr__bg_rec_mac "$id" "$rb")" "$id" "$rb" > "$VR_BGREC/$id"; }
-scenario i8f s_i8f; checkn 'I-8e: 다른 id 의 유효한 기록이 같은 이름(b)을 다시 전달 → "실행 기록 충돌" + 미회수, 기존 코드 유지' 1 $? "b 실행 기록 충돌${NL}bg 종료 기록 미회수: <ID>" "$TMP/i8f"
+scenario i8f s_i8f; checkn 'I-8f: 다른 id 의 유효한 기록이 같은 이름(b)을 다시 전달 → "실행 기록 충돌" + 미회수, 기존 코드 유지' 1 $? "b 실행 기록 충돌${NL}bg 종료 기록 미회수: <ID>" "$TMP/i8f"
 # 34-9. HMAC 알려진 답: vr__hmac 이 RFC 4231 #2 와 같음 / 가짜 sha256sum 으로 알려진 답이 틀리면 vr_init 2
 ( . "$HERE/lib/verify_run.sh"; [ "$(vr__hmac Jefe 'what do ya want for nothing?')" = 5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843 ] ) \
   && ok 'I-9: vr__hmac = RFC 4231 시험 사례 2' || bad 'I-9: vr__hmac 알려진 답 불일치'
