@@ -91,12 +91,14 @@ const src = sites.filter(s => s.area === 'source');
 //   888de2c 줄 → 보완 줄: 720→737, 825→842, 914→931, 960→977, 986→1007 / 호출 350→367, 789~791→806~808, 827→844, 923→940
 // F1D4A P2 보완 2(일반 객체 판정·스냅숏·비객체 선택지 거부): 다시 줄 번호만 이동(분류·개수 불변).
 //   44178ca 줄 → 보완 2 줄: 737→769, 842→874, 931→963, 977→1009, 1007→1041 / 호출 367→399, 806~808→838~840, 844→876, 940→972
-const EXPECT_DIRECT = { 'script.js': { 6: '(wrapper)', 123: '(shared)', 769: 'R4', 874: 'R4', 963: 'R5', 1009: 'R2', 1041: 'R3' }, 'core/growth.js': { 102: 'R4' },
+// F1D4A P2 보완 3(선택지 객체 검증 choiceInspect·choiceVerdict): 다시 줄 번호만 이동(분류·개수 불변).
+//   ed6e824 줄 → 보완 3 줄: 769→794, 874→899, 963→988, 1009→1034, 1041→1066 / 호출 399→424, 838~840→863~865, 876→901, 972→997
+const EXPECT_DIRECT = { 'script.js': { 6: '(wrapper)', 123: '(shared)', 794: 'R4', 899: 'R4', 988: 'R5', 1034: 'R2', 1066: 'R3' }, 'core/growth.js': { 102: 'R4' },
     'core/relations.js': { 89: '(shared)', 113: 'R4', 150: 'R4', 153: 'R4', 174: 'R4', 186: 'R4', 187: 'R4', 196: 'R4', 207: 'R4', 253: 'R4', 257: 'R4', 271: 'R4' } };
-const EXPECT_CALL = { 'script.js': { 399: 'R4', 769: 'R4', 838: 'R4', 839: 'R4', 840: 'R4', 876: 'R4', 972: 'R1' }, 'core/relations.js': { 115: 'R4', 154: 'R4', 194: 'R4' } };
+const EXPECT_CALL = { 'script.js': { 424: 'R4', 794: 'R4', 863: 'R4', 864: 'R4', 865: 'R4', 901: 'R4', 997: 'R1' }, 'core/relations.js': { 115: 'R4', 154: 'R4', 194: 'R4' } };
 const asTable = kind => { const o = {}; for (const s of src.filter(x => x.kind === kind)) { (o[s.file] = o[s.file] || {})[s.line] = s.cls; } return o; };
 check('지점 표: Math.random 표현 20곳의 (파일, 줄, 분류)가 설계 §4.1.1 표와 같음', eq(asTable('direct'), EXPECT_DIRECT), JSON.stringify(asTable('direct')));
-check('지점 표: 공유·래퍼 함수 호출 10곳의 (파일, 줄, 분류)가 설계 표와 같음(R1 은 nextYear 972 한 곳 — F1 885)', eq(asTable('call'), EXPECT_CALL), JSON.stringify(asTable('call')));
+check('지점 표: 공유·래퍼 함수 호출 10곳의 (파일, 줄, 분류)가 설계 표와 같음(R1 은 nextYear 997 한 곳 — F1 885)', eq(asTable('call'), EXPECT_CALL), JSON.stringify(asTable('call')));
 {   // 독립 정적 검색: 주석을 뺀 줄에서 Math.random 을 센다
     let n = 0; texts.forEach(t => t.split('\n').forEach(l => { const code = l.replace(/\/\/.*$/, ''); n += (code.match(/Math\.random/g) || []).length; }));
     check('지점 표: 항목 수 = 독립 정적 검색 결과 수(Math.random 20)', n === 20 && src.filter(s => s.kind === 'direct').length === 20, 'grep=' + n);
@@ -288,7 +290,7 @@ check('지점 표: lineage.js · recruit.js 의 주석 속 "Math.random" 은 지
     check('VM-6 생애 구간에 R1·R3·R4·R5·HARNESS 가 모두 관측됨(주 루프는 자동 진행을 끄므로 R2 는 0)', ['R1', 'R3', 'R4', 'R5', 'HARNESS'].every(c => lives.byCls[c] > 0) && !lives.byCls.R2, JSON.stringify(lives.byCls));
     check('VM-6 단위 시험 구간(자동 진행 단위 시험 포함)에 R2 가 관측됨', J.tally.unit.byCls.R2 > 0);
     const r1 = 'script.js:getRandomItemByWeight:random#1<-script.js:nextYear:call-getRandomItemByWeight#1';
-    check('VM-10 공유 함수 호출: R1 은 (getRandomItemByWeight 123, nextYear 972 — F1 122·885) 쌍 하나로만 집계', lives.byId[r1] === lives.byCls.R1);
+    check('VM-10 공유 함수 호출: R1 은 (getRandomItemByWeight 123, nextYear 997 — F1 122·885) 쌍 하나로만 집계', lives.byId[r1] === lives.byCls.R1);
     check('VM-10 래퍼·공유 함수를 거친 호출은 호출자 지점과 쌍으로 기록(rnd ← rollFamiliaBody, weightedPick ← 관계 함수)', Object.keys(lives.byId).some(k => k.startsWith('script.js:rnd:random#1<-script.js:rollFamiliaBody:call-rnd#1')) && Object.keys(lives.byId).some(k => k.startsWith('core/relations.js:weightedPick:random#1<-core/relations.js:')));
     check('VM-10 공유·래퍼 함수의 Math.random 이 호출자 없이 단독으로 집계된 경우 0', !Object.keys(lives.byId).some(k => /^(script\.js:(rnd|getRandomItemByWeight)|core\/relations\.js:weightedPick):random#1$/.test(k)));
 }
@@ -301,7 +303,7 @@ check('지점 표: lineage.js · recruit.js 의 주석 속 "Math.random" 은 지
     const stackOf = (...frames) => ['Error', '    at recordedRandom (/x/test_runner.js:1:1)'].concat(frames).join('\n');
     const good = R.makeClassifier({ sites, dropFrames: 1, locate: locate(asm) });
     const shared = byId('script.js:getRandomItemByWeight:random#1'), callNY = byId('script.js:nextYear:call-getRandomItemByWeight#1'), r5 = byId('script.js:nextYear:random#1');
-    check('B 규칙: 직접 호출(963, F1 876) → R5, 공유 함수(123, F1 122) ← nextYear(972, F1 885) → R1', good(stackOf(frameOf(r5))).cls === 'R5' && good(stackOf(frameOf(shared), frameOf(callNY))).cls === 'R1');
+    check('B 규칙: 직접 호출(988, F1 876) → R5, 공유 함수(123, F1 122) ← nextYear(997, F1 885) → R1', good(stackOf(frameOf(r5))).cls === 'R5' && good(stackOf(frameOf(shared), frameOf(callNY))).cls === 'R1');
     check('VM-10 합성: 호출자 프레임이 변환되지 않으면 분류도 UNKNOWN(다음 프레임으로 추정하지 않음)', good(stackOf(frameOf(shared), '    at y (other.js:1:1)', frameOf(callNY))).cls === 'UNKNOWN' && good(stackOf(frameOf(shared), 'garbage line')).cls === 'UNKNOWN' && good(stackOf(frameOf(shared))).cls === 'UNKNOWN');
     check('B 규칙: 지점이 아닌 위치·맨 위가 호출 지점인 경우·기록기 프레임뿐인 경우 → UNKNOWN', good(stackOf('    at z (' + VMF + ':1:1)')).cls === 'UNKNOWN' && good(stackOf(frameOf(callNY))).cls === 'UNKNOWN' && good(stackOf()).cls === 'UNKNOWN');
     const order = [0, 1, 2, 4, 3, 5, 6, 7, 8];   // sourceFiles 순서를 바꾼 가짜 표(core/growth.js 와 core/relations.js 를 맞바꿈 → growth 의 조립 위치가 달라짐)

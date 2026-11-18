@@ -229,13 +229,38 @@ function choiceCondNormalize(c) {
     return n;
 }
 function choiceCondValid(c) { return choiceCondNormalize(c) !== null; }
-function choiceMatch(c, e) { const n = choiceCondNormalize(c); return n !== null && match(n, e); }
-// 선택지 표시 여부의 단일 규칙(visibleChoices·chooseBody 공용): cond 속성이 아예 없을 때만 무조건 표시.
-//   cond 속성이 있으면(undefined·null·false·0·''·배열 포함) choiceMatch 로 판정한다.
-function choiceVisible(ch, e) {
-    if (!ch || typeof ch !== 'object') return false;
-    return !choiceHasOwn(ch, 'cond') || choiceMatch(ch.cond, e);
+function choiceMatch(c, e) {   // P2 보완 3: 검증·판정 중 예외는 전파하지 않고 false(fail-closed)
+    try { const n = choiceCondNormalize(c); return n !== null && match(n, e); } catch (err) { return false; }
 }
+// 선택지 표시 여부의 단일 규칙(visibleChoices·chooseBody 공용): cond 속성이 완전히 없을 때(자체·상속 모두)만 무조건 표시.
+//   자체 cond 가 있으면(undefined·null·false·0·''·배열 포함) 형식 검사·match 로 판정한다(아래 choiceVerdict).
+//   P2 보완 3(ed6e824 재검수): 선택지 객체 자체도 검증한다. choiceVerdict 가 표시(visibleChoices)·직접 호출(chooseBody)의 단일 판정이다.
+//   ① 객체가 아님 → choice_not_object.
+//   ② cond 는 자체 속성 서술자(descriptor)로만 읽는다(getter 를 실행하지 않음). 자체 cond 가 없는데 'cond' in ch(상속)이면,
+//      또는 자체 cond 가 열거 불가·접근자(getter/setter)면 → cond_malformed.
+//   ③ 선택지가 일반 객체(기본 Object.prototype 또는 null 프로토타입)가 아님(배열·Date·클래스 인스턴스·사용자 프로토타입) → choice_not_object.
+//   ④ cond 가 없으면 표시. 있으면 서술자의 value 하나로 형식 검사(스냅숏)·match 판정 → cond_malformed / cond_unmet.
+//   ⑤ 검증·판정 중 예외(Proxy trap·폐기된 Proxy 등)는 전파하지 않고 거부(cond_malformed). 투명 Proxy 자체를 식별하지 못하는 한계는 유지.
+function choiceInspect(ch) {
+    if (ch === null || typeof ch !== 'object') return { ok: false, reason: 'choice_not_object' };   // 원시값·함수 포함
+    const d = Object.getOwnPropertyDescriptor(ch, 'cond');
+    if (!d) { if ('cond' in ch) return { ok: false, reason: 'cond_malformed' }; }
+    else if (!d.enumerable || !('value' in d)) return { ok: false, reason: 'cond_malformed' };
+    if (!choiceIsPlainObj(ch)) return { ok: false, reason: 'choice_not_object' };
+    return d ? { ok: true, hasCond: true, cond: d.value } : { ok: true, hasCond: false };
+}
+function choiceVerdict(ch, e) {
+    try {
+        const ins = choiceInspect(ch);
+        if (!ins.ok || !ins.hasCond) return ins.ok ? { ok: true } : { ok: false, reason: ins.reason };
+        const n = choiceCondNormalize(ins.cond);
+        if (!n) return { ok: false, reason: 'cond_malformed' };
+        return match(n, e) ? { ok: true } : { ok: false, reason: 'cond_unmet' };
+    } catch (err) {
+        return { ok: false, reason: 'cond_malformed' };
+    }
+}
+function choiceVisible(ch, e) { return choiceVerdict(ch, e).ok; }
 function visibleChoices(e) { return e.choices.filter(ch => choiceVisible(ch, e)); }
 
 function say(text, cls = '', age) {
@@ -1020,10 +1045,10 @@ function chooseBody(ch) {
     if (haltedEntry('chooseBody')) return;   // H1 정지 가드
     // E-1.4: 숨긴 선택지 직접 호출 거부(choices 비우기·확률 판정 전). 상태·난수 불변.
     //   P2 보완: visibleChoices 와 같은 규칙(choiceVisible). cond 가 falsy 이거나 형식이 틀려도 거부한다. 진단에 이유(cond_malformed / cond_unmet)를 남긴다.
-    //   P2 보완 2: 선택지가 객체가 아니면(null·undefined·원시값) choices 비우기 전에 거부한다(이전에는 비운 뒤 ch.chance 에서 TypeError).
-    if (!ch || typeof ch !== 'object') { followupDiag('hidden_choice_rejected', { eventId: S.currentEventId ?? null, reason: 'choice_not_object' }); return; }
-    if (!choiceVisible(ch, EVENTS.find(x => x.id === S.currentEventId))) {
-        followupDiag('hidden_choice_rejected', { eventId: S.currentEventId ?? null, reason: choiceCondValid(ch.cond) ? 'cond_unmet' : 'cond_malformed' });
+    //   P2 보완 2·3: 선택지·cond 검증은 표시와 같은 choiceVerdict 한 번으로 한다(choices 비우기 전). 이유: choice_not_object / cond_malformed / cond_unmet.
+    const verdict = choiceVerdict(ch, EVENTS.find(x => x.id === S.currentEventId));
+    if (!verdict.ok) {
+        followupDiag('hidden_choice_rejected', { eventId: S.currentEventId ?? null, reason: verdict.reason });
         return;
     }
     $('choices').innerHTML = '';

@@ -375,4 +375,68 @@ test('P2 보완 2 F-9: 객체가 아닌 선택지 직접 호출(chooseBody) → 
   }
 });
 
+// ── P2 보완 3(ed6e824 재검수): 선택지 객체 자체의 형식 · 상속/접근자/비열거 cond · 검증 중 예외 fail-closed ──────────
+// 모두 합성 사건·합성 상태 주입. __gr 은 getter/setter 가 실행됐는지 기록하는 시험용 전역.
+const BASECH = "label: 'X', text: 'xx', fx: { valis: 777 }";
+const CHSRC = {   // [선택지 생성식, 기대: 'show' | 이유]
+  '일반 선택지 cond 없음': [`({ ${BASECH} })`, 'show'],
+  'null 프로토타입 선택지 cond 없음': [`Object.assign(Object.create(null), { ${BASECH} })`, 'show'],
+  '자체 cond 데이터 {} ': [`({ ${BASECH}, cond: {} })`, 'show'],
+  '자체 cond 데이터 충족': [`({ ${BASECH}, cond: { min: { hp: 1 } } })`, 'show'],
+  '자체 cond 데이터 불충족': [`({ ${BASECH}, cond: { job: ['__nobody__'] } })`, 'cond_unmet'],
+  'null 프로토타입 선택지 자체 cond 불충족': [`Object.assign(Object.create(null), { ${BASECH}, cond: { job: ['__nobody__'] } })`, 'cond_unmet'],
+  '상속 cond(불충족 조건)': [`Object.assign(Object.create({ cond: { job: ['__nobody__'] } }), { ${BASECH} })`, 'cond_malformed'],
+  '상속 cond(빈 조건 {})': [`Object.assign(Object.create({ cond: {} }), { ${BASECH} })`, 'cond_malformed'],
+  '상속 cond(null 프로토타입 부모)': [`Object.assign(Object.create(Object.assign(Object.create(null), { cond: {} })), { ${BASECH} })`, 'cond_malformed'],
+  '자체 getter cond': [`({ ${BASECH}, get cond() { __gr.push('get'); return {}; } })`, 'cond_malformed'],
+  '자체 setter 전용 cond': [`({ ${BASECH}, set cond(v) { __gr.push('set'); } })`, 'cond_malformed'],
+  '자체 getter·setter cond': [`({ ${BASECH}, get cond() { __gr.push('get'); return {}; }, set cond(v) { __gr.push('set'); } })`, 'cond_malformed'],
+  '상속 getter cond': [`Object.assign(Object.create({ get cond() { __gr.push('get'); return {}; } }), { ${BASECH} })`, 'cond_malformed'],
+  '비열거 자체 cond': [`Object.defineProperty({ ${BASECH} }, 'cond', { value: {}, enumerable: false })`, 'cond_malformed'],
+  '배열 선택지': [`Object.assign([], { ${BASECH} })`, 'choice_not_object'],
+  'Date 선택지': [`Object.assign(new Date(0), { ${BASECH} })`, 'choice_not_object'],
+  '클래스 인스턴스 선택지': [`Object.assign(new (class Ch {})(), { ${BASECH} })`, 'choice_not_object'],
+  '사용자 프로토타입 선택지(cond 없음)': [`Object.assign(Object.create({ z: 1 }), { ${BASECH} })`, 'choice_not_object'],
+  '함수 선택지': [`Object.assign(function () {}, { ${BASECH} })`, 'choice_not_object'],
+  '폐기된 Proxy 선택지': [`(() => { const r = Proxy.revocable({ ${BASECH} }, {}); r.revoke(); return r.proxy; })()`, 'cond_malformed'],
+  'descriptor trap 예외 Proxy': [`new Proxy({ ${BASECH} }, { getOwnPropertyDescriptor() { throw new Error('trap-gopd'); } })`, 'cond_malformed'],
+  'has trap 예외 Proxy': [`new Proxy({ ${BASECH} }, { has() { throw new Error('trap-has'); } })`, 'cond_malformed'],
+  'getPrototypeOf trap 예외 Proxy': [`new Proxy({ ${BASECH} }, { getPrototypeOf() { throw new Error('trap-proto'); } })`, 'cond_malformed'],
+  'cond 가 폐기된 Proxy': [`({ ${BASECH}, cond: (() => { const r = Proxy.revocable({}, {}); r.revoke(); return r.proxy; })() })`, 'cond_malformed'],
+  'cond.min 의 ownKeys trap 예외': [`({ ${BASECH}, cond: { min: new Proxy({ hp: 1 }, { ownKeys() { throw new Error('trap-keys'); } }) } })`, 'cond_malformed'] };
+const mkChEv = (T, src) => T.G(`var __gr = []; EVENTS.push({ id: '__en_c3', w: 0, text: 't', cond: {}, choices: [{ label: '보임', text: 'ok', fx: {} }, ${src}] }); EVENTS[EVENTS.length - 1]`);
+test('P2 보완 3 F-10: 선택지 형식별 표시(visibleChoices) · 직접 호출(chooseBody) 판정이 같은 기준', () => {
+  for (const [name, [src, want]] of Object.entries(CHSRC)) {
+    const T = makeCtx(); const s = life(T); s.hp = 50; let threw = null, vis;
+    mkChEv(T, src);
+    try { vis = T.G("visibleChoices(EVENTS.find(e => e.id === '__en_c3')).length"); } catch (err) { threw = String(err); }
+    check('PF-10a ' + name + ' visibleChoices 예외 없음 · ' + (want === 'show' ? '보임' : '숨김'), threw === null && vis === (want === 'show' ? 2 : 1), threw || vis);
+    try { T.G("showEvent(EVENTS.find(e => e.id === '__en_c3'))"); } catch (err) { threw = String(err); }
+    check('PF-10b ' + name + ' showEvent 예외 없음 · 버튼 ' + (want === 'show' ? 2 : 1), threw === null && T.buttons().length === (want === 'show' ? 2 : 1), threw);
+    const b = snap(s), c0 = T.calls(), log0 = s.logHistory.length, ui0 = T.el('choices').innerHTML, d0 = diags(T, 'hidden_choice_rejected').length; let r;
+    try { r = T.G("chooseBody(EVENTS.find(e => e.id === '__en_c3').choices[1])"); } catch (err) { threw = String(err); }
+    const d = diags(T, 'hidden_choice_rejected');
+    if (want === 'show') check('PF-10c ' + name + ' 직접 호출 실행됨(거부 진단 0)', threw === null && s.logHistory.some(l => l.text === 'xx') && d.length === d0, threw);
+    else {
+      check('PF-10c ' + name + ' 직접 호출 거부: 예외 없음 · S·난수·연표·UI 불변', threw === null && r === undefined && snap(s) === b && T.calls() === c0 && s.logHistory.length === log0 && T.el('choices').innerHTML === ui0 && s.valis !== 777, threw);
+      check('PF-10d ' + name + ' 진단 1건 reason=' + want, d.length === d0 + 1 && d[d.length - 1].reason === want && d[d.length - 1].eventId === '__en_c3', d[d.length - 1]);
+    }
+    if (/getter|setter/.test(name)) check('PF-10e ' + name + ' getter/setter 미실행', T.G('__gr.length') === 0, T.G('__gr'));
+  }
+});
+test('P2 보완 3 F-11: 검증 중 예외는 게임 루프로 전파되지 않음(nextYear 반복 · 후보 사건에 예외 Proxy 선택지)', () => {
+  for (const name of ['폐기된 Proxy 선택지', 'descriptor trap 예외 Proxy', 'has trap 예외 Proxy', 'getPrototypeOf trap 예외 Proxy', 'cond 가 폐기된 Proxy']) {
+    const T = makeCtx(); const s = life(T, 20); let threw = null; wrapShow(T);
+    T.G(`EVENTS.push({ id: '__en_c3loop', w: 1e7, text: 't', cond: {}, maxTimes: 99, cool: 0, choices: [{ label: '보임', text: 'ok', fx: {} }, ${CHSRC[name][0]}] })`);
+    try { for (let i = 0; i < 5; i++) { T.G("$('choices').innerHTML = ''; S.currentEventId = null; S.pendingFollowup = null"); T.G('nextYear()'); } } catch (err) { threw = String(err); }
+    check('PF-11 ' + name + ' nextYear 5회 예외 없음 · 정지 없음 · 예외 Proxy 선택지를 가진 사건이 실제로 후보·표시됨', threw === null && T.G('progressHalted') !== true && T.G('__shown').includes('__en_c3loop'), threw || T.G('__shown'));
+  }
+});
+test('P2 보완 3 F-12: 판정 함수(choiceVerdict·visibleChoices)는 잘못된 선택지에서도 S·난수·연표·진단 불변, getter 미실행', () => {
+  const T = makeCtx(); const s = life(T); T.G('var __gr = []');
+  const b = snap(s), c0 = T.calls(), d0 = T.G('followupDiagLog.length'), y0 = T.G('syncInvariantLog.length');
+  for (const [, [src]] of Object.entries(CHSRC)) T.G('choiceVerdict(' + src + ', null); choiceVisible(' + src + ', null)');
+  check('PF-12', snap(s) === b && T.calls() === c0 && T.G('followupDiagLog.length') === d0 && T.G('syncInvariantLog.length') === y0 && T.G('__gr.length') === 0, T.G('__gr'));
+});
+
 R.finish('engine_p2_test');
