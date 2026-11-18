@@ -1867,6 +1867,29 @@ scenario i12 s_i12 2>/dev/null; rc=$?
 [ $rc -eq 3 ] && [ -f "$TMP/i12.hit" ] && grep -qE '^기록 실패: bg 실행 표식 정리: [0-9a-f]{12}_[0-9]+_[0-9]+$' "$TMP/i12/failed_steps.txt" && no_alldone "$TMP/i12" \
   && ok "I-12(B-2): 고아 회수의 실행 표식 정리 실패(목적이 이미 있음 주입) → vr_finish 3·\"기록 실패: bg 실행 표식 정리: <ID>\" — 실패 목록: $(sed -E 's/[0-9a-f]{12}_[0-9]+_[0-9]+/<ID>/g' "$TMP/i12/failed_steps.txt" | tr '\n' ';')" \
   || bad "I-12 (rc=$rc, hit=$([ -f "$TMP/i12.hit" ] && echo y || echo n), $(tr '\n' ';' < "$TMP/i12/failed_steps.txt" 2>/dev/null))"
+# 34-13. bg 종료 기록 C 필드 범위(0–255): mac 이 유효한(토큰으로 올바르게 만든) 합성 기록을 파서(vr__bg_read_record)에 직접 넣는다.
+#   mac 유효성은 파서와 별도로 openssl HMAC 으로 확인(없으면 vr__bg_rec_mac 재계산)하므로, 거부가 mac 불일치가 아니라 C 범위 검사 때문임을 보인다.
+#   기대: 0·1·7·255 → 반환 0·vr__rec_code 그 값·손상 없음 / 256·999 → 반환 2·"bg:X 종료 기록 손상"·vr__rec_code 비어 있음.
+( . "$HERE/lib/verify_run.sh"; vr_init "$TMP/i13" > /dev/null 2>&1 || exit 99; mkdir -p "$TMP/i13rec"
+  for c in 0 1 7 255 256 999; do
+      id="${VR_RUN_ID}_77777_$c"; rb="L X"$'\n'"C $c"$'\n'; f="$TMP/i13rec/$id"
+      printf 'v2 %s %s\n%s' "$(vr__bg_rec_mac "$id" "$rb")" "$id" "$rb" > "$f"
+      m="vr-bgrec"$'\n'"v2"$'\n'"${#id}:$id"$'\n'"$rb"; hd=$(head -n 1 "$f")
+      if command -v openssl > /dev/null 2>&1; then want=$(printf '%s' "$m" | openssl dgst -sha256 -hmac "$VR_TOKEN" | awk '{print $NF}'); src=openssl
+      else want=$(vr_mac "$m"); src=vr_mac; fi
+      [ "$hd" = "v2 $want $id" ] && mv=1 || mv=0
+      VR_BG_FAILS=(); vr__bg_read_record "$f" "$id" X > /dev/null 2>&1; r=$?
+      printf '%s %s %s %s [%s] %s\n' "$c" "$mv" "$r" "${vr__rec_code:--}" "$(IFS=';'; echo "${VR_BG_FAILS[*]}")" "$src"
+  done > "$TMP/i13.r"; vr_finish > /dev/null 2>&1; exit 0 ); rc=$?
+i13_line() { grep "^$1 " "$TMP/i13.r" 2>/dev/null; }
+for c in 0 1 7 255; do
+    l=$(i13_line $c)
+    [ $rc -eq 0 ] && [ "$l" = "$c 1 0 $c [] ${l##* }" ] && ok "I-13: C=$c (mac 유효: ${l##* } 확인) → 파서가 받아들임(반환 0, 코드 $c)" || bad "I-13: C=$c ($l, rc=$rc)"
+done
+for c in 256 999; do
+    l=$(i13_line $c)
+    [ $rc -eq 0 ] && [ "$l" = "$c 1 2 - [bg:X 종료 기록 손상] ${l##* }" ] && ok "I-13: C=$c (mac 유효: ${l##* } 확인) → 파서가 범위 밖으로 거부(반환 2, \"종료 기록 손상\")" || bad "I-13: C=$c ($l, rc=$rc)"
+done
 # ── 재현성: 처리기 return 3 + builtin exit 5 를 10번 반복(매번 5) ──────────────────────────────────────────────
 rep_ok=0; for k in 1 2 3 4 5 6 7 8 9 10; do
     eval "s_rep_$k() { body() { trap 'return 3' EXIT; builtin exit 5; }; vr_expect a; run a true; vr_bg B body; vr_wait; }"

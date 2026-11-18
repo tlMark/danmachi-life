@@ -980,7 +980,7 @@ vr__bg_read_record() {
     for l in "${lines[@]:1}"; do
         case "$l" in
             "L "?*) [ -z "$vr__rec_label" ] || { VR_BG_FAILS+=("bg:${label:-$id} 종료 기록 손상"); return 2; }; vr__rec_label=${l#L } ;;
-            "C "?*) [ -z "$vr__rec_code" ] && [[ "${l#C }" =~ ^(0|[1-9][0-9]{0,2})$ ]] || { VR_BG_FAILS+=("bg:${label:-$id} 종료 기록 손상"); return 2; }
+            "C "?*) [ -z "$vr__rec_code" ] && [[ "${l#C }" =~ ^(0|[1-9][0-9]{0,2})$ ]] && [ "${l#C }" -le 255 ] || { VR_BG_FAILS+=("bg:${label:-$id} 종료 기록 손상"); return 2; }   # 종료 코드 범위 0–255(상태 기록·S 줄과 같음)
                     vr__rec_code=${l#C } ;;
             "V "?*) pv+=("${l#V }") ;;
             "I "?*) pi+=("${l#I }") ;;
