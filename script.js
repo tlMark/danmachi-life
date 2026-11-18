@@ -179,15 +179,32 @@ const MATCH_KEYS = ['job', 'age', 'cage', 'notRace', 'familia', 'familiaIn', 're
 // E-1.1 선택지 조건 허용 키(설계 목록 그대로). 관계 키(hasPartner·relative·noRelative)는 보조 함수가 S 를 정규화(쓰기)할 수 있어 제외.
 const CHOICE_COND_KEYS = ['job', 'age', 'cage', 'origin', 'race', 'notRace', 'flags', 'noFlags', 'falnaState', 'hasFamilia', 'familiaIn', 'familia', 'familiaRole',
     'canEnterDungeon', 'noItem', 'min', 'max', 'residenceIn', 'locationIn', 'employerIn', 'hasEmployer', 'atSiteOf', 'inRecruitAreaOf'];
-// choiceMatch(c, e): 선택지 조건에만 쓰는 판정. match() 에 ① 허용 키 ② min/max 유한값 요구를 더한다. 상태 변경·난수·연표 0(EN-8).
+// choiceMatch(c, e): 선택지 조건에만 쓰는 판정. match() 에 ① 형식 검사 ② 허용 키 ③ min/max 유한값 요구를 더한다. 상태 변경·난수·연표 0(EN-8).
 //   허용 목록 안이지만 아직 match() 가 판정하지 않는 키(atSiteOf·inRecruitAreaOf, P3)는 판정할 수 없으므로 숨김(fail-closed).
-function choiceMatch(c, e) {
-    if (!c || typeof c !== 'object') return false;
+//   P2 보완(ChatGPT 1차 재검수): 조건은 배열이 아닌 일반 객체여야 한다. min/max 가 있으면 비어 있지 않은 일반 객체이고,
+//   각 조건값과 비교 대상 S[k] 가 모두 유한수여야 한다. 형식이 틀리면 숨김.
+//   일반 객체 판정은 실행 영역(realm)과 무관한 toString 태그로 한다(배열·Date·Map·원시값 거부).
+const choiceIsPlainObj = v => v !== null && typeof v === 'object' && Object.prototype.toString.call(v) === '[object Object]';
+const choiceHasOwn = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
+function choiceCondValid(c) {
+    if (!choiceIsPlainObj(c)) return false;
     for (const k of Object.keys(c)) if (!CHOICE_COND_KEYS.includes(k) || !MATCH_KEYS.includes(k)) return false;
-    for (const lim of ['min', 'max']) if (c[lim]) for (const k in c[lim]) if (!Number.isFinite(S[k])) return false;
-    return match(c, e);
+    for (const lim of ['min', 'max']) {
+        if (!choiceHasOwn(c, lim)) continue;
+        const m = c[lim], ks = choiceIsPlainObj(m) ? Object.keys(m) : [];
+        if (!ks.length) return false;   // null·false·0·scalar·배열·빈 객체
+        for (const k of ks) if (!Number.isFinite(m[k]) || !Number.isFinite(S[k])) return false;
+    }
+    return true;
 }
-function visibleChoices(e) { return e.choices.filter(ch => !ch.cond || choiceMatch(ch.cond, e)); }
+function choiceMatch(c, e) { return choiceCondValid(c) && match(c, e); }
+// 선택지 표시 여부의 단일 규칙(visibleChoices·chooseBody 공용): cond 속성이 아예 없을 때만 무조건 표시.
+//   cond 속성이 있으면(undefined·null·false·0·''·배열 포함) choiceMatch 로 판정한다.
+function choiceVisible(ch, e) {
+    if (!ch || typeof ch !== 'object') return false;
+    return !choiceHasOwn(ch, 'cond') || choiceMatch(ch.cond, e);
+}
+function visibleChoices(e) { return e.choices.filter(ch => choiceVisible(ch, e)); }
 
 function say(text, cls = '', age) {
     const d = document.createElement('div');
@@ -970,7 +987,11 @@ function choose(ch) {
 function chooseBody(ch) {
     if (haltedEntry('chooseBody')) return;   // H1 정지 가드
     // E-1.4: 숨긴 선택지 직접 호출 거부(choices 비우기·확률 판정 전). 상태·난수 불변.
-    if (ch && ch.cond && !choiceMatch(ch.cond, EVENTS.find(x => x.id === S.currentEventId))) { followupDiag('hidden_choice_rejected', { eventId: S.currentEventId ?? null }); return; }
+    //   P2 보완: visibleChoices 와 같은 규칙(choiceVisible). cond 가 falsy 이거나 형식이 틀려도 거부한다. 진단에 이유(cond_malformed / cond_unmet)를 남긴다.
+    if (ch && typeof ch === 'object' && !choiceVisible(ch, EVENTS.find(x => x.id === S.currentEventId))) {
+        followupDiag('hidden_choice_rejected', { eventId: S.currentEventId ?? null, reason: choiceCondValid(ch.cond) ? 'cond_unmet' : 'cond_malformed' });
+        return;
+    }
     $('choices').innerHTML = '';
     let r = ch;
     if (ch.chance) {

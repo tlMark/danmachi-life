@@ -247,4 +247,70 @@ test('EN-6 RNG 정책(합성)', () => {
     check('EN-6e choiceMatch 난수 0', T.calls() === c0); }
 });
 
+// ── P2 보완(ChatGPT 1차 재검수): cond 속성 부재 vs 잘못된 조건값, min/max 형식, visibleChoices·chooseBody 같은 규칙 ──
+// 모두 합성 사건·합성 상태 주입이다. 실제 사건 데이터(choice.cond 0건)는 바꾸지 않는다.
+const CONDSRC = { '없음': null, '{}': '{}', 'min 유효': '{ min: { hp: 1 } }', 'max 유효': '{ max: { hp: 1000 } }', 'min·max 유효': '{ min: { hp: 1, mp: 0 }, max: { hp: 1000 } }',
+  'null': 'null', 'false': 'false', '0': '0', "''": "''", '[]': '[]', 'undefined(속성 있음)': 'undefined', '[{}]': '[{}]', 'Date': 'new Date(0)', '"x"': '"x"', '1': '1', 'true': 'true',
+  'min:null': '{ min: null }', 'min:false': '{ min: false }', 'min:0': '{ min: 0 }', 'min:5': '{ min: 5 }', 'min:[]': '{ min: [] }', 'min:{}': '{ min: {} }', 'min:[1]': '{ min: [1] }',
+  'min:NaN': '{ min: { hp: NaN } }', 'min:+Inf': '{ min: { hp: Infinity } }', 'min:-Inf': '{ min: { hp: -Infinity } }', "min:'1'": "{ min: { hp: '1' } }", 'min:undefined': '{ min: { hp: undefined } }', 'min:null값': '{ min: { hp: null } }',
+  'max:null': '{ max: null }', 'max:false': '{ max: false }', 'max:0': '{ max: 0 }', 'max:5': '{ max: 5 }', 'max:[]': '{ max: [] }', 'max:{}': '{ max: {} }',
+  'max:NaN': '{ max: { hp: NaN } }', 'max:+Inf': '{ max: { hp: Infinity } }', 'max:-Inf': '{ max: { hp: -Infinity } }',
+  'min 유효+max 잘못': '{ min: { hp: 1 }, max: {} }', 'min 둘 중 하나 NaN': '{ min: { hp: 1, mp: NaN } }' };
+const CONDOK = new Set(['없음', '{}', 'min 유효', 'max 유효', 'min·max 유효']);
+const mkEv = (T, name) => T.G(`(() => { const ch = { label: 'X', text: 'xx', fx: { valis: 777 } }; ${CONDSRC[name] === null ? '' : 'ch.cond = ' + CONDSRC[name] + ';'}
+  const ev = { id: '__en_fc', w: 0, text: 't', cond: {}, choices: [{ label: '보임', text: 'ok', fx: {} }, ch] }; EVENTS.push(ev); return ev; })()`);
+test('P2 보완 F-1: 조건 형식별 표시 여부(visibleChoices) = choiceMatch = 기대값', () => {
+  for (const name of Object.keys(CONDSRC)) {
+    const T = makeCtx(); const s = life(T); s.mp = 10; mkEv(T, name);
+    const vis = T.G("visibleChoices(EVENTS.find(e => e.id === '__en_fc')).map(c => c.label).join()");
+    const want = CONDOK.has(name);
+    check('PF-1 ' + name + ' → ' + (want ? '보임' : '숨김'), vis === (want ? '보임,X' : '보임'), vis);
+    if (CONDSRC[name] !== null) check('PF-1b ' + name + ' choiceMatch = ' + want, T.G('choiceMatch(' + CONDSRC[name] + ')') === want);
+  }
+});
+test('P2 보완 F-2: 상태 값 S[k] 가 NaN·±Infinity·undefined·문자열·null 이면 유효한 min/max 조건도 계속 숨김', () => {
+  for (const v of [NaN, Infinity, -Infinity, undefined, '50', null]) {
+    const T = makeCtx(); const s = life(T); s.hp = v; mkEv(T, 'min·max 유효');
+    check('PF-2 hp=' + String(v), T.G("visibleChoices(EVENTS.find(e => e.id === '__en_fc')).length") === 1
+      && T.G('choiceMatch({ min: { hp: 1 } })') === false && T.G('choiceMatch({ max: { hp: 1000 } })') === false);
+  }
+  const T = makeCtx(); const s = life(T); s.hp = 50;
+  check('PF-2b 대조: hp=50 이면 보임, 범위 밖이면 숨김', T.G('choiceMatch({ min: { hp: 1 }, max: { hp: 1000 } })') === true && T.G('choiceMatch({ min: { hp: 51 } })') === false && T.G('choiceMatch({ max: { hp: 49 } })') === false);
+});
+test('P2 보완 F-3: 잘못된 조건·숨긴 선택지 직접 호출(chooseBody·choose) → 거부, S·난수·연표·UI 불변, 진단(이유) 1건', () => {
+  for (const name of Object.keys(CONDSRC).filter(n => !CONDOK.has(n)).concat(['조건 불충족'])) {
+    const T = makeCtx(); const s = life(T); s.mp = 10;
+    if (name === '조건 불충족') T.G("EVENTS.push({ id: '__en_fc', w: 0, text: 't', cond: {}, choices: [{ label: '보임', text: 'ok', fx: {} }, { label: 'X', cond: { job: ['__nobody__'] }, text: 'xx', fx: { valis: 777 } }] })");
+    else mkEv(T, name);
+    check('PF-3a ' + name + ' showEvent true·버튼 1', T.G("showEvent(EVENTS.find(e => e.id === '__en_fc'))") === true && T.buttons().length === 1 && T.buttons()[0].textContent === '보임');
+    const b = snap(s), c0 = T.calls(), log0 = s.logHistory.length, d0 = diags(T, 'hidden_choice_rejected').length, ui0 = T.el('choices').innerHTML, ev0 = s.currentEventId;
+    const r = T.G("chooseBody(EVENTS.find(e => e.id === '__en_fc').choices[1])");
+    const d = diags(T, 'hidden_choice_rejected');
+    check('PF-3b ' + name + ' chooseBody 거부: 반환 undefined, S 깊은 비교 동일, 난수 0, 연표 0, UI 동일', r === undefined && snap(s) === b && T.calls() === c0 && s.logHistory.length === log0
+      && T.el('choices').innerHTML === ui0 && s.valis !== 777 && s.currentEventId === ev0);
+    check('PF-3c ' + name + ' 진단 1건·이유 ' + (name === '조건 불충족' ? 'cond_unmet' : 'cond_malformed'), d.length === d0 + 1 && d[d.length - 1].eventId === '__en_fc'
+      && d[d.length - 1].reason === (name === '조건 불충족' ? 'cond_unmet' : 'cond_malformed'), d[d.length - 1]);
+    const c1 = T.calls(); T.G("choose(EVENTS.find(e => e.id === '__en_fc').choices[1])");
+    check('PF-3d ' + name + ' choose(래퍼) 경유도 거부: 효과·난수 0, 진단 +1', s.valis !== 777 && T.calls() === c1 && diags(T, 'hidden_choice_rejected').length === d0 + 2);
+  }
+});
+test('P2 보완 F-4: 정상 조건(cond 없음·{}·유효 min/max)은 chooseBody 직접 호출이 그대로 실행됨(거부 진단 0)', () => {
+  for (const name of [...CONDOK]) {
+    const T = makeCtx(); const s = life(T); s.mp = 10; mkEv(T, name);
+    T.G("showEvent(EVENTS.find(e => e.id === '__en_fc'))");
+    T.G("chooseBody(EVENTS.find(e => e.id === '__en_fc').choices[1])");
+    check('PF-4 ' + name, s.logHistory.some(l => l.text === 'xx') && diags(T, 'hidden_choice_rejected').length === 0);
+  }
+});
+test('P2 보완 F-5: 보이는 선택지가 0개가 되는 잘못된 조건만 있는 사건 → showEvent false, 버튼 0', () => {
+  const T = makeCtx(); life(T);
+  T.G("EVENTS.push({ id: '__en_fc0', w: 0, text: 't', cond: {}, choices: [{ label: 'a', cond: null, fx: {} }, { label: 'b', cond: [], fx: {} }, { label: 'c', cond: { min: {} }, fx: {} }] })");
+  check('PF-5', T.G("showEvent(EVENTS.find(e => e.id === '__en_fc0'))") === false && T.buttons().length === 0 && diags(T, 'event_no_visible_choice').length === 1);
+});
+test('P2 보완 F-6: 판정 함수 순수성(잘못된 조건 포함) — S·난수·연표·진단 0', () => {
+  const T = makeCtx(); const s = life(T); const b = snap(s), c0 = T.calls(), d0 = T.G('followupDiagLog.length'), y0 = T.G('syncInvariantLog.length');
+  for (const name of Object.keys(CONDSRC)) if (CONDSRC[name] !== null) T.G('choiceMatch(' + CONDSRC[name] + '); choiceVisible({ cond: ' + CONDSRC[name] + ' })');
+  check('PF-6', snap(s) === b && T.calls() === c0 && T.G('followupDiagLog.length') === d0 && T.G('syncInvariantLog.length') === y0);
+});
+
 R.finish('engine_p2_test');
