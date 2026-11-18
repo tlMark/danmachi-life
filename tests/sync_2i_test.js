@@ -7,7 +7,7 @@ const R1 = process.argv[2] || null;
 const FILES = ['data.js', 'events.js', 'core/aging.js', 'core/growth.js', 'core/relations.js', 'core/items.js', 'core/recruit.js', 'core/lineage.js', 'script.js'];
 const NEW_FIELDS = ['falnaState', 'falnaHolder', 'conversionPending', 'falnaTransitions', 'currentEventId', 'syncBaseline', 'statusResumeAge'];
 // v1.7.8-ri: R-i 기록 전용 최상위 필드(r1·2-i 에 없음). 최상위에서만 제외한다(같은 이름의 하위 키는 비교 유지).
-const RI_TOP_FIELDS = ['residence', 'residenceHistory', 'service'];
+const RI_TOP_FIELDS = ['residence', 'residenceHistory', 'service', 'location', 'locationHistory'];   // F1D4A P2(WD-4·EN-7): E-3 위치 필드도 비교에서 제외(2-i 기준 빌드에는 없는 최상위 필드)
 // T1-F F1-d4b(2026-11-09): 근속 기록 전용 최상위 필드 jobSince(r1·2-i 에 없음, lifeDigest·RNG 무관). 최상위에서만 제외.
 // T1-F(2026-11-10): 후속 선택 수명주기용 최상위 필드 pendingFollowup·followupSeq(r1·2-i 에 없음, lifeDigest·RNG 무관). 최상위에서만 제외.
 const JOB_TOP_FIELDS = ['jobSince', 'pendingFollowup', 'followupSeq'];

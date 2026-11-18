@@ -39,6 +39,7 @@ function clearAutoTimers() { while (autoTimers.length) clearTimeout(autoTimers.p
 // R1 롤백(N1-6): 후속 선택 효과가 바꿀 수 있는 필드만 저장한다. 복사본은 원본 참조와 독립이다.
 // 2-i 기록(falnaState·falnaHolder·falnaTransitions·conversionPending·syncBaseline)과 application·소속·관계 내용은 복원 대상이 아니다(효과가 건드리지 않으며 테스트로 직접 확인).
 const ROLLBACK_VALUE_FIELDS = ['job', 'jobSince', 'valis', 'hp', 'bond', 'feat', 'potential', 'excelia', 'level', 'hidden', 'maxLevel', 'power', 'alias', 'nextRelationId'];
+ROLLBACK_VALUE_FIELDS.push('location');   // F1D4A P2: E-3 현재 위치(값 필드). 이력(locationHistory) 복원은 P4 범위
 const ROLLBACK_CONTAINER_FIELDS = ['items', 'itemUses', 'itemsConsumed', 'relations'];   // 존재 여부·교체 여부만 되돌린다(내용은 효과가 바꾸지 않음)
 function takeRollbackSnapshot() {
     const has = k => Object.prototype.hasOwnProperty.call(S, k);
@@ -141,12 +142,19 @@ function getChoiceProbability(chance = {}, extraPower = 0) {
     return Math.min(0.95, Math.max(0.05, Number.isFinite(computed) ? computed : baseChance));
 }
 
-function match(c = {}) {
+// F1D4A P2(E-1.1·E-2): match(c, event) — 두 번째 인자는 판정 중인 사건 객체. 지금은 어떤 키도 쓰지 않는다(dungeonReach 는 P4).
+function match(c = {}, event) {
     if (c.job && !(Array.isArray(c.job) ? c.job : [c.job]).includes(S.job)) return false;
     if (c.age && (S.phase < c.age[0] || S.phase > c.age[1])) return false;      // 육체 나이
     if (c.cage && (S.age < c.cage[0] || S.age > c.cage[1])) return false;       // 달력 나이
     if (c.notRace && c.notRace.includes(S.race.id)) return false;
     if (c.familia && (!S.familia || !c.familia.includes(S.familia.id))) return false;
+    if (c.familiaIn && (!S.familia || !c.familiaIn.includes(S.familia.id))) return false;              // E-2: familia 와 같은 뜻의 정식 키
+    if (c.residenceIn && !(S.residence && c.residenceIn.includes(S.residence.regionId))) return false; // E-2: 거주지
+    if (c.locationIn && !(S.location && c.locationIn.includes(S.location.regionId))) return false;     // E-2: 현재 위치만(거주지·출생지 무관)
+    if (c.employerIn && !(S.employer && c.employerIn.includes(S.employer.id))) return false;           // E-2: 고용처
+    if (c.hasEmployer === true && !S.employer) return false;
+    if (c.hasEmployer === false && S.employer) return false;
     if (c.origin && !c.origin.includes(S.origin.id)) return false;
     if (c.race && !c.race.includes(S.race.id)) return false;
     if (c.hasFamilia === true && !S.familia) return false;
@@ -165,6 +173,21 @@ function match(c = {}) {
     if (c.max) for (const k in c.max) if (S[k] > c.max[k]) return false;
     return true;
 }
+// match() 가 실제로 판정하는 키(EN-12 대조용). atSiteOf·inRecruitAreaOf 는 P3, dungeonReach 는 P4 에서 추가한다.
+const MATCH_KEYS = ['job', 'age', 'cage', 'notRace', 'familia', 'familiaIn', 'residenceIn', 'locationIn', 'employerIn', 'hasEmployer', 'origin', 'race', 'hasFamilia',
+    'hasPartner', 'noItem', 'relative', 'noRelative', 'flags', 'noFlags', 'falnaState', 'familiaRole', 'canEnterDungeon', 'min', 'max'];
+// E-1.1 선택지 조건 허용 키(설계 목록 그대로). 관계 키(hasPartner·relative·noRelative)는 보조 함수가 S 를 정규화(쓰기)할 수 있어 제외.
+const CHOICE_COND_KEYS = ['job', 'age', 'cage', 'origin', 'race', 'notRace', 'flags', 'noFlags', 'falnaState', 'hasFamilia', 'familiaIn', 'familia', 'familiaRole',
+    'canEnterDungeon', 'noItem', 'min', 'max', 'residenceIn', 'locationIn', 'employerIn', 'hasEmployer', 'atSiteOf', 'inRecruitAreaOf'];
+// choiceMatch(c, e): 선택지 조건에만 쓰는 판정. match() 에 ① 허용 키 ② min/max 유한값 요구를 더한다. 상태 변경·난수·연표 0(EN-8).
+//   허용 목록 안이지만 아직 match() 가 판정하지 않는 키(atSiteOf·inRecruitAreaOf, P3)는 판정할 수 없으므로 숨김(fail-closed).
+function choiceMatch(c, e) {
+    if (!c || typeof c !== 'object') return false;
+    for (const k of Object.keys(c)) if (!CHOICE_COND_KEYS.includes(k) || !MATCH_KEYS.includes(k)) return false;
+    for (const lim of ['min', 'max']) if (c[lim]) for (const k in c[lim]) if (!Number.isFinite(S[k])) return false;
+    return match(c, e);
+}
+function visibleChoices(e) { return e.choices.filter(ch => !ch.cond || choiceMatch(ch.cond, e)); }
 
 function say(text, cls = '', age) {
     const d = document.createElement('div');
@@ -635,6 +658,7 @@ function applyEffects(fx, token) {
     if (fx.organization) joinOrganization(fx.organization);
     // ⑩ R-i: 거주·복무 기록(난수 0, 팔나·직업·소속·가족·플래그·로그 불변 — I-R1~I-R4)
     if (fx.residence) moveResidence(fx.residence, fx.residenceReason || 'event');
+    if (fx.location) moveLocation(fx.location, fx.locationReason || 'event');   // F1D4A P2(E-3): 현재 위치(거주지와 자동 동기화하지 않음)
     if (fx.service) recordService(fx.service);
     syncAtScopeEnd(token, fx);   // v1.7.8-2i 동기화 지점: ⑨ 직후·convertExp 직전(가장 바깥 범위만 기록)
     convertExp(); recompute(); renderStats();
@@ -734,6 +758,18 @@ function moveResidence(toRegionId, reason) {
     S.residence = { regionId: toRegionId, since: S.age };
     return true;
 }
+// ── F1D4A P2(E-3): 현재 위치 기록. moveResidence 와 같은 규칙. 거주지·출생지는 건드리지 않는다(자동 동기화 금지). 난수 0. ──
+function moveLocation(toRegionId, reason) {
+    if (haltedEntry('moveLocation')) return;   // 정지 가드
+    if (!REGION_IDS.includes(toRegionId)) { syncInvariantLog.push({ kind: 'location_unknown_region', value: toRegionId, eventId: S.currentEventId ?? null }); return false; }
+    if (!S.location || !Array.isArray(S.locationHistory) || S.locationHistory.length === 0) { syncInvariantLog.push({ kind: 'location_missing_state', eventId: S.currentEventId ?? null }); return false; }
+    if (S.location.regionId === toRegionId) return false;   // 같은 지역 = 이력 무변화
+    const cur = S.locationHistory[S.locationHistory.length - 1];
+    cur.to = S.age;
+    S.locationHistory.push({ seq: cur.seq + 1, regionId: toRegionId, from: S.age, to: null, reason: reason || 'event', eventId: S.currentEventId ?? null });
+    S.location = { regionId: toRegionId, since: S.age };
+    return true;
+}
 // 복무 기록(RES-2 §3.4). S.flags 와 분리. R-i 에서는 생성만 하고 해제·조건 판정에 쓰지 않는다.
 function recordService(kind) {
     if (haltedEntry('recordService')) return;   // H3 정지 가드
@@ -765,7 +801,9 @@ function startLife() {
           // v1.7.8-2i 기록 필드(설계 §2.8 a): 생성과 동시에 none. 초기 상태는 전이 이력에 넣지 않는다.
           falnaState: 'none', falnaHolder: null, conversionPending: null, falnaTransitions: [], currentEventId: null, syncBaseline: null,
           // R-i(기록 전용): 출생 시 거주지 = 출생지. 이력 구간은 달력 나이 기준 반열린 구간 [from, to).
-          residence: { regionId: origin.id, since: 0 }, residenceHistory: [{ seq: 1, regionId: origin.id, from: 0, to: null, reason: 'birth', eventId: null }], service: {} };   // 2a: 비활성 데이터 모델(동작 연결 없음)
+          residence: { regionId: origin.id, since: 0 }, residenceHistory: [{ seq: 1, regionId: origin.id, from: 0, to: null, reason: 'birth', eventId: null }], service: {},
+          // F1D4A P2(E-3): 출생 시 현재 위치 = 출생지. 거주지와 따로 만든다. 난수 0. lifeDigest 입력 아님.
+          location: { regionId: origin.id, since: 0 }, locationHistory: [{ seq: 1, regionId: origin.id, from: 0, to: null, reason: 'birth', eventId: null }] };   // 2a: 비활성 데이터 모델(동작 연결 없음)
     $('log').innerHTML = ''; $('choices').innerHTML = '';
     switchScreen('screen-play');
     apply((MODS.origins[origin.id] || {}).fx);
@@ -880,10 +918,17 @@ function nextYear() {
             if (e.once && S.done.includes(e.id)) return false;
             if (!e.once && count >= (e.maxTimes || 2)) return false;
             if (last != null && S.phase - last < (e.cool || 2)) return false;
-            return match(e.cond);
+            return match(e.cond, e) && visibleChoices(e).length > 0;   // E-1.2 ⑩: 보이는 선택지 0개 사건은 추첨 전에 제외
         }).map(e => ({ ...e, w: e.w * (S.recentEvents.slice(-4).includes(e.id) ? 0.12 : 1) }));
         const e = getRandomItemByWeight([...pool, { w: 5, none: true }], 'w');
         if (!e.none) {
+            // E-1.2 ⑫: 표시 전 재검사(정상 흐름에서는 ⑩ 과 같은 결과). 실패하면 진단을 남기고 "사건 없음"과 똑같이 처리한다.
+            const condOk = match(e.cond, e), visOk = condOk && visibleChoices(e).length > 0;
+            if (!condOk || !visOk) {
+                followupDiag('event_recheck_failed', { where: 'nextYear', part: !condOk ? 'cond' : 'choices', eventId: e.id });
+                if (S.age > 2) skipped++;
+                continue;
+            }
             renderStats();
             if (skipped) say(`평온하게 ${skipped}년이 흘렀다.`, 'result');
             return showEvent(e);
@@ -893,7 +938,10 @@ function nextYear() {
 }
 
 function showEvent(e) {
-    if (haltedEntry('showEvent')) return;   // H1 정지 가드
+    if (haltedEntry('showEvent')) return;   // H1 정지 가드(반환 undefined)
+    // E-1.3: 보이는 선택지가 0개면 상태·연표·버튼·타이머·난수를 건드리기 전에 false. 사건 조건은 다시 보지 않는다(nextYear ⑫ 의 책임).
+    const vis = visibleChoices(e);
+    if (vis.length === 0) { followupDiag('event_no_visible_choice', { where: 'showEvent', eventId: e.id }); return false; }
     S.currentEventId = e.id;   // v1.7.8-2i: 기록 전용, choose() 의 finally 에서 null
     say(e.text, 'event', S.age);
     if (e.once) S.done.push(e.id);
@@ -901,7 +949,7 @@ function showEvent(e) {
     S.lastEventPhase[e.id] = S.phase;
     S.recentEvents.push(e.id);
     if (S.recentEvents.length > 8) S.recentEvents.shift();
-    e.choices.forEach(ch => {
+    vis.forEach(ch => {   // E-1.4: 보이는 선택지만 버튼으로 만든다
         const b = document.createElement('button');
         b.className = 'choice'; b.textContent = ch.label;
         b.onclick = () => choose(ch);
@@ -911,6 +959,7 @@ function showEvent(e) {
         const bs = $('choices').querySelectorAll('button');
         if (bs.length) bs[Math.floor(Math.random() * bs.length)].click();
     }, 800);
+    return true;   // E-1.3: 정상 표시
 }
 
 function choose(ch) {
@@ -920,6 +969,8 @@ function choose(ch) {
 }
 function chooseBody(ch) {
     if (haltedEntry('chooseBody')) return;   // H1 정지 가드
+    // E-1.4: 숨긴 선택지 직접 호출 거부(choices 비우기·확률 판정 전). 상태·난수 불변.
+    if (ch && ch.cond && !choiceMatch(ch.cond, EVENTS.find(x => x.id === S.currentEventId))) { followupDiag('hidden_choice_rejected', { eventId: S.currentEventId ?? null }); return; }
     $('choices').innerHTML = '';
     let r = ch;
     if (ch.chance) {

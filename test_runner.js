@@ -783,6 +783,9 @@ const integrationScript = `
     const classifyShowEvent = function (r, cap) {
         const disposition = showEventDisposition(r, cap.haltedAtCall);   // 공통 규칙(tests/lib/commit_queue.js)
         if (disposition === 'discard') return { kind: 'discard', reason: String(r) };
+        // F1D4A P2(D1): 엔진 단계에서 정상 표시는 true 를 반환한다. 정지 아님 + undefined 는 더 이상 정상 경로가 아니므로
+        // 반영하지 않고 하네스 무결성 오류로 표시한다(legacy 분기 비활성화. 결과는 무효 처리).
+        if (disposition === 'commit-legacy' && typeof visibleChoices === 'function') { showEventQueue.markHarnessBroken('legacy_undefined_return', null, new Error('showEvent returned undefined while not halted')); return { kind: 'discard', reason: 'legacy-undefined' }; }
         return { kind: 'commit', legacyUndefined: disposition === 'commit-legacy', d3: cap.d3, sinkOut: cap.sinkOut, ops: cap.ops, paused: cap.paused };
     };
     const showEventQueue = createCommitQueue(applyShowEventCommit);
