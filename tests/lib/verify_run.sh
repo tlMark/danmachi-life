@@ -19,8 +19,16 @@
 #
 # 설계 원칙
 #   1. 명령 출력(logs/)은 판정에 쓰지 않는다. 명령이 "exit=0" 같은 글자를 출력해도, 자식 프로세스가 뒤늦게 로그에 써도 판정과 무관하다.
-#   2. 종료 상태는 래퍼(run)만 쓰는 전용 파일에 있다. 형식은 정확히 한 줄: "v1 <태그> <이름> <종료 코드>".
-#      <태그> = sha256(실행 토큰 ":" 이름). 실행 토큰은 내보내지 않는 셸 변수라 명령이 알 수 없어 상태 기록을 흉내 낼 수 없다.
+#   2. 종료 상태는 래퍼(run)만 쓰는 전용 파일에 있다. 형식은 정확히 한 줄: "v2 <mac> <이름> <종료 코드>".
+#      <mac> = HMAC-SHA256(키 = 실행 토큰, "vr-status\nv2\n" 이름의 바이트 길이 ":" 이름 "\n" 종료 코드 "\n") — 버전·이름·코드를 모두 결속
+#      (같은 inode 에서 코드만 바꿔도 불일치). 실행 토큰은 내보내지 않는 셸 변수라 명령이 알 수 없어 상태 기록을 흉내 낼 수 없다.
+#      bg 종료 기록도 같은 방식으로 본문 전체를 결속한다(vr__bg_rec_mac). v1 형식은 손상으로 거부한다.
+#   2b. **실제 종료 코드는 메모리에도 있다(VR__RAN).** run 이 상태를 놓은 뒤 그 셸의 VR__RAN[이름]=코드 로 기억하고, bg 하위 셸은
+#      종료 기록의 S 줄(위 mac 으로 결속)로 부모에게 넘기며 부모가 합친다. vr_finish 는 상태 파일의 코드가 메모리의 코드와 같을 때만 받고
+#      (다르면 "상태 기록 불일치"), 메모리에 없으면 "실행 기록 없음" 으로 실패한다(실패 시 닫힘). 판정에 쓰는 코드는 메모리 코드다.
+#   위협 모델: 토큰을 모르는 명령·후손·같은 권한의 프로세스가 출력 폴더의 파일을 읽고 바꾸는 경우(경로 교체·같은 inode 내용 변경·삭제·
+#      재사용)를 막는다. 검증 셸의 메모리를 읽거나 바꿀 수 있는 프로세스(같은 uid 에서 ptrace·/proc/<pid>/mem 이 허용되는 환경, root,
+#      CAP_SYS_PTRACE)나 실행 전 스크립트 변경은 막지 않는다 — 이 도구는 보안 경계가 아니라 시험 명령이 실패를 성공으로 바꾸지 못하게 하는 장치다.
 #   3. 상태 기록은 원자적이다: 임시 파일에 다 쓴 뒤 그 fd 의 객체를 link(2)(vr__link_place)로 한 번에 놓는다. 쓰는 도중이나 직전에 래퍼가
 #      죽으면 상태 파일이 없다.
 #   4. 같은 이름의 중복 실행은 mkdir(원자적)로 만든 선점 표식(status/<이름>.claim)으로 막는다.
@@ -37,7 +45,10 @@
 #   "<이름> exit=N"                             종료 코드가 0 이 아님(신호로 죽은 명령은 128 + 신호 번호)
 #   "<이름> 시작되지 않음"                      선점 표식이 없음(호출이 빠졌거나, 앞 항목에서 하위 셸이 죽음)
 #   "<이름> 시작했으나 상태 기록 없음"          선점 표식은 있는데 status 가 없음(실행 도중 또는 기록 직전에 래퍼가 죽음)
-#   "<이름> 상태 기록 손상"                     status 의 형식·태그·이름·코드가 맞지 않음(위조·잘림 포함)
+#   "<이름> 상태 기록 손상"                     status 의 형식·mac·이름·코드가 맞지 않음(위조·잘림·v1 형식 포함)
+#   "<이름> 상태 기록 불일치(파일 X, 실행 Y)"   status 는 형식·mac 이 맞지만 코드가 run 이 기억한 실제 종료 코드와 다름
+#   "<이름> 실행 기록 없음(상태 파일과 대조 불가)"  status 는 유효하지만 이 셸이 그 실행의 종료 코드를 모름(bg 종료 기록 유실 등)
+#   "<이름> 실행 기록 충돌"                     bg 종료 기록들이 같은 이름의 실행 코드를 두 번 전달함
 #   "<이름> 미완료 상태 기록"                   쓰다 만 임시 파일이 남아 있음
 #   "<이름> 로그 없음"                          상태는 있는데 로그 파일이 없음
 #   "<이름> 등록되지 않은 항목" / "<이름> 중복 실행 시도" / "<이름> 중복 등록" / "<이름> 등록되지 않은 상태 기록" / "<이름> 등록되지 않은 로그"
@@ -48,6 +59,7 @@
 VR_OUT=""; VR_L=""; VR_ST=""; VR_TOKEN=""; VR_RUN_ID=""; VR_LIFE=""; VR_LIFE_W=""; VR_LDONE=""; VR_LDONE_R=""; VR_MSGS=""; VR_LIFE_RD=""; VR_MSGS_R=""; VR_LIFE_R=""; VR__READER_STATE=""; VR__INIT_ERR=""; VR__INIT_PID=""; VR__WV_LEFT=""; VR__INIT_OK=0; VR__INIT_CLEANUP_FAIL=0; VR__HELD_OUT=""; VR__LOCK=""; VR__LOCK_ID=""; VR__LOCK_FD=""; VR__NOTES_FD=""; VR__NOTES_AT=""; VR__EXP_FD=""; VR__EXP_AT=""; VR__FAILS_FD=""; VR__FAILS_AT=""; VR__PREV_FAILS_FD=""; VR__PREV_NOTES_FD=""; VR__PREV_EXP_FD=""; VR__PREV_FAILS_AT=""; VR__PREV_NOTES_AT=""; VR__PREV_EXP_AT=""; VR__WV_KEEP=""; VR__WV_FD=""
 VR_FAILS=""; VR_EXPECTED=""; VR_NOTES=""; VR_STEPS=""; VR_DONE=""
 VR_EXP=(); declare -A VR_EXPN=()
+declare -A VR__RAN=() VR__RAN_SEEN=()     # run 이 기억한 실제 종료 코드(이름 → 코드), 합친 bg 종료 기록 id
 VR_VIOLATED=0; VR_IOERR=0; VR_RUN_ERRS=()
 VR_BG_PIDS=(); VR_BG_LABELS=(); VR_BG_FAILS=(); VR_BG_IDS=(); VR_BG_ST=(); VR_BG_RC=(); VR_BG_SEQ=0; VR_BGREC=""; VR_BG_PATH=""
 
@@ -234,7 +246,7 @@ vr__platform_check() {
     if [ "${BASH_VERSINFO[0]}" -lt 4 ] || { [ "${BASH_VERSINFO[0]}" -eq 4 ] && [ "${BASH_VERSINFO[1]}" -lt 4 ]; }; then why+=" bash 4.4 이상 필요(현재 $BASH_VERSION)"; fi
     [ "$(uname -s 2>/dev/null)" = Linux ] || why+=" Linux 전용(현재 $(uname -s 2>/dev/null))"
     { [ -d /proc/self/fd ] && [ -e /dev/fd/0 ] && [ /dev/fd/0 -ef /proc/self/fd/0 ]; } || why+=" procfs(/proc/self/fd)와 /dev/fd 필요"
-    local c; for c in timeout mv stat mktemp mkfifo od tr ln; do
+    local c; for c in timeout mv stat mktemp mkfifo od tr ln sha256sum; do
         command -v "$c" > /dev/null 2>&1 || { why+=" $c 없음"; continue; }
         "$c" --version 2>/dev/null | head -1 | grep -q 'GNU coreutils' || why+=" GNU coreutils 의 $c 필요"
     done
@@ -306,6 +318,9 @@ vr__platform_probe() {
         # 정리: 확인용 이름만 지운다(동작이 틀린 명령이 폴더 d 안으로 옮겼을 수 있는 이름 포함). 남으면 사유에 더한다.
         rm -f -- "$p/f" "$p/a" "$p/b" "$p/c" "$p/e" "$p/d/a" "$p/d/b" "$p/d/c" 2>/dev/null; rmdir -- "$p/d" "$p" 2>/dev/null || why+=" 확인용 폴더 정리 실패($p)"
     fi
+    # HMAC-SHA256 알려진 답(RFC 4231 시험 사례 2) — 상태 기록·종료 기록의 mac 이 표준 HMAC 으로 계산되는지
+    o=$(vr__hmac Jefe "what do ya want for nothing?" 2>/dev/null)
+    [ "$o" = 5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843 ] || why+=" HMAC-SHA256(sha256sum) 알려진 답 불일치"
     if [ -n "$why" ]; then VR__INIT_ERR="지원하지 않는 환경(기능 확인):$why"; printf 'vr_init: %s\n' "$VR__INIT_ERR" >&2; return 1; fi
     return 0
 }
@@ -380,6 +395,7 @@ vr__app_drop_new() {
 }
 vr__state_clear() {   # 실행 상태 무효화: 경로·토큰·실행 ID·등록 목록·실패 목록·bg 상태. 생명주기 fd·잠금·추가 기록 fd 는 각자의 정리 함수가 닫는다
     VR_OUT=""; VR_L=""; VR_ST=""; VR_FAILS=""; VR_EXPECTED=""; VR_STEPS=""; VR_NOTES=""; VR_DONE=""; VR_BGREC=""; VR_TOKEN=""; VR_RUN_ID=""
+    VR__RAN=(); VR__RAN_SEEN=()
     VR_EXP=(); VR_EXPN=(); VR_VIOLATED=0; VR_IOERR=0; VR_RUN_ERRS=(); VR_BG_PIDS=(); VR_BG_LABELS=(); VR_BG_FAILS=(); VR_BG_IDS=(); VR_BG_ST=(); VR_BG_RC=(); VR_BG_SEQ=0; VR_BG_PATH=""
     VR__WV_LEFT=""; VR__WV_KEEP=""; VR__WV_FD=""
 }
@@ -399,6 +415,7 @@ vr__init_body() {
     VR_L="$VR_OUT/logs"; VR_ST="$VR_OUT/status"
     VR_FAILS="$VR_OUT/failed_steps.txt"; VR_EXPECTED="$VR_OUT/expected_steps.txt"; VR_STEPS="$VR_OUT/step_status.txt"
     VR_NOTES="$VR_ST/_violations.txt"; VR_DONE="$VR_L/99_done.log"
+    VR__RAN=(); VR__RAN_SEEN=()
     VR_EXP=(); VR_EXPN=(); VR_VIOLATED=0; VR_IOERR=0; VR_RUN_ERRS=(); VR_BG_PIDS=(); VR_BG_LABELS=(); VR_BG_FAILS=(); VR_BG_IDS=(); VR_BG_ST=(); VR_BG_RC=(); VR_BG_SEQ=0; VR_BG_PATH=""
     VR_BGREC="$VR_OUT/bg"
     local sub
@@ -647,7 +664,7 @@ vr__link_place() {
     # 남았으면 3. ② 는 맞지만 ① 이 1 이 아니면(우리 객체에 다른 이름이 생김) 3.
     # 남는 한계: ② 를 본 뒤(반환 뒤)의 변경은 이 함수가 알 수 없다 — 같은 권한의 프로세스는 언제든 경로를 바꿀 수 있다. 그래서 반환 0 은
     # "② 시점에 최종 경로가 우리 객체" 라는 뜻이며, 결과를 쓰는 쪽이 다시 확인한다: vr__write_verified 는 다시 읽어 fd 와 같은 객체·내용인지
-    # 확인, run 의 로그는 명령 뒤 경로 = fd 확인, 상태 기록·보고 파일은 읽는 쪽(vr_status_code·vr_finish)이 태그(토큰 기반)·형식을 검증.
+    # 확인, run 의 로그는 명령 뒤 경로 = fd 확인, 상태 기록·보고 파일은 읽는 쪽(vr_status_code·vr_finish)이 mac(HMAC-SHA256, 토큰 키)·형식을 검증하고 vr_finish 는 메모리의 실제 코드와 대조.
     declare -F vr_hook_place_final > /dev/null && vr_hook_place_final "$f" "$t"                # 시험용 주입 지점(정리 뒤·최종 확인 전)
     h=$(stat -L -c %h "/dev/fd/$fd" 2>/dev/null)
     if [ ! -L "$f" ] && [ -f "$f" ] && [ "$f" -ef "/dev/fd/$fd" ]; then
@@ -841,7 +858,30 @@ vr_expect() {
     done
 }
 
-vr_tag() { printf '%s' "$VR_TOKEN:$1" | sha256sum | cut -d' ' -f1; }
+vr_tag() { printf '%s' "$VR_TOKEN:$1" | sha256sum | cut -d' ' -f1; }   # v1 전용(이전 형식). 판정·기록에 쓰지 않는다 — 이름만 덮고 코드·본문을 덮지 않음
+# vr__hmac <키> <메시지> : 표준 HMAC-SHA256(16진 64자)을 출력. GNU coreutils sha256sum 과 bash printf 만 쓴다.
+#   키는 64바이트 이하·NUL 없음(실행 토큰은 16진 48자). 키 ⊕ ipad/opad 는 printf 형식 문자열(\xHH)로 만들고(NUL 은 나오지 않음 — 0 채움 자리는
+#   0x36/0x5c), 내부 해시의 이진 바이트(NUL 가능)는 변수에 담지 않고 파이프로만 보낸다. 메시지는 printf '%s' 로 바이트 그대로.
+#   vr__platform_probe 가 RFC 4231 시험 사례 2 로 확인한다.
+vr__hmac() {
+    local LC_ALL=C k=$1 m=$2 i c ip="" op="" h bin="" x
+    [ ${#k} -le 64 ] || return 1
+    for ((i = 0; i < 64; i++)); do
+        if [ $i -lt ${#k} ]; then printf -v c '%d' "'${k:i:1}"; else c=0; fi
+        printf -v x '\\x%02x' $(( c ^ 0x36 )); ip+=$x
+        printf -v x '\\x%02x' $(( c ^ 0x5c )); op+=$x
+    done
+    read -r h _ < <({ printf "$ip"; printf '%s' "$m"; } | sha256sum) || return 1
+    [[ "$h" =~ ^[0-9a-f]{64}$ ]] || return 1
+    for ((i = 0; i < 64; i += 2)); do bin+="\\x${h:i:2}"; done
+    read -r h _ < <({ printf "$op"; printf "$bin"; } | sha256sum) || return 1
+    [[ "$h" =~ ^[0-9a-f]{64}$ ]] || return 1
+    printf '%s\n' "$h"
+}
+vr_mac() { [ "${#VR_TOKEN}" -eq 48 ] || return 1; vr__hmac "$VR_TOKEN" "$1"; }   # vr_mac <메시지> : 실행 토큰을 키로 한 HMAC
+vr__len() { local LC_ALL=C; printf '%s' "${#1}"; }   # 바이트 길이(로캘 무관)
+vr__st_mac() { vr_mac "vr-status"$'\n'"v2"$'\n'"$(vr__len "$1"):$1"$'\n'"$2"$'\n'; }   # vr__st_mac <이름> <코드> : 상태 기록 mac
+vr__bg_rec_mac() { vr_mac "vr-bgrec"$'\n'"v2"$'\n'"$(vr__len "$1"):$1"$'\n'"$2"; }      # vr__bg_rec_mac <id> <본문 바이트(첫 줄 뒤 전체)> : 종료 기록 mac
 
 run() {
     local name=$1; shift
@@ -865,10 +905,10 @@ run() {
     # 상태(D): 임시 이름은 그대로(미완료 판정·시험 호환) 두되 vr__new_obj 로 만들어 그 fd 로만 쓰고, 그 fd 의 객체를 vr__link_place(link(2),
     # 덮어쓰지 않음)로 놓은 뒤 같은 객체인지 확인
     local tag tmp="$VR_ST/$name.status.tmp.$BASHPID" sfd="" sr
-    tag=$(vr_tag "$name") && [ ${#tag} -eq 64 ] || { vr__ioerr "$name 상태 태그 계산"; return 2; }
+    tag=$(vr__st_mac "$name" "$code") && [ ${#tag} -eq 64 ] || { vr__ioerr "$name 상태 태그 계산"; return 2; }   # mac: 버전·이름·코드 결속
     vr__new_obj "$tmp" sfd; sr=$?
     if [ $sr -ne 0 ]; then vr__ioerr "$name 상태 임시 파일"; [ $sr -eq 3 ] && vr__ioerr "임시 파일 정리 $VR__WV_LEFT"; return 2; fi
-    if ! printf 'v1 %s %s %s\n' "$tag" "$name" "$code" 2>/dev/null >&"$sfd"; then
+    if ! printf 'v2 %s %s %s\n' "$tag" "$name" "$code" 2>/dev/null >&"$sfd"; then
         vr__wv_drop "$tmp" "$sfd" || { :; }; [ -n "$VR__WV_LEFT" ] && vr__ioerr "임시 파일 정리 $VR__WV_LEFT"
         vr__ioerr "$name 상태 임시 파일"; return 2
     fi
@@ -882,17 +922,20 @@ run() {
         *) eval "exec $sfd>&-"; [ $sr -eq 3 ] && vr__ioerr "임시 파일 정리 $VR__WV_LEFT"; vr__ioerr "$name 상태 파일 놓기"; return 2 ;;
     esac
     eval "exec $sfd>&-"
+    VR__RAN[$name]=$code          # 실제 종료 코드(메모리) — vr_finish 가 상태 파일의 코드와 대조한다. bg 하위 셸이면 종료 기록의 S 줄로 부모에게
     return $code
 }
 
 # 백그라운드 작업(vr_bg / vr_wait).
 # 파일($VR_BGREC = <출력>/bg):
 #   <id>.run   실행 표식. 부모가 작업을 만든 직후 그 PID 를 적는다. 부모가 회수를 마치면 <id>.done 으로 바꾼다.
-#   <id>       종료 기록. 하위 셸이 끝나기 직전에 쓴다(tmp → vr__mv_excl: fd 의 객체를 덮어쓰지 않고 놓음). 첫 줄 "v1 <태그> <id>", 이후 줄 "<종류> <내용>":
-#              L = 작업 이름(경로), C = 하위 셸이 끝낸 종료 코드, V = 위반, I = 기록 실패, B = 그 하위 셸이 회수한 자식 작업의 실패.
+#   <id>       종료 기록. 하위 셸이 끝나기 직전에 쓴다(tmp → vr__mv_excl: fd 의 객체를 덮어쓰지 않고 놓음). 첫 줄 "v2 <mac> <id>", 이후 줄 "<종류> <내용>":
+#              L = 작업 이름(경로), C = 하위 셸이 끝낸 종료 코드, V = 위반, I = 기록 실패, B = 그 하위 셸이 회수한 자식 작업의 실패,
+#              S = "<이름 바이트 길이>:<이름> <코드>" 그 하위 셸(과 합친 자식)이 run 으로 실행한 항목의 실제 종료 코드.
+#              mac = HMAC-SHA256(토큰, "vr-bgrec\nv2\n" id 바이트 길이 ":" id "\n" + 첫 줄 뒤 본문 바이트 전체) — 본문의 어느 줄을 바꿔도 손상.
 #   <id>.read  회수한 종료 기록(부모가 읽고 반영한 뒤 이름을 바꾼다. 목적 경로가 이미 있으면 실패).
 # 부모(vr_wait)는 자기가 만든 작업만 PID 마다 wait 하고(PID 목록은 셸마다 따로이며 하위 셸은 빈 목록으로 시작), 종료 기록을 검증해
-# V·I 는 자기 위반·기록 실패로, B 는 자기 bg 실패로 옮긴다. 기록의 C 가 실제 종료 코드와 다르면(신호 종료 제외) 손상으로 본다.
+# V·I 는 자기 위반·기록 실패로, B 는 자기 bg 실패로, S 는 자기 실행 기록(VR__RAN)으로 옮긴다. 기록의 C 가 실제 종료 코드와 다르면(신호 종료 제외) 손상으로 본다.
 # 작업마다 회수 상태(0 대기 전 / 1 처리 중 / 2 완료)를 두어, 회수 도중 재진입해도 이미 끝난 작업은 다시 처리하지 않고 남은 작업을 이어서 회수한다.
 # 중첩: 하위 셸 안에서 만든 작업의 이름은 "<부모 경로>/<이름>"(최상위는 이름 그대로). 하위 셸은 끝날 때(vr__bg_finish) 먼저 자기 자식을
 # 모두 회수한다. 회수 중 재진입하면 남은 자식을 한 번 더 이어서 회수하고 "회수 중 재진입"을 실패로 남긴다. 그래도 남은 자식이 있으면
@@ -916,20 +959,24 @@ vr__bg_record_lines() {   # 종료 기록의 본문 줄(종류 표시 포함). $
     printf 'L %s\nC %s\n' "$VR_BG_PATH" "$1"
     for e in "${VR_RUN_ERRS[@]}"; do case "$e" in "기록 실패: "*) printf 'I %s\n' "$e" ;; *) printf 'V %s\n' "$e" ;; esac; done
     for e in "${VR_BG_FAILS[@]}"; do printf 'B %s\n' "$e"; done
+    for e in "${!VR__RAN[@]}"; do printf 'S %s:%s %s\n' "$(vr__len "$e")" "$e" "${VR__RAN[$e]}"; done   # 이 하위 셸(과 합친 자식)이 실행한 항목의 실제 코드
 }
 # 종료 기록을 읽어 검증하고, 유효하면 V·I·B 를 메모리에 반영한다. vr__bg_read_record <파일> <id> <이름(빈 값이면 기록의 L 을 씀)>
 # 반환: 0 = 유효(vr__rec_code, vr__rec_label 설정), 1 = 읽기 실패(기록 실패로 기억), 2 = 손상(bg 실패로 기억, 내용은 반영하지 않음)
 vr__bg_read_record() {
-    local f=$1 id=$2 label=$3 tag l body rc; local -a lines=() pv=() pi=() pb=()
+    local f=$1 id=$2 label=$3 tag l body rc first rest sn sl sc sr i; local -a lines=() pv=() pi=() pb=() psn=() psc=(); local -A pseen=()
     vr__rec_code=""; vr__rec_label=""
     # 한 번만 바이트 보존으로 읽는다: NUL 이 하나라도 있으면 손상(명령 치환·mapfile 이 NUL 을 지워 정상 기록으로 보이지 않게)
     if [ ! -f "$f" ] || [ -L "$f" ]; then vr__ioerr "bg:${label:-$id} 종료 기록 읽기"; return 1; fi
     vr__read_path_bytes body "$f"; rc=$?
     if [ $rc -eq 4 ]; then VR_BG_FAILS+=("bg:${label:-$id} 종료 기록 손상"); return 2; fi
     if [ $rc -ne 0 ]; then vr__ioerr "bg:${label:-$id} 종료 기록 읽기"; return 1; fi
+    # v2: 첫 줄 "v2 <mac> <id>", mac = HMAC(토큰, 영역·버전·id·첫 줄 뒤 본문 바이트 전체) — 본문 줄의 추가·삭제·변경·순서 모두 불일치
+    case "$body" in *$'\n'*) ;; *) VR_BG_FAILS+=("bg:${label:-$id} 종료 기록 손상"); return 2 ;; esac
+    first=${body%%$'\n'*}; rest=${body#*$'\n'}
+    tag=$(vr__bg_rec_mac "$id" "$rest") && [ ${#tag} -eq 64 ] || { vr__ioerr "bg:${label:-$id} 종료 기록 태그 계산"; return 1; }
+    if [ "$first" != "v2 $tag $id" ]; then VR_BG_FAILS+=("bg:${label:-$id} 종료 기록 손상"); return 2; fi
     mapfile -t lines < <(printf '%s' "$body")
-    tag=$(vr_tag "bg:$id") && [ ${#tag} -eq 64 ] || { vr__ioerr "bg:${label:-$id} 종료 기록 태그 계산"; return 1; }
-    if [ "${lines[0]:-}" != "v1 $tag $id" ]; then VR_BG_FAILS+=("bg:${label:-$id} 종료 기록 손상"); return 2; fi
     for l in "${lines[@]:1}"; do
         case "$l" in
             "L "?*) [ -z "$vr__rec_label" ] || { VR_BG_FAILS+=("bg:${label:-$id} 종료 기록 손상"); return 2; }; vr__rec_label=${l#L } ;;
@@ -938,6 +985,12 @@ vr__bg_read_record() {
             "V "?*) pv+=("${l#V }") ;;
             "I "?*) pi+=("${l#I }") ;;
             "B "?*) pb+=("${l#B }") ;;
+            "S "?*) sr=${l#S }; sl=${sr%%:*}                          # "S <이름 바이트 길이>:<이름> <코드>"
+                    [[ "$sl" =~ ^(0|[1-9][0-9]{0,5})$ ]] && [ "$sl" -gt 0 ] || { VR_BG_FAILS+=("bg:${label:-$id} 종료 기록 손상"); return 2; }
+                    sr=${sr#*:}; sn=$(LC_ALL=C; printf '%s' "${sr:0:sl}"); sc=$(LC_ALL=C; printf '%s' "${sr:sl}")
+                    [ "$(vr__len "$sn")" = "$sl" ] && [[ "$sc" =~ ^\ (0|[1-9][0-9]{0,2})$ ]] && [ "${BASH_REMATCH[1]}" -le 255 ] \
+                        && [ -z "${pseen[$sn]+x}" ] || { VR_BG_FAILS+=("bg:${label:-$id} 종료 기록 손상"); return 2; }
+                    pseen[$sn]=1; psn+=("$sn"); psc+=("${BASH_REMATCH[1]}") ;;
             *) VR_BG_FAILS+=("bg:${label:-$id} 종료 기록 손상"); return 2 ;;
         esac
     done
@@ -947,6 +1000,13 @@ vr__bg_read_record() {
     if [ ${#pv[@]} -gt 0 ]; then VR_VIOLATED=1; VR_RUN_ERRS+=("${pv[@]}"); fi
     if [ ${#pi[@]} -gt 0 ]; then VR_IOERR=1; VR_RUN_ERRS+=("${pi[@]}"); fi
     if [ ${#pb[@]} -gt 0 ]; then VR_BG_FAILS+=("${pb[@]}"); fi
+    # 실행 코드 합치기: 같은 기록(id)은 한 번만(회수 재진입·고아 흡수에서 다시 읽어도 중복되지 않음). 이미 있는 이름이면 충돌(실패)
+    if [ -z "${VR__RAN_SEEN[$id]+x}" ]; then
+        VR__RAN_SEEN[$id]=1
+        for i in "${!psn[@]}"; do
+            if [ -n "${VR__RAN[${psn[$i]}]+x}" ]; then VR_BG_FAILS+=("${psn[$i]} 실행 기록 충돌"); else VR__RAN[${psn[$i]}]=${psc[$i]}; fi
+        done
+    fi
     return 0
 }
 # 회수 표시: <파일> → <파일>.read. 목적 경로가 이미 있으면(파일·디렉터리·링크 무엇이든) 실패. 옮긴 뒤 목적 경로가 일반 파일이고 원본이 없어야 한다.
@@ -1058,10 +1118,11 @@ vr__bg_finish() {   # vr__bg_finish <코드> : 자식을 회수하고, 종료 �
     # 실패하면 2 로 끝나고(부모: "종료 기록 없음"), 원인을 기록 폴더와 무관한 경로 — 생명주기 FIFO — 로 최상위에 알린다:
     # 한 줄 "E <작업 경로>"(PIPE_BUF 보다 작아 원자적으로 쓰임). 최상위는 이를 "기록 실패: bg:<경로> 종료 기록 쓰기"(3)로 판정한다.
     # 기록 임시 파일(D): vr__new_obj 로 만든 fd 로만 쓰고, 경로가 그 객체인지 확인한 뒤 배타 이동
-    local rfd=""
-    if ! vr__inject recwrite && tag=$(vr_tag "bg:$vr__bg_id") && [ ${#tag} -eq 64 ] \
+    local rfd="" rbody=""
+    if ! vr__inject recwrite && rbody=$(vr__bg_record_lines "$code"; printf x) && rbody=${rbody%x} \
+       && tag=$(vr__bg_rec_mac "$vr__bg_id" "$rbody") && [ ${#tag} -eq 64 ] \
        && vr__new_obj "$f.tmp" rfd \
-       && { printf 'v1 %s %s\n' "$tag" "$vr__bg_id"; vr__bg_record_lines "$code"; } 2>/dev/null >&"$rfd" \
+       && printf 'v2 %s %s\n%s' "$tag" "$vr__bg_id" "$rbody" 2>/dev/null >&"$rfd" \
        && [ ! -L "$f.tmp" ] && [ "$f.tmp" -ef "/dev/fd/$rfd" ] \
        && vr__mv_excl "$f.tmp" "$f" "$rfd" && [ "$f" -ef "/dev/fd/$rfd" ]; then eval "exec $rfd>&-"
     else
@@ -1091,6 +1152,7 @@ vr_bg() {
       for vr__v in VR__FAILS_FD VR__LOCK_FD VR__PREV_FAILS_FD VR__PREV_NOTES_FD VR__PREV_EXP_FD; do if [ -n "${!vr__v:-}" ]; then eval "exec ${!vr__v}>&-" 2>/dev/null; fi; eval "$vr__v=''"; done   # 최상위 전용(보고·잠금)
       for vr__v in VR_LDONE_R VR_MSGS_R VR_LIFE_R; do if [ -n "${!vr__v:-}" ]; then eval "exec {$vr__v}<&-"; fi; eval "$vr__v=''"; done
       VR_VIOLATED=0; VR_IOERR=0; VR_RUN_ERRS=(); VR_BG_PIDS=(); VR_BG_LABELS=(); VR_BG_IDS=(); VR_BG_ST=(); VR_BG_RC=(); VR_BG_FAILS=()
+      VR__RAN=(); VR__RAN_SEEN=()   # 부모의 실행 기록은 넘기지 않는다(S 줄에는 이 하위 셸과 그 자식이 실행한 것만)
       VR_BG_PATH=$label; vr__bg_id=$id; vr__bg_code=""; vr__bg_depth=0; vr__bg_reentered=""; vr__bg_self=$BASHPID
       vr__bg_pend=""; vr__task_trap=""; vr__task_trap_ran=""; vr__in_task_trap=""; vr__bg_trapchk=""
       vr__bg_trap_code=""; vr__trap_natural=""; vr__bg_lifechk=""
@@ -1232,19 +1294,23 @@ vr__bg_collect_orphans() {
 }
 
 # 상태 기록을 검증해 종료 코드를 출력한다. 반환: 0 = 유효(코드를 출력), 1 = 없음, 2 = 손상 또는 읽기 실패
-vr_status_code() {   # 상태 기록은 바이트 단위로 정확히 "v1 <태그> <이름> <코드>\n" 한 줄이어야 한다(빈 줄·추가 데이터·공백 차이 모두 손상)
-    local name=$1 f="$VR_ST/$1.status" content tag pre rest re
+vr_status_code() {   # 상태 기록은 바이트 단위로 정확히 "v2 <mac> <이름> <코드>\n" 한 줄이어야 한다(빈 줄·추가 데이터·공백 차이·v1 모두 손상)
+    local LC_ALL=C name=$1 f="$VR_ST/$1.status" content mac want rest code re
     if [ ! -e "$f" ] && [ ! -L "$f" ]; then return 1; fi
     if [ -L "$f" ] || [ ! -f "$f" ]; then return 2; fi
     vr__read_path_bytes content "$f" || return 2      # 한 번만 읽고 NUL 이 하나라도 있으면 손상(바이트 보존 — 명령 치환으로 NUL 이 사라지지 않음)
-    tag=$(vr_tag "$name") || return 2
-    pre="v1 $tag $name "
-    [[ "$content" == "$pre"* ]] || return 2
-    rest=${content#"$pre"}
+    [[ "$content" == "v2 "* ]] || return 2
+    mac=${content:3:64}; rest=${content:67}
+    [[ "$mac" =~ ^[0-9a-f]{64}$ ]] || return 2
+    [[ "$rest" == " $name "* ]] || return 2
+    rest=${rest#" $name "}
     re=$'^(0|[1-9][0-9]{0,2})\n$'
     [[ "$rest" =~ $re ]] || return 2
-    [ "${BASH_REMATCH[1]}" -le 255 ] || return 2
-    printf '%s\n' "${BASH_REMATCH[1]}"
+    code=${BASH_REMATCH[1]}
+    [ "$code" -le 255 ] || return 2
+    want=$(vr__st_mac "$name" "$code") && [ ${#want} -eq 64 ] || return 2
+    [ "$mac" = "$want" ] || return 2               # 이름·코드가 mac 에 결속: 같은 inode 에서 코드만 바꿔도 손상
+    printf '%s\n' "$code"
 }
 
 vr__wv_note() {   # vr__wv_note <vr__write_verified 반환> <보고 파일 이름> : vr_finish 의 지역 배열 ioerrs 에 기록 실패를 더한다(동적 범위)
@@ -1290,12 +1356,17 @@ vr_finish() {
         [ -n "${seen[$name]+x}" ] && continue; seen[$name]=1
         [ "${VR_EXPN[$name]}" -eq 1 ] || fails+=("$name 중복 등록")
         compgen -G "$VR_ST/$name.status.tmp.*" > /dev/null && fails+=("$name 미완료 상태 기록")
+        declare -F vr_hook_finish_before_status > /dev/null && vr_hook_finish_before_status "$name"   # 시험용 주입 지점(최종 읽기 직전)
         code=$(vr_status_code "$name"); rc=$?
         if [ "$rc" -eq 1 ]; then
             if [ -d "$VR_ST/$name.claim" ]; then fails+=("$name 시작했으나 상태 기록 없음"); else fails+=("$name 시작되지 않음"); fi
             steps+="$name -"$'\n'; continue
         fi
         if [ "$rc" -ne 0 ]; then fails+=("$name 상태 기록 손상"); steps+="$name ?"$'\n'; continue; fi
+        # 메모리 대조(실패 시 닫힘): run 이 기억한 실제 코드가 없으면 실패, 다르면 실패. 판정·보고에는 메모리 코드를 쓴다.
+        if [ -z "${VR__RAN[$name]+x}" ]; then fails+=("$name 실행 기록 없음(상태 파일과 대조 불가)")
+        elif [ "${VR__RAN[$name]}" != "$code" ]; then fails+=("$name 상태 기록 불일치(파일 $code, 실행 ${VR__RAN[$name]})"); code=${VR__RAN[$name]}
+        fi
         steps+="$name $code"$'\n'
         [ -d "$VR_ST/$name.claim" ] || fails+=("$name 상태 기록 손상")       # 선점 없이 상태만 있음
         [ -f "$VR_L/$name.log" ] || fails+=("$name 로그 없음")

@@ -39,7 +39,7 @@ HAVE_FULL=0; [ -c /dev/full ] && ! printf x > /dev/full 2>/dev/null && HAVE_FULL
 s_ok() { vr_expect a b c; run a true; vr_bg B run b true; vr_bg C run c sh -c 'echo hi'; vr_wait; }
 scenario ok s_ok; check '정상: 순차 1개 + 백그라운드 2개 모두 성공 → 0, 실패 0' 0 $? '' "$TMP/ok"
 grep -qx 'ALL_DONE: 모든 항목 종료 코드 0 (3 개 항목)' "$TMP/ok/logs/99_done.log" && ok '정상: 99_done.log 에 ALL_DONE' || bad '정상: 99_done.log'
-[ "$(cut -d' ' -f1,3,4 "$TMP/ok/status/b.status")" = "v1 b 0" ] && ok '정상: 상태 기록 형식 "v1 <태그> <이름> <코드>"' || bad '정상: 상태 기록 형식'
+[ "$(cut -d' ' -f1,3,4 "$TMP/ok/status/b.status")" = "v2 b 0" ] && ok '정상: 상태 기록 형식 "v2 <mac> <이름> <코드>"' || bad '정상: 상태 기록 형식'
 [ "$(cat "$TMP/ok/step_status.txt")" = "a 0${NL}b 0${NL}c 0" ] && ok '정상: step_status.txt 에 항목별 검증된 코드' || bad '정상: step_status.txt'
 
 s_exit3() { vr_expect a b; run a true; vr_bg B run b sh -c 'exit 3'; vr_wait; }
@@ -73,11 +73,11 @@ s_before_commit() { body() { vr_hook_before_commit() { kill -9 $BASHPID; }; run 
 scenario before_commit s_before_commit 2>/dev/null; check '임시 상태 파일을 쓴 뒤 rename 직전에 강제 종료 → "미완료 상태 기록" + "상태 기록 없음"' 1 $? "b 미완료 상태 기록${NL}b 시작했으나 상태 기록 없음${NL}bg:B exit=137" "$TMP/before_commit"
 
 s_loopkill() { body() { local t; for t in b c d; do run $t true; [ $t = b ] && kill -9 $BASHPID; done; }; vr_expect a b c d; run a true; vr_bg L body; vr_wait; }
-scenario loopkill s_loopkill 2>/dev/null; check '여러 항목을 도는 하위 셸이 중간에 강제 종료 → 끝난 b 는 성공, c · d 미실행, 작업 비정상 종료' 1 $? "c 시작되지 않음${NL}d 시작되지 않음${NL}bg:L exit=137" "$TMP/loopkill"
+scenario loopkill s_loopkill 2>/dev/null; check '여러 항목을 도는 하위 셸이 중간에 강제 종료 → 끝난 b 는 성공, c · d 미실행, 작업 비정상 종료' 1 $? "c 시작되지 않음${NL}d 시작되지 않음${NL}bg:L exit=137${NL}b 실행 기록 없음(상태 파일과 대조 불가)" "$TMP/loopkill"
 
 # ── 백그라운드 작업 종료 상태 수집(D 항목) ───────────────────────────────────────────────
 s_bg_one() { cbody() { run c true; kill -9 $BASHPID; }; vr_expect a b c; vr_bg A run a true; vr_bg B run b true; vr_bg C cbody; vr_wait; }
-scenario bg_one s_bg_one 2>/dev/null; check 'D: 백그라운드 작업 3개 중 하나만 비정상 종료(항목 상태는 모두 정상) → 그 작업 하나로 실패' 1 $? 'bg:C exit=137' "$TMP/bg_one"
+scenario bg_one s_bg_one 2>/dev/null; check 'D: 백그라운드 작업 3개 중 하나만 비정상 종료(항목 상태는 모두 정상) → 그 작업 하나로 실패' 1 $? "bg:C exit=137${NL}c 실행 기록 없음(상태 파일과 대조 불가)" "$TMP/bg_one"
 s_bg_viol_lost() { body() { VR_NOTES=/dev/full; run zzz true; }; vr_expect a; run a true; vr_bg V body; vr_wait; }
 if [ $HAVE_FULL -eq 1 ]; then scenario bg_viol_lost s_bg_viol_lost; check 'D: 백그라운드에서 _violations.txt 기록이 유실 → 작업 종료 코드 2 + 종료 기록으로 위반과 기록 실패가 각각 판정, 3' 3 $? "bg:V exit=2${NL}zzz 등록되지 않은 항목${NL}기록 실패: _violations.txt" "$TMP/bg_viol_lost"
 else skp 'D: 위반 기록 유실' '/dev/full 없음'; fi
@@ -116,7 +116,7 @@ scenario bx_badcode s_bx_badcode 2>/dev/null; check 'D-1: 숫자가 아닌 exit 
 s_bx_twice() { body() { run b true; trap 'exit 0' EXIT; exit 5; }; vr_expect a b; run a true; vr_bg B body; vr_wait; }
 scenario bx_twice s_bx_twice; check 'D-1: 작업의 EXIT trap 이 다시 exit 0 을 부름(재진입) → 처음 정한 코드 5 유지' 1 $? 'bg:B exit=5' "$TMP/bx_twice"
 s_bx_norec() { body() { VR_BGREC=/nonexistent_vr_dir; run b true; }; vr_expect a b; run a true; vr_bg B body; vr_wait; }
-scenario bx_norec s_bx_norec; check 'D-1: 종료 기록을 쓰지 못함 → 2 + "종료 기록 없음" + FIFO 로 전달된 기록 실패(3)' 3 $? "bg:B exit=2${NL}bg:B 종료 기록 없음${NL}기록 실패: bg:B 종료 기록 쓰기" "$TMP/bx_norec"
+scenario bx_norec s_bx_norec; check 'D-1: 종료 기록을 쓰지 못함 → 2 + "종료 기록 없음" + FIFO 로 전달된 기록 실패(3)' 3 $? "bg:B exit=2${NL}bg:B 종료 기록 없음${NL}기록 실패: bg:B 종료 기록 쓰기${NL}b 실행 기록 없음(상태 파일과 대조 불가)" "$TMP/bx_norec"
 s_bx_forge() { body() { builtin trap - EXIT; printf 'v1 0000 x\n' > "$VR_BGREC/$vr__bg_id"; builtin exit 0; }; vr_expect a; run a true; vr_bg F body; vr_wait; }
 scenario bx_forge s_bx_forge; check 'D-1: 작업이 가짜 종료 기록을 쓰고 우회 종료 → "종료 기록 손상"' 1 $? 'bg:F 종료 기록 손상' "$TMP/bx_forge"
 s_nowait() { vr_expect a b; run a true; vr_bg B run b sh -c 'sleep 1'; }
@@ -209,11 +209,11 @@ s_n_sib() { outer() { vr_bg IN1 run b sh -c 'exit 3'; vr_bg IN2 run zzz true; vr
             vr_expect a b c d; run a true; vr_bg OUT outer; vr_bg OUT2 four; vr_wait; }
 scenario n_sib s_n_sib; check 'NESTED: 형제 작업들의 서로 다른 실패(종료 코드 3 / 위반 / 정상) + 최상위 형제 return 4' 1 $? "b exit=3${NL}bg:OUT/IN1 exit=3${NL}zzz 등록되지 않은 항목${NL}bg:OUT/IN2 exit=2${NL}bg:OUT exit=2${NL}bg:OUT2 exit=4" "$TMP/n_sib"
 s_n_kill() { inner() { run b true; kill -9 $BASHPID; }; outer() { vr_bg IN inner; }; vr_expect a b; run a true; vr_bg OUT outer; vr_wait; }
-scenario n_kill s_n_kill 2>/dev/null; check 'NESTED: 안쪽 작업 강제 종료 → "bg:OUT/IN exit=137"(종료 기록 없음은 덧붙이지 않음)' 1 $? "bg:OUT/IN exit=137${NL}bg:OUT exit=2" "$TMP/n_kill"
+scenario n_kill s_n_kill 2>/dev/null; check 'NESTED: 안쪽 작업 강제 종료 → "bg:OUT/IN exit=137"(종료 기록 없음은 덧붙이지 않음)' 1 $? "bg:OUT/IN exit=137${NL}bg:OUT exit=2${NL}b 실행 기록 없음(상태 파일과 대조 불가)" "$TMP/n_kill"
 s_n_rd() { outer() { vr_hook_bg_before_read() { rm -f "$1"; mkdir "$1"; }; vr_bg IN run b true; }; vr_expect a b; run a true; vr_bg OUT outer; vr_wait; }
-scenario n_rd s_n_rd; checkn 'NESTED: 바깥 작업이 안쪽의 종료 기록을 읽지 못함(기록 자리에 디렉터리) → 기록 실패로 최상위까지 + 남은 디렉터리는 예상하지 못한 항목, 3' 3 $? "기록 실패: bg:OUT/IN 종료 기록 읽기${NL}기록 실패: bg:OUT/IN 회수 표시${NL}bg:OUT exit=2${NL}bg 폴더에 예상하지 못한 항목: <ID>" "$TMP/n_rd"
+scenario n_rd s_n_rd; checkn 'NESTED: 바깥 작업이 안쪽의 종료 기록을 읽지 못함(기록 자리에 디렉터리) → 기록 실패로 최상위까지 + 남은 디렉터리는 예상하지 못한 항목, 3' 3 $? "기록 실패: bg:OUT/IN 종료 기록 읽기${NL}기록 실패: bg:OUT/IN 회수 표시${NL}bg:OUT exit=2${NL}bg 폴더에 예상하지 못한 항목: <ID>${NL}b 실행 기록 없음(상태 파일과 대조 불가)" "$TMP/n_rd"
 s_top_rd() { vr_hook_bg_before_read() { rm -f "$1"; mkdir "$1"; }; vr_expect a b; run a true; vr_bg B run b true; vr_wait; }
-scenario top_rd s_top_rd; checkn 'NESTED: 최상위가 종료 기록을 읽지 못함(기록 자리에 디렉터리) → 기록 실패 + 예상하지 못한 항목, 3' 3 $? "기록 실패: bg:B 종료 기록 읽기${NL}기록 실패: bg:B 회수 표시${NL}bg 폴더에 예상하지 못한 항목: <ID>" "$TMP/top_rd"
+scenario top_rd s_top_rd; checkn 'NESTED: 최상위가 종료 기록을 읽지 못함(기록 자리에 디렉터리) → 기록 실패 + 예상하지 못한 항목, 3' 3 $? "기록 실패: bg:B 종료 기록 읽기${NL}기록 실패: bg:B 회수 표시${NL}bg 폴더에 예상하지 못한 항목: <ID>${NL}b 실행 기록 없음(상태 파일과 대조 불가)" "$TMP/top_rd"
 s_n_ok() { na() { vr_bg B nb; vr_bg B2 run d true; }; nb() { vr_bg C run c true; }
            vr_expect a b c d; run a true; vr_bg A na; vr_bg T run b true; printf '%s\n' "${#VR_BG_PIDS[@]}" > "$TMP/n_ok_pids"; vr_wait; }
 scenario n_ok s_n_ok; check 'NESTED: 2·3단계 중첩이 모두 정상 → 실패 없음, 0' 0 $? '' "$TMP/n_ok"
@@ -267,7 +267,7 @@ scenario rd_dir s_rd_dir;       checkn 'RE-3: .read 목적 경로에 디렉터�
 scenario rd_nested s_rd_nested; checkn 'RE-3: .read 목적 경로에 중첩 디렉터리가 이미 있음 → 같은 판정' 3 $? "기록 실패: bg:B 회수 표시 대상이 이미 있음${NL}bg 종료 기록 미회수: <ID>${NL}bg 폴더에 예상하지 못한 항목: <ID>.read" "$TMP/rd_nested"
 s_rd_extra() { vr_expect a; run a true; mkdir -p "$VR_BGREC/zz.done/sub"; }
 scenario rd_extra s_rd_extra; check 'RE-3: 이름이 .done 이어도 디렉터리면 예상하지 못한 항목(하위 경로를 성공으로 보지 않음)' 1 $? 'bg 폴더에 예상하지 못한 항목: zz.done' "$TMP/rd_extra"
-s_rec_code() { body() { run b true; builtin trap - EXIT; local id=$vr__bg_id; printf 'v1 %s %s\nL B\nC 0\n' "$(vr_tag "bg:$id")" "$id" > "$VR_BGREC/$id"; builtin exit 4; }; vr_expect a b; run a true; vr_bg B body; vr_wait; }
+s_rec_code() { body() { run b true; builtin trap - EXIT; local id=$vr__bg_id; local rb=$'L B\nC 0\nS 1:b 0\n'; printf 'v2 %s %s\n%s' "$(vr__bg_rec_mac "$id" "$rb")" "$id" "$rb" > "$VR_BGREC/$id"; builtin exit 4; }; vr_expect a b; run a true; vr_bg B body; vr_wait; }
 scenario rec_code s_rec_code; check 'RE: 종료 기록의 C(0)가 실제 종료 코드(4)와 다름 → 종료 기록 손상' 1 $? "bg:B exit=4${NL}bg:B 종료 기록 손상" "$TMP/rec_code"
 
 # ── 종료 경로 전체(D-1 재반려: trap 'exit 0' EXIT; builtin exit 5 가 성공으로 바뀌던 결함) ──────────────────
@@ -285,10 +285,10 @@ ex_case noarg    '인자 없는 exit(직전 1)'                             1 'b
 ex_case bexit6   'builtin exit 6'                                   1 'bg:B exit=6'               'builtin exit 6'
 ex_case repl6    'EXIT trap 교체 후 builtin exit 6'                   1 'bg:B exit=6'               "trap ': x' EXIT; builtin exit 6"
 ex_case rm6      'EXIT trap 제거(trap -) 후 builtin exit 6'           1 'bg:B exit=6'               'trap - EXIT; builtin exit 6'
-ex_case brm6     'builtin trap 으로 제거 후 builtin exit 6'           1 "bg:B exit=6${NL}bg:B 종료 기록 없음" 'builtin trap - EXIT; builtin exit 6'
+ex_case brm6     'builtin trap 으로 제거 후 builtin exit 6'           1 "bg:B exit=6${NL}bg:B 종료 기록 없음${NL}b 실행 기록 없음(상태 파일과 대조 불가)" 'builtin trap - EXIT; builtin exit 6'
 ex_case tx0e5    "처리기 안에서 exit 0, 작업은 exit 5"                1 'bg:B exit=5'               "trap 'exit 0' EXIT; exit 5"
 ex_case tbx0e5   "처리기 안에서 builtin exit 0, 작업은 exit 5"        1 'bg:B exit=5'               "trap 'builtin exit 0' EXIT; exit 5"
-ex_case tbx0b5   "처리기 안에서 builtin exit 0, 작업은 builtin exit 5(검증기 코드가 실행되지 못함)" 1 'bg:B 종료 기록 없음' "trap 'builtin exit 0' EXIT; builtin exit 5"
+ex_case tbx0b5   "처리기 안에서 builtin exit 0, 작업은 builtin exit 5(검증기 코드가 실행되지 못함)" 1 "bg:B 종료 기록 없음${NL}b 실행 기록 없음(상태 파일과 대조 불가)" "trap 'builtin exit 0' EXIT; builtin exit 5"
 ex_case tx3e5    '최초 5 / 처리기 exit 3 → 최초 코드 5'               1 'bg:B exit=5'               "trap 'exit 3' EXIT; exit 5"
 ex_case tx3e0    '최초 0 / 처리기 exit 3 → 처리기 코드 3'             1 'bg:B exit=3'               "trap 'exit 3' EXIT; exit 0"
 ex_case tx3r0    '정상 반환 / 처리기 exit 3 → 3'                      1 'bg:B exit=3'               "trap 'exit 3' EXIT; return 0"
@@ -381,7 +381,8 @@ sub_case cmdsub  '작업 안 명령 치환의 exit 4 → 작업은 정상'      
 sub_case subtrap '하위 셸이 자기 EXIT trap 을 설치하고 exit 2 → 작업은 정상'           0 "( trap ': sub' EXIT; exit 2 ); :" ''
 sub_case subcode '하위 셸 exit 3 의 코드는 작업이 받아 쓸 수 있음(작업이 그 코드로 종료)' 1 '( exit 3 ); exit $?' 'bg:B exit=3'
 sub_case stale   '명령 치환이 종료 기록을 미리 쓰지 못하므로, 그 뒤 builtin 우회는 "종료 기록 없음"' 1 'x=$(exit 0); builtin trap - EXIT; builtin exit 0' 'bg:B 종료 기록 없음
-bg 종료 기록 미회수: <ID>'
+bg 종료 기록 미회수: <ID>
+b 실행 기록 없음(상태 파일과 대조 불가)'
 
 # ── 보완 A: vr_init 실패·재호출 시 상태 정리(임시 fd·생명주기 fd·FIFO 파일·VR_LIFE·VR_LIFE_W) ───────────────────
 ia_dir="$TMP/ia"; mkdir -p "$ia_dir"
@@ -449,12 +450,12 @@ sb_case fnnoarg  '함수 안: 명령 치환(exit 3) 뒤 인자 없는 exit → 3
 nextid() { NEXTID="${VR_RUN_ID}_${BASHPID}_$((VR_BG_SEQ + ${1:-1}))"; }
 for kind in rec read done tmp run; do
     eval "s_idc_$kind() { local id t; nextid; id=\$NEXTID; t=\"\$VR_BGREC/\$id\"
-        case $kind in rec) printf 'v1 %s %s\nL B\nC 0\n' \"\$(vr_tag bg:\$id)\" \"\$id\" > \"\$t\" ;; read) printf 'old\n' > \"\$t.read\" ;;
+        case $kind in rec) printf 'v2 %s %s\nL B\nC 0\n' \"\$(vr__bg_rec_mac \$id \$'L B\\nC 0\\n')\" \"\$id\" > \"\$t\" ;; read) printf 'old\n' > \"\$t.read\" ;;
                        done) printf 'old\n' > \"\$t.done\" ;; tmp) printf 'old\n' > \"\$t.tmp\" ;; run) printf '99999\n' > \"\$t.run\" ;; esac
         printf '%s' \"\$id\" > \"\$TMP/idc_$kind.id\"; cp \"\$VR_BGREC/\$(ls \"\$VR_BGREC\")\" \"\$TMP/idc_$kind.orig\"
         vr_expect a b; run a true; vr_bg B run b true; vr_wait; }"
 done
-scenario idc_rec s_idc_rec;   checkn '결함 1: 같은 ID 의 유효한(태그 일치) 이전 종료 기록이 있음 → 덮어쓰지 않고 "작업 ID 충돌", 다음 ID 로 실행, 이전 기록은 미회수로 흡수' 1 $? "bg:B 작업 ID 충돌: <ID>${NL}bg 종료 기록 미회수: <ID>" "$TMP/idc_rec"
+scenario idc_rec s_idc_rec;   checkn '결함 1: 같은 ID 의 유효한(mac 일치) 이전 종료 기록이 있음 → 덮어쓰지 않고 "작업 ID 충돌", 다음 ID 로 실행, 이전 기록은 미회수로 흡수' 1 $? "bg:B 작업 ID 충돌: <ID>${NL}bg 종료 기록 미회수: <ID>" "$TMP/idc_rec"
 cmp -s "$TMP/idc_rec.orig" "$TMP/idc_rec/bg/$(cat "$TMP/idc_rec.id").read" && ok '결함 1: 이전 종료 기록의 내용이 그대로 보존됨(.read 로 이름만 바뀜)' || bad '결함 1: 이전 종료 기록 보존'
 scenario idc_read s_idc_read; checkn '결함 1: 같은 ID 의 .read 가 있음 → "작업 ID 충돌"' 1 $? 'bg:B 작업 ID 충돌: <ID>' "$TMP/idc_read"
 cmp -s "$TMP/idc_read.orig" "$TMP/idc_read/bg/$(cat "$TMP/idc_read.id").read" && ok '결함 1: 이전 .read 보존' || bad '결함 1: 이전 .read 보존'
@@ -481,17 +482,17 @@ scenario idc_inj s_idc_inj; check '결함 1: 실행 표식 예약 실패(주입)
 # ── 결함 2(Codex): 종료 기록 I/O 실패는 원인과 함께 최종 3 으로 ─────────────────────────────────────────────────
 if [ $HAVE_FULL -eq 1 ]; then
     s_rw_full() { body() { run b true; ln -s /dev/full "$VR_BGREC/$vr__bg_id.tmp"; }; vr_expect a b; run a true; vr_bg B body; vr_wait; }
-    scenario rw_full s_rw_full; checkn '결함 2: 종료 기록 쓰기 실패(실제 ENOSPC) → 부모 "종료 기록 없음" + FIFO 로 전달된 기록 실패, 3' 3 $? "bg:B exit=2${NL}bg:B 종료 기록 없음${NL}기록 실패: bg:B 종료 기록 쓰기${NL}bg 폴더에 예상하지 못한 항목: <ID>.tmp" "$TMP/rw_full"
+    scenario rw_full s_rw_full; checkn '결함 2: 종료 기록 쓰기 실패(실제 ENOSPC) → 부모 "종료 기록 없음" + FIFO 로 전달된 기록 실패, 3' 3 $? "bg:B exit=2${NL}bg:B 종료 기록 없음${NL}기록 실패: bg:B 종료 기록 쓰기${NL}bg 폴더에 예상하지 못한 항목: <ID>.tmp${NL}b 실행 기록 없음(상태 파일과 대조 불가)" "$TMP/rw_full"
     no_alldone "$TMP/rw_full" && ok '결함 2: 그 경우 ALL_DONE 없음' || bad '결함 2: ALL_DONE 있음'
     s_rw_nested() { inner() { run b true; ln -s /dev/full "$VR_BGREC/$vr__bg_id.tmp"; }; outer() { vr_bg IN inner; }; vr_expect a b; run a true; vr_bg OUT outer; vr_wait; }
-    scenario rw_nested s_rw_nested; checkn '결함 2: 중첩 작업의 종료 기록 쓰기 실패 → 최상위까지 기록 실패, 3' 3 $? "bg:OUT/IN exit=2${NL}bg:OUT/IN 종료 기록 없음${NL}bg:OUT exit=2${NL}기록 실패: bg:OUT/IN 종료 기록 쓰기${NL}bg 폴더에 예상하지 못한 항목: <ID>.tmp" "$TMP/rw_nested"
+    scenario rw_nested s_rw_nested; checkn '결함 2: 중첩 작업의 종료 기록 쓰기 실패 → 최상위까지 기록 실패, 3' 3 $? "bg:OUT/IN exit=2${NL}bg:OUT/IN 종료 기록 없음${NL}bg:OUT exit=2${NL}기록 실패: bg:OUT/IN 종료 기록 쓰기${NL}bg 폴더에 예상하지 못한 항목: <ID>.tmp${NL}b 실행 기록 없음(상태 파일과 대조 불가)" "$TMP/rw_nested"
     s_rw_lost() { body() { run b true; ln -s /dev/full "$VR_BGREC/$vr__bg_id.tmp"; eval "exec $VR_LIFE_W>/dev/null"; }; vr_expect a b; run a true; vr_bg B body; vr_wait; }
-    scenario rw_lost s_rw_lost; checkn '결함 2: 기록 쓰기 실패 + 전달 경로(FIFO fd)도 끊김 → 원인은 잃지만 성공은 아님(1)' 1 $? "bg:B exit=2${NL}bg:B 종료 기록 없음${NL}bg 폴더에 예상하지 못한 항목: <ID>.tmp" "$TMP/rw_lost"
+    scenario rw_lost s_rw_lost; checkn '결함 2: 기록 쓰기 실패 + 전달 경로(FIFO fd)도 끊김 → 원인은 잃지만 성공은 아님(1)' 1 $? "bg:B exit=2${NL}bg:B 종료 기록 없음${NL}bg 폴더에 예상하지 못한 항목: <ID>.tmp${NL}b 실행 기록 없음(상태 파일과 대조 불가)" "$TMP/rw_lost"
 else for n in ENOSPC 'ALL_DONE' 중첩 전달경로유실; do skp "결함 2: $n" '/dev/full 없음'; done; fi
 s_rw_inj() { body() { run b true; vr_hook_fail() { [ "$1" = recwrite ]; }; }; vr_expect a b; run a true; vr_bg B body; vr_wait; }
-scenario rw_inj s_rw_inj; check '결함 2: 종료 기록 쓰기 실패(주입) → 3' 3 $? "bg:B exit=2${NL}bg:B 종료 기록 없음${NL}기록 실패: bg:B 종료 기록 쓰기" "$TMP/rw_inj"
+scenario rw_inj s_rw_inj; check '결함 2: 종료 기록 쓰기 실패(주입) → 3' 3 $? "bg:B exit=2${NL}bg:B 종료 기록 없음${NL}기록 실패: bg:B 종료 기록 쓰기${NL}b 실행 기록 없음(상태 파일과 대조 불가)" "$TMP/rw_inj"
 s_rw_clash() { body() { run b true; printf 'x\n' > "$VR_BGREC/$vr__bg_id"; }; vr_expect a b; run a true; vr_bg B body; vr_wait; }
-scenario rw_clash s_rw_clash; checkn '결함 2: 최종 기록 자리에 이미 파일이 있음 → 덮어쓰지 않음, 손상 + 기록 실패, 3' 3 $? "bg:B exit=2${NL}bg:B 종료 기록 손상${NL}기록 실패: bg:B 종료 기록 쓰기${NL}bg 종료 기록 미회수: <ID>.tmp" "$TMP/rw_clash"
+scenario rw_clash s_rw_clash; checkn '결함 2: 최종 기록 자리에 이미 파일이 있음 → 덮어쓰지 않음, 손상 + 기록 실패, 3' 3 $? "bg:B exit=2${NL}bg:B 종료 기록 손상${NL}기록 실패: bg:B 종료 기록 쓰기${NL}bg 종료 기록 미회수: <ID>.tmp${NL}b 실행 기록 없음(상태 파일과 대조 불가)" "$TMP/rw_clash"
 [ "$(cat "$TMP/rw_clash/bg/"*[0-9].read 2>/dev/null)" = x ] && ok '결함 2: 먼저 있던 기록 내용 보존' || bad '결함 2: 먼저 있던 기록 보존'
 s_rw_junk() { body() { run b true; printf 'junk\n' >&"$VR_LIFE_W"; }; vr_expect a b; run a true; vr_bg B body; vr_wait; }
 scenario rw_junk s_rw_junk; check '결함 2: 생명주기 FIFO 에 알 수 없는 내용 → 기록 실패, 3' 3 $? '기록 실패: 후손 추적 FIFO 에 알 수 없는 내용' "$TMP/rw_junk"
@@ -1749,6 +1750,123 @@ for kind in symlink exists zero; do
     vr_finish > /dev/null 2>&1; [ $? -eq 3 ] || exit 2 ); rc=$?
   [ $rc -eq 0 ] && ok "C 기능 확인($kind): fd 기반 놓기 하위 확인 실패 → vr_init 2·사유(성공 표시 없음), 잠금·확인용 폴더 남지 않음, 이후 vr_finish 3(보고 파일 쓰지 않음)" || bad "C 기능 확인 $kind (단계 $rc, $(tr '\n' ' ' < "$TMP/fc6_$kind.err" 2>/dev/null))"
 done
+# ── 34. 상태 기록 무결성(Codex 반려 caa5afc): 상태 코드·bg 종료 기록 본문의 mac 결속 + 메모리 대조 ───────────────────────────
+#   모든 변조는 합성 주입이다(실제 공격·경합 사례 아님). "같은 inode" 시험은 '>'(O_TRUNC, 같은 객체)로 덮어쓰고 inode 가 그대로인지 확인한다.
+#   "토큰 모름" = 파일의 mac 을 그대로 두고 코드만 바꿈(명령이 할 수 있는 변조). "토큰 앎" = 시험 안에서 vr__st_mac 으로 올바른 v2 줄을 만듦
+#   (메모리를 읽을 수 있는 프로세스를 모사 — 위협 모델 밖이지만 메모리 대조가 막는지 확인).
+st_set() { local f=$1 c=$2 old; old=$(cat "$f"); printf '%s %s\n' "${old% *}" "$c" > "$f"; }                       # 토큰 모름: mac 유지, 코드만
+st_forge() { local f=$1 n=$2 c=$3; printf 'v2 %s %s %s\n' "$(vr__st_mac "$n" "$c")" "$n" "$c" > "$f"; }             # 토큰 앎: 올바른 v2 줄
+ino() { stat -c %i "$1" 2>/dev/null; }
+has() { grep -qxF "$2" "$1/failed_steps.txt" 2>/dev/null; }
+# 34-1. 실패(1) → 0, 같은 inode, 토큰 모름 / 토큰 앎
+s_i1a() { vr_expect a b; run a true; run b false; ino "$VR_ST/b.status" > "$TMP/i1a.i0"; st_set "$VR_ST/b.status" 0; ino "$VR_ST/b.status" > "$TMP/i1a.i1"; }
+scenario i1a s_i1a; check 'I-1: 실패 상태 파일의 코드 1→0(같은 inode, 토큰 모름 — mac 그대로) → "상태 기록 손상", 0 아님' 1 $? 'b 상태 기록 손상' "$TMP/i1a"
+cmp -s "$TMP/i1a.i0" "$TMP/i1a.i1" && no_alldone "$TMP/i1a" && ok 'I-1: 같은 inode 에서 바꿈 확인, ALL_DONE 없음' || bad 'I-1: inode 또는 ALL_DONE'
+s_i1b() { vr_expect a b; run a true; run b false; ino "$VR_ST/b.status" > "$TMP/i1b.i0"; st_forge "$VR_ST/b.status" b 0; ino "$VR_ST/b.status" > "$TMP/i1b.i1"; }
+scenario i1b s_i1b; check 'I-1b: 같은 변조를 토큰을 아는 상태로(mac 이 맞는 v2 "b 0") → 메모리 대조로 "상태 기록 불일치" + 실제 코드로 "b exit=1"' 1 $? "b 상태 기록 불일치(파일 0, 실행 1)${NL}b exit=1" "$TMP/i1b"
+cmp -s "$TMP/i1b.i0" "$TMP/i1b.i1" && no_alldone "$TMP/i1b" && [ "$(cat "$TMP/i1b/step_status.txt")" = "a 0${NL}b 1" ] && ok 'I-1b: 같은 inode, ALL_DONE 없음, step_status 는 실제 코드(b 1)' || bad 'I-1b: inode·ALL_DONE·step_status'
+# 34-2. 성공(0) → 1
+s_i2() { vr_expect a b; run a true; run b true; st_set "$VR_ST/b.status" 1; }
+scenario i2 s_i2; check 'I-2: 성공 상태 파일의 코드 0→1(같은 inode, 토큰 모름) → "상태 기록 손상"' 1 $? 'b 상태 기록 손상' "$TMP/i2"
+# 34-3. 이름 필드 변경(같은 inode)
+s_i3() { vr_expect a b; run a true; run b true; local o; o=$(cat "$VR_ST/b.status"); printf '%s\n' "${o/ b / a }" > "$VR_ST/b.status"; }
+scenario i3 s_i3; check 'I-3: 이름 필드만 b→a(같은 inode, mac 그대로) → "상태 기록 손상"' 1 $? 'b 상태 기록 손상' "$TMP/i3"
+# 34-4. mac 한 글자 변경(같은 inode)
+s_i4() { vr_expect a b; run a true; run b true; local o c; o=$(cat "$VR_ST/b.status"); c=${o:3:1}; [ "$c" = 0 ] && c=1 || c=0; printf '%s\n' "${o:0:3}$c${o:4}" > "$VR_ST/b.status"; }
+scenario i4 s_i4; check 'I-4: mac 한 글자 변경(같은 inode) → "상태 기록 손상"' 1 $? 'b 상태 기록 손상' "$TMP/i4"
+# 34-5. 다른 inode 로 교체: 토큰 앎(올바른 v2 "b 0")으로 만든 새 파일을 mv 로 놓음 → 메모리 대조로 불일치
+s_i5() { vr_expect a b; run a true; run b false; ino "$VR_ST/b.status" > "$TMP/i5.i0"; st_forge "$TMP/i5.new" b 0; mv -f "$TMP/i5.new" "$VR_ST/b.status"; ino "$VR_ST/b.status" > "$TMP/i5.i1"; }
+scenario i5 s_i5; check 'I-5: 다른 inode 로 교체(토큰 앎, 올바른 v2 "b 0") → "상태 기록 불일치" + "b exit=1"' 1 $? "b 상태 기록 불일치(파일 0, 실행 1)${NL}b exit=1" "$TMP/i5"
+! cmp -s "$TMP/i5.i0" "$TMP/i5.i1" && ok 'I-5: 실제로 다른 inode 였음' || bad 'I-5: inode 가 같음'
+# 34-6. vr_finish 의 최종 읽기 직전 주입(vr_hook_finish_before_status): 토큰 모름 / 토큰 앎
+s_i6a() { vr_hook_finish_before_status() { [ "$1" = b ] && st_set "$VR_ST/b.status" 0; return 0; }; vr_expect a b; run a true; run b false; }
+scenario i6a s_i6a; check 'I-6: vr_finish 최종 읽기 직전 코드 1→0(같은 inode, 토큰 모름) → 손상, 0 아님' 1 $? 'b 상태 기록 손상' "$TMP/i6a"
+no_alldone "$TMP/i6a" && ok 'I-6: ALL_DONE 없음' || bad 'I-6: ALL_DONE 있음'
+s_i6b() { vr_hook_finish_before_status() { [ "$1" = b ] && st_forge "$VR_ST/b.status" b 0; return 0; }; vr_expect a b; run a true; run b false; }
+scenario i6b s_i6b; check 'I-6b: vr_finish 최종 읽기 직전 토큰 앎 위조("b 0") → 불일치 + b exit=1, 0 아님' 1 $? "b 상태 기록 불일치(파일 0, 실행 1)${NL}b exit=1" "$TMP/i6b"
+no_alldone "$TMP/i6b" && ok 'I-6b: ALL_DONE 없음' || bad 'I-6b: ALL_DONE 있음'
+# 34-6c. 읽은 뒤의 변조: b 를 읽기 직전에 이미 읽은 a 의 상태 파일을 손상 → 판정은 읽은 값으로(영향 없음, 둘 다 성공)
+s_i6c() { vr_hook_finish_before_status() { [ "$1" = b ] && printf 'garbage\n' > "$VR_ST/a.status"; return 0; }; vr_expect a b; run a true; run b true; }
+scenario i6c s_i6c; check 'I-6c: 이미 읽은 항목(a)의 상태 파일을 그 뒤에 손상 → 판정은 읽은 값 기준(영향 없음, 0)' 0 $? '' "$TMP/i6c"
+# 34-7. 정상 코드 유지: 0 / 1 / 7 / 255, 상태 파일은 v2 이고 mac 이 맞음
+s_i7() { vr_expect a b c d; run a true; run b false; run c sh -c 'exit 7'; run d sh -c 'exit 255'
+         local n ok7=1; for n in a b c d; do vr_status_code "$n" > /dev/null || ok7=0; done; echo "$ok7" > "$TMP/i7.v"; }
+scenario i7 s_i7; check 'I-7: 정상 실패 코드 1·7·255 는 기존 문구 그대로("<이름> exit=N"), 성공 0 은 실패 아님' 1 $? "b exit=1${NL}c exit=7${NL}d exit=255" "$TMP/i7"
+[ "$(cat "$TMP/i7.v")" = 1 ] && [ "$(cat "$TMP/i7/step_status.txt")" = "a 0${NL}b 1${NL}c 7${NL}d 255" ] && [ "$(cut -d' ' -f1 "$TMP/i7/status/d.status")" = v2 ] \
+  && ok 'I-7: 네 상태 파일 모두 v2·mac 검증 통과, step_status 코드 그대로' || bad 'I-7: v2 검증·step_status'
+s_i7ok() { vr_expect a b; run a true; vr_bg B run b true; vr_wait; }
+scenario i7ok s_i7ok; check 'I-7: 전경 + bg 모두 성공 → 0(bg 의 실행 코드는 S 줄로 전달되어 대조 통과)' 0 $? '' "$TMP/i7ok"
+grep -q '^S 1:b 0$' "$TMP/i7ok/bg/"*.read && ok 'I-7: bg 종료 기록에 S 줄("S 1:b 0")' || bad 'I-7: bg 종료 기록 S 줄 없음'
+# 34-8a. bg 안의 run 상태 파일 위조(같은 inode, 토큰 모름 / 토큰 앎)
+s_i8a() { vr_expect a b; run a true; vr_bg B run b false; vr_wait; st_set "$VR_ST/b.status" 0; }
+scenario i8a s_i8a; check 'I-8a: bg 안에서 실패한 b 의 상태 파일 1→0(같은 inode, 토큰 모름) → 손상 + bg:B exit=1' 1 $? "b 상태 기록 손상${NL}bg:B exit=1" "$TMP/i8a"
+s_i8a2() { lastfail() { run b false; run c true; }; vr_expect a b c; run a true; vr_bg B lastfail; vr_wait; st_forge "$VR_ST/b.status" b 0; }
+scenario i8a2 s_i8a2; check 'I-8a: bg 안 앞 항목 b 실패·마지막 c 성공(작업 종료 코드 0) + b 를 토큰 앎으로 "b 0" 위조 → S 줄 대조로 불일치 + b exit=1' 1 $? "b 상태 기록 불일치(파일 0, 실행 1)${NL}b exit=1" "$TMP/i8a2"
+no_alldone "$TMP/i8a2" && ok 'I-8a: 작업 종료 코드가 0 이어도 ALL_DONE 없음' || bad 'I-8a: ALL_DONE 있음'
+# 34-8b. bg 종료 기록 본문의 같은 inode 변경(부모가 읽기 직전, vr_hook_bg_before_read) — 줄 삭제·변경 모두 "종료 기록 손상"
+for kind in delV chgC chgS delS addB; do
+  eval "s_i8b_$kind() { vr_hook_bg_before_read() { local o; o=\$(cat \"\$1\"; printf x); o=\${o%x}; ino \"\$1\" > \"$TMP/i8b_$kind.i0\"
+        case $kind in delV) o=\$(printf '%s' \"\$o\" | grep -v '^V ') ;; chgC) o=\$(printf '%s' \"\$o\" | sed 's/^C 2\$/C 0/') ;;
+                      chgS) o=\$(printf '%s' \"\$o\" | sed 's/^S 1:b 1\$/S 1:b 0/') ;; delS) o=\$(printf '%s' \"\$o\" | grep -v '^S ') ;;
+                      addB) o=\$o\$'\\nB 가짜' ;; esac
+        printf '%s\n' \"\$o\" > \"\$1\"; ino \"\$1\" > \"$TMP/i8b_$kind.i1\"; }
+      body() { run b false; run zzz true; }; vr_expect a b; run a true; vr_bg B body; vr_wait; }"
+  scenario "i8b_$kind" "s_i8b_$kind" 2>/dev/null; rc=$?
+  if [ $rc -eq 1 ] && has "$TMP/i8b_$kind" 'bg:B 종료 기록 손상' && has "$TMP/i8b_$kind" 'b 실행 기록 없음(상태 파일과 대조 불가)' && no_alldone "$TMP/i8b_$kind" \
+     && cmp -s "$TMP/i8b_$kind.i0" "$TMP/i8b_$kind.i1"; then
+    ok "I-8b($kind): bg 종료 기록 본문을 같은 inode 에서 변경 → \"종료 기록 손상\"(본문을 반영하지 않음 — b 는 \"실행 기록 없음\"), 0 아님 — 실패 목록: $(tr '\n' ';' < "$TMP/i8b_$kind/failed_steps.txt")"
+  else bad "I-8b $kind (rc=$rc, $(tr '\n' ';' < "$TMP/i8b_$kind/failed_steps.txt" 2>/dev/null))"; fi
+done
+# 34-8c. bg 종료 기록 삭제 → 종료 기록 없음 + 그 안의 항목 실행 기록 없음
+s_i8c() { vr_hook_bg_before_read() { rm -f "$1"; }; vr_expect a b; run a true; vr_bg B run b true; vr_wait; }
+scenario i8c s_i8c; check 'I-8c: bg 종료 기록 삭제 → "종료 기록 없음" + "b 실행 기록 없음"' 1 $? "bg:B 종료 기록 없음${NL}b 실행 기록 없음(상태 파일과 대조 불가)" "$TMP/i8c"
+# 34-8d. 중첩 vr_bg: S 줄이 최상위까지 전달 / 중간 셸에서 안쪽 기록의 S 줄 위조 → 손상
+s_i8d() { outer() { vr_bg IN run b false; }; vr_expect a b; run a true; vr_bg OUT outer; vr_wait; }
+scenario i8d s_i8d; check 'I-8d: 중첩 작업 안의 b(1)가 최상위까지 전달(실행 기록 없음 없음)' 1 $? "b exit=1${NL}bg:OUT/IN exit=1${NL}bg:OUT exit=2" "$TMP/i8d"
+s_i8d2() { outer() { vr_hook_bg_before_read() { sed -i 's/^S 1:b 1$/S 1:b 0/' "$1"; }; vr_bg IN run b false; }; vr_expect a b; run a true; vr_bg OUT outer; vr_wait; st_set "$VR_ST/b.status" 0; }
+scenario i8d2 s_i8d2; rc=$?
+[ $rc -eq 1 ] && has "$TMP/i8d2" 'bg:OUT/IN 종료 기록 손상' && has "$TMP/i8d2" 'b 상태 기록 손상' && no_alldone "$TMP/i8d2" \
+  && ok "I-8d: 중간 셸이 읽기 전 안쪽 기록의 S 줄 1→0 + 상태 파일 1→0 → 안쪽 기록 손상·상태 손상, 0 아님 — 실패 목록: $(tr '\n' ';' < "$TMP/i8d2/failed_steps.txt")" \
+  || bad "I-8d 위조 (rc=$rc, $(tr '\n' ';' < "$TMP/i8d2/failed_steps.txt" 2>/dev/null))"
+# 34-8e. 같은 기록을 두 번 처리(회수 재진입 모사)해도 중복 합침 없음 / 다른 id 의 기록이 같은 이름을 다시 전달 → 충돌
+s_i8e() { vr_expect a b; run a true; vr_bg B run b true; vr_wait; local f; f=$(ls "$VR_BGREC"/*.read); local id=${f##*/}; id=${id%.read}
+          vr__bg_read_record "$f" "$id" B; echo "$? ${#VR__RAN[@]} ${VR__RAN[b]}" > "$TMP/i8e.r"; }
+scenario i8e s_i8e; check 'I-8e: 같은 종료 기록을 다시 읽음(재진입 모사) → 충돌·중복 없음, 0' 0 $? '' "$TMP/i8e"
+[ "$(cat "$TMP/i8e.r")" = "0 2 0" ] && ok 'I-8e: 다시 읽어도 유효(0), 실행 기록 2개(a·b) 그대로' || bad "I-8e: $(cat "$TMP/i8e.r")"
+s_i8f() { vr_expect a b; run a true; vr_bg B run b true; vr_wait
+          local id="${VR_RUN_ID}_99999_99" rb=$'L X\nC 0\nS 1:b 1\n'; printf 'v2 %s %s\n%s' "$(vr__bg_rec_mac "$id" "$rb")" "$id" "$rb" > "$VR_BGREC/$id"; }
+scenario i8f s_i8f; checkn 'I-8e: 다른 id 의 유효한 기록이 같은 이름(b)을 다시 전달 → "실행 기록 충돌" + 미회수, 기존 코드 유지' 1 $? "b 실행 기록 충돌${NL}bg 종료 기록 미회수: <ID>" "$TMP/i8f"
+# 34-9. HMAC 알려진 답: vr__hmac 이 RFC 4231 #2 와 같음 / 가짜 sha256sum 으로 알려진 답이 틀리면 vr_init 2
+( . "$HERE/lib/verify_run.sh"; [ "$(vr__hmac Jefe 'what do ya want for nothing?')" = 5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843 ] ) \
+  && ok 'I-9: vr__hmac = RFC 4231 시험 사례 2' || bad 'I-9: vr__hmac 알려진 답 불일치'
+if command -v openssl > /dev/null 2>&1; then
+  ( . "$HERE/lib/verify_run.sh"; VR_TOKEN=$(head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n'); m=$'vr-status\nv2\n3:a b\n0\n'
+    [ "$(vr_mac "$m")" = "$(printf '%s' "$m" | openssl dgst -sha256 -hmac "$VR_TOKEN" | awk '{print $NF}')" ] ) \
+    && ok 'I-9: 무작위 실행 토큰에서 vr_mac = openssl HMAC-SHA256(비교용, 의존 아님)' || bad 'I-9: openssl 과 불일치'
+else skp 'I-9: openssl 비교' 'openssl 없음'; fi
+( . "$HERE/lib/verify_run.sh"
+  sha256sum() { if [ "${1:-}" = --version ]; then command sha256sum --version; return; fi; command sha256sum "$@" | sed 's/^./f/'; }
+  vr_init "$TMP/i9" 2> "$TMP/i9.err"; r=$?
+  [ $r -eq 2 ] && grep -q 'HMAC-SHA256(sha256sum) 알려진 답 불일치' "$TMP/i9.err" && [ ! -e "$TMP/i9/.vr_lock" ] || exit 1
+  vr_finish > /dev/null 2>&1; [ $? -eq 3 ] || exit 2 ); rc=$?
+[ $rc -eq 0 ] && ok 'I-9: 가짜 sha256sum(결과 변조)으로 알려진 답 불일치 → vr_init 2·사유, 잠금 남지 않음, 이후 vr_finish 3' || bad "I-9: KAT 실패 주입 (단계 $rc, $(tr '\n' ' ' < "$TMP/i9.err" 2>/dev/null))"
+# 34-10. v1 형식(올바른 v1 태그)은 손상
+s_i10() { vr_expect a b; run a true; run b false; printf 'v1 %s b 0\n' "$(vr_tag b)" > "$VR_ST/b.status"; }
+scenario i10 s_i10; check 'I-10: 이전 형식 v1(올바른 v1 태그, 코드 0)으로 덮어씀 → "상태 기록 손상"' 1 $? 'b 상태 기록 손상' "$TMP/i10"
+s_i10b() { body() { run b true; builtin trap - EXIT; local id=$vr__bg_id; printf 'v1 %s %s\nL B\nC 0\n' "$(vr_tag "bg:$id")" "$id" > "$VR_BGREC/$id"; builtin exit 0; }; vr_expect a b; run a true; vr_bg B body; vr_wait; }
+scenario i10b s_i10b; check 'I-10: bg 종료 기록을 v1(올바른 v1 태그)로 씀 → "종료 기록 손상" + b 실행 기록 없음' 1 $? "bg:B 종료 기록 손상${NL}b 실행 기록 없음(상태 파일과 대조 불가)" "$TMP/i10b"
+# 34-11. B-1: 종료 기록 쓰기 실패 + FIFO 알림 자체도 실패(vr__bg_notify_recfail 이 1) → 성공 아님(1), 하위 셸 종료 코드 2
+s_i11() { body() { run b true; vr_hook_fail() { [ "$1" = recwrite ]; }; vr__bg_notify_recfail() { echo called > "$TMP/i11.called"; return 1; }; }; vr_expect a b; run a true; vr_bg B body; vr_wait; }
+scenario i11 s_i11; check 'I-11(B-1): 종료 기록 쓰기 실패 + 알림 실패 → 기록 실패 원인은 잃지만 성공 아님(1): bg:B exit=2·종료 기록 없음·b 실행 기록 없음' 1 $? "bg:B exit=2${NL}bg:B 종료 기록 없음${NL}b 실행 기록 없음(상태 파일과 대조 불가)" "$TMP/i11"
+[ -f "$TMP/i11.called" ] && no_alldone "$TMP/i11" && ok 'I-11(B-1): 알림 함수가 실제로 불렸고 실패함, ALL_DONE 없음(알림 성공 시 3 — 결함 2 주입 시험, 알림 실패 시 1 — 분류는 알림 경로에 의존)' || bad 'I-11: 알림 호출·ALL_DONE'
+# 34-12. B-2: 고아 회수(vr__bg_collect_orphans)의 실행 표식 정리 mv_excl 실패 → 기록 실패 3
+#   고아 만들기: 작업 B 가 자식 C 를 시작한 뒤 검증기 종료 처리를 우회(builtin exit) → C 의 실행 표식은 최상위 고아 회수가 처리
+s_i12() { vr_hook_mv_excl_before() { [ "${FUNCNAME[2]:-}" = vr__bg_collect_orphans ] && case "$2" in *.done) : > "$2"; echo hit > "$TMP/i12.hit" ;; esac; return 0; }
+          body() { vr_bg C run c true; run b true; builtin trap - EXIT; builtin exit 0; }; vr_expect a b c; run a true; vr_bg B body; vr_wait; }
+scenario i12 s_i12 2>/dev/null; rc=$?
+[ $rc -eq 3 ] && [ -f "$TMP/i12.hit" ] && grep -qE '^기록 실패: bg 실행 표식 정리: [0-9a-f]{12}_[0-9]+_[0-9]+$' "$TMP/i12/failed_steps.txt" && no_alldone "$TMP/i12" \
+  && ok "I-12(B-2): 고아 회수의 실행 표식 정리 실패(목적이 이미 있음 주입) → vr_finish 3·\"기록 실패: bg 실행 표식 정리: <ID>\" — 실패 목록: $(sed -E 's/[0-9a-f]{12}_[0-9]+_[0-9]+/<ID>/g' "$TMP/i12/failed_steps.txt" | tr '\n' ';')" \
+  || bad "I-12 (rc=$rc, hit=$([ -f "$TMP/i12.hit" ] && echo y || echo n), $(tr '\n' ';' < "$TMP/i12/failed_steps.txt" 2>/dev/null))"
 # ── 재현성: 처리기 return 3 + builtin exit 5 를 10번 반복(매번 5) ──────────────────────────────────────────────
 rep_ok=0; for k in 1 2 3 4 5 6 7 8 9 10; do
     eval "s_rep_$k() { body() { trap 'return 3' EXIT; builtin exit 5; }; vr_expect a; run a true; vr_bg B body; vr_wait; }"
@@ -1778,20 +1896,20 @@ scenario twice s_twice; check '같은 항목을 순서대로 두 번 실행 → 
 # ── 상태 기록이 없거나 잘못된 경우 ───────────────────────────────────────────────────────
 s_st_missing() { vr_expect a b; run a true; run b true; rm -f "$VR_ST/b.status"; }
 scenario st_missing s_st_missing; check '상태 파일 삭제 → "시작했으나 상태 기록 없음"' 1 $? 'b 시작했으나 상태 기록 없음' "$TMP/st_missing"
-s_st_badcode() { vr_expect a b; run a true; run b true; printf 'v1 %s b abc\n' "$(vr_tag b)" > "$VR_ST/b.status"; }
-scenario st_badcode s_st_badcode; check '태그는 맞지만 코드가 숫자가 아님 → "상태 기록 손상"' 1 $? 'b 상태 기록 손상' "$TMP/st_badcode"
-s_st_range() { vr_expect a b; run a true; run b true; printf 'v1 %s b 256\n' "$(vr_tag b)" > "$VR_ST/b.status"; }
+s_st_badcode() { vr_expect a b; run a true; run b true; printf 'v2 %s b abc\n' "$(vr__st_mac b abc)" > "$VR_ST/b.status"; }
+scenario st_badcode s_st_badcode; check 'mac 은 맞지만 코드가 숫자가 아님 → "상태 기록 손상"' 1 $? 'b 상태 기록 손상' "$TMP/st_badcode"
+s_st_range() { vr_expect a b; run a true; run b true; printf 'v2 %s b 256\n' "$(vr__st_mac b 256)" > "$VR_ST/b.status"; }
 scenario st_range s_st_range; check '코드가 0~255 밖 → "상태 기록 손상"' 1 $? 'b 상태 기록 손상' "$TMP/st_range"
-s_st_name() { vr_expect a b; run a true; run b true; printf 'v1 %s a 0\n' "$(vr_tag b)" > "$VR_ST/b.status"; }
-scenario st_name s_st_name; check '다른 항목 이름이 적힌 상태 기록 → "상태 기록 손상"' 1 $? 'b 상태 기록 손상' "$TMP/st_name"
+s_st_name() { vr_expect a b; run a true; run b true; printf 'v2 %s a 0\n' "$(vr__st_mac a 0)" > "$VR_ST/b.status"; }
+scenario st_name s_st_name; check '다른 항목 이름이 적힌 상태 기록(그 이름으로는 mac 이 맞음) → "상태 기록 손상"' 1 $? 'b 상태 기록 손상' "$TMP/st_name"
 s_st_copy() { vr_expect a b; run a true; run b sh -c 'exit 4'; cp "$VR_ST/a.status" "$VR_ST/b.status"; }
 scenario st_copy s_st_copy; check '다른 항목의 정상 상태 기록을 복사해 덮어씀 → "상태 기록 손상"(태그가 이름에 묶임)' 1 $? 'b 상태 기록 손상' "$TMP/st_copy"
-s_st_twoline() { vr_expect a b; run a true; run b true; printf 'v1 %s b 0\nv1 %s b 0\n' "$(vr_tag b)" "$(vr_tag b)" > "$VR_ST/b.status"; }
+s_st_twoline() { vr_expect a b; run a true; run b true; printf 'v2 %s b 0\nv2 %s b 0\n' "$(vr__st_mac b 0)" "$(vr__st_mac b 0)" > "$VR_ST/b.status"; }
 scenario st_twoline s_st_twoline; check '상태 기록이 두 줄 → "상태 기록 손상"' 1 $? 'b 상태 기록 손상' "$TMP/st_twoline"
 s_st_empty() { vr_expect a b; run a true; run b true; : > "$VR_ST/b.status"; }
 scenario st_empty s_st_empty; check '빈 상태 파일 → "상태 기록 손상"' 1 $? 'b 상태 기록 손상' "$TMP/st_empty"
-s_st_noclaim() { vr_expect a b; run a true; printf 'v1 %s b 0\n' "$(vr_tag b)" > "$VR_ST/b.status"; }
-scenario st_noclaim s_st_noclaim; check '실행(선점) 없이 상태 파일만 있음 → "상태 기록 손상" + "로그 없음"' 1 $? "b 상태 기록 손상${NL}b 로그 없음" "$TMP/st_noclaim"
+s_st_noclaim() { vr_expect a b; run a true; printf 'v2 %s b 0\n' "$(vr__st_mac b 0)" > "$VR_ST/b.status"; }
+scenario st_noclaim s_st_noclaim; check '실행(선점) 없이 상태 파일만 있음 → "상태 기록 손상" + "로그 없음" + "실행 기록 없음"' 1 $? "b 상태 기록 손상${NL}b 로그 없음${NL}b 실행 기록 없음(상태 파일과 대조 불가)" "$TMP/st_noclaim"
 
 # ── 그 밖의 기록 위반 ───────────────────────────────────────────────────────────────────
 s_notcalled() { vr_expect a b; run a true; }
