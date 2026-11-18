@@ -895,7 +895,14 @@ run() {
     # 없거나 손상이면 그 항목은 실패다(판정은 상태 기록만 쓴다). 놓지 못하면 명령을 실행하지 않는다(상태 없음 → 실패).
     vr__new_placed "$VR_L/$name.log" lfd; lr=$?
     if [ $lr -ne 0 ]; then vr__ioerr "$name.log 생성"; [ $lr -eq 3 ] && vr__ioerr "임시 파일 정리 $VR__WV_LEFT"; return 2; fi
-    eval '"$@"'"$rd"' >&'"$lfd"' 2>&1 '"$lfd"'>&-'; code=$?
+    # F-3(RE-2a): 셸 함수는 하위 셸에서 생명주기·기록 fd 를 exec 로 닫은 뒤 실행한다(bash 가 함수 리다이렉션 때 fd 를 복사해 두어
+    # 함수가 띄운 하위 셸이 그 복사본을 들고 있는 문제를 없앰). 외부 명령·builtin 은 지금처럼 바로 실행한다(VR-001 시험의 의미 유지).
+    # 결과: 함수가 부모 셸 변수를 바꾸는 동작과 함수 안 exit 가 검증 셸을 끝내는 동작은 사라진다(그 하위 셸만 끝남).
+    if declare -F -- "$1" > /dev/null 2>&1; then
+        eval '( exec'"$rd"'; "$@" ) >&'"$lfd"' 2>&1 '"$lfd"'>&-'; code=$?
+    else
+        eval '"$@"'"$rd"' >&'"$lfd"' 2>&1 '"$lfd"'>&-'; code=$?
+    fi
     # 여기까지 왔다는 것은 래퍼가 명령의 종료를 실제로 확인했다는 뜻이다. 그때에만 상태를 기록한다.
     # 로그 끝의 "exit=N" 줄은 사람이 읽기 위한 표시이며 판정에 쓰지 않는다(이전 출력 형식과 F1 기록 로그 비교의 호환을 위해 유지).
     printf 'exit=%s\n' "$code" 2>/dev/null >&"$lfd" || vr__ioerr "$name.log 표시 줄"
@@ -1035,10 +1042,28 @@ vr__setrc() { return "$1"; }
 vr__life_fd_ok() {
     [ -n "${VR_LIFE_W:-}" ] && [ -p "$VR_LIFE" ] && [ "$VR_LIFE" -ef "/dev/fd/$VR_LIFE_W" ]
 }
+# F-2(D-1b): 작업이 trap 으로 조회하면 EXIT 는 작업 자신의 처리기(vr__task_trap)를 bash 와 같은 형식으로 보여 준다. 그 밖의 신호는 실제 trap.
+#   대상: 인자 없는 trap, trap -p(인자 없음), trap -p <신호…>(EXIT·0·SIGEXIT 포함, 대소문자 무관 — 설정 쪽과 같은 대응).
+#   범위 밖: -P(동작만 출력)·-l 은 builtin 그대로. 작업 셸이 아닌 곳(명령 치환 등 하위 셸)의 조회는 builtin 그대로(그 셸의 실제 trap).
+vr__bg_trap_print_exit() { [ -n "${vr__task_trap:-}" ] || return 0; printf "trap -- '%s' EXIT\n" "${vr__task_trap//\'/\'\\\'\'}"; }
+vr__bg_trap_query() {
+    local s n rc=0
+    if [ $# -eq 0 ]; then       # bash 의 순서: EXIT, 신호 번호 순, DEBUG, ERR, RETURN
+        vr__bg_trap_print_exit
+        for ((n = 1; n <= 64; n++)); do builtin trap -p "$n" 2>/dev/null; done
+        builtin trap -p DEBUG; builtin trap -p ERR; builtin trap -p RETURN
+        return 0
+    fi
+    for s in "$@"; do case "${s^^}" in EXIT|SIGEXIT|0) vr__bg_trap_print_exit ;; *) builtin trap -p "$s" || rc=1 ;; esac; done
+    return $rc
+}
 vr__bg_trap_shadow() {   # 하위 셸 안의 trap 함수 본체
-    case "${1:-}" in -p|-l|-P) builtin trap "$@"; return ;; esac
+    case "${1:-}" in
+        -p) shift; [ "${1:-}" = "--" ] && shift; vr__bg_trap_query "$@"; return ;;
+        -l|-P) builtin trap "$@"; return ;;
+    esac
     [ "${1:-}" = "--" ] && shift
-    if [ $# -eq 0 ]; then builtin trap; return; fi
+    if [ $# -eq 0 ]; then vr__bg_trap_query; return; fi
     if [ $# -eq 1 ]; then set -- - "$1"; fi
     local act=$1 sig; shift; local -a others=()
     for sig in "$@"; do

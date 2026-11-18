@@ -1908,6 +1908,34 @@ s_runbg() { vr_expect a; run a sh -c 'sleep 3 > /dev/null 2>&1 &'; }
 t0=$(date +%s%N); scenario runbg s_runbg; rc=$?; dt=$(( ($(date +%s%N) - t0) / 1000000 ))   # 밀리초(초 단위 $SECONDS 는 경계에서 1초 오차)
 { [ $rc -eq 0 ] && [ $dt -lt 2500 ]; } && ok "RE-2: run 으로 실행한 명령이 남긴 프로세스(sleep 3)는 기다리지 않음(${dt}ms < 2500ms)" || bad "RE-2: run 명령의 잔여 프로세스 대기 (rc=$rc, ${dt}ms)"
 
+# ── F-2(D-1b): 작업이 trap 으로 조회하면 EXIT 는 작업 자신의 처리기, 그 밖의 신호는 실제 trap ──────────────────────
+s_f2a() { body() { trap 'echo mine' EXIT; trap -p EXIT > "$TMP/f2a.p"; trap -p 0 > "$TMP/f2a.p0"; trap > "$TMP/f2a.all"; trap -p > "$TMP/f2a.pall"
+                   trap 'u1' USR1; trap -p USR1 > "$TMP/f2a.usr1"; trap -p EXIT USR1 > "$TMP/f2a.both"; trap -p -- EXIT > "$TMP/f2a.dd"
+                   trap "echo it's" EXIT; trap -p EXIT > "$TMP/f2a.q"; trap - EXIT; trap -p EXIT > "$TMP/f2a.none"; trap > "$TMP/f2a.allnone"; trap - USR1; }
+          vr_expect a; run a true; vr_bg B body; vr_wait; }
+scenario f2a s_f2a; check 'F-2: 작업의 trap 조회(trap -p EXIT · trap -p 0 · 인자 없는 trap · trap -p · 여러 신호 · --) 뒤에도 실제 EXIT trap 은 검증기 것 → 0' 0 $? '' "$TMP/f2a"
+[ "$(cat "$TMP/f2a.p")" = "trap -- 'echo mine' EXIT" ] && [ "$(cat "$TMP/f2a.p0")" = "trap -- 'echo mine' EXIT" ] && [ "$(cat "$TMP/f2a.dd")" = "trap -- 'echo mine' EXIT" ] \
+  && ok 'F-2: trap -p EXIT · trap -p 0 · trap -p -- EXIT → 작업 자신의 처리기(bash 형식)' || bad "F-2: trap -p EXIT ($(cat "$TMP/f2a.p" "$TMP/f2a.p0" "$TMP/f2a.dd" 2>&1 | tr '\n' ';'))"
+for f in all pall; do
+  { [ "$(head -n 1 "$TMP/f2a.$f")" = "trap -- 'echo mine' EXIT" ] && ! grep -q 'vr__bg_on_exit' "$TMP/f2a.$f"; } \
+    && ok "F-2: $([ $f = all ] && echo '인자 없는 trap' || echo 'trap -p(인자 없음)') → 첫 줄이 작업의 EXIT 처리기, 검증기 처리기는 보이지 않음" || bad "F-2: $f ($(tr '\n' ';' < "$TMP/f2a.$f"))"
+done
+[ "$(cat "$TMP/f2a.usr1")" = "trap -- 'u1' SIGUSR1" ] && [ "$(cat "$TMP/f2a.both")" = "trap -- 'echo mine' EXIT${NL}trap -- 'u1' SIGUSR1" ] \
+  && ok 'F-2: 그 밖의 신호(USR1)는 실제 trap, 여러 신호는 인자 순서대로' || bad "F-2: USR1 ($(tr '\n' ';' < "$TMP/f2a.both"))"
+[ "$(cat "$TMP/f2a.q")" = "trap -- 'echo it'\\''s' EXIT" ] && ok "F-2: 작은따옴표가 든 처리기도 bash 와 같은 인용('\\'')" || bad "F-2: 인용 ($(cat "$TMP/f2a.q"))"
+[ ! -s "$TMP/f2a.none" ] && ! grep -q 'EXIT' "$TMP/f2a.allnone" && ok 'F-2: 작업이 처리기를 지운 뒤 trap -p EXIT 는 출력 없음, 인자 없는 trap 에도 EXIT 없음' || bad "F-2: 지운 뒤 ($(cat "$TMP/f2a.none" "$TMP/f2a.allnone" | tr '\n' ';'))"
+bash -c 'trap "echo it'"'"'s" EXIT; trap -p EXIT; trap - EXIT' > "$TMP/f2a.real" 2>&1
+[ "$(cat "$TMP/f2a.real")" = "$(cat "$TMP/f2a.q")" ] && ok 'F-2: 일반 bash 의 trap -p EXIT 출력과 바이트 동일(대조)' || bad "F-2: bash 대조 ($(cat "$TMP/f2a.real"))"
+# ── F-3(RE-2a): run 이 셸 함수를 실행할 때 생명주기 fd 를 닫은 하위 셸에서 실행 ─────────────────────────────────
+s_f3a() { f3bg() { ( sleep 3 > /dev/null 2>&1 ) & }; vr_expect a; run a f3bg; }
+t0=$(date +%s%N); scenario f3a s_f3a; rc=$?; dt=$(( ($(date +%s%N) - t0) / 1000000 ))
+{ [ $rc -eq 0 ] && [ $dt -lt 2500 ]; } && ok "F-3: run 으로 실행한 셸 함수가 띄운 하위 셸(sleep 3)은 기다리지 않음(${dt}ms < 2500ms)" || bad "F-3: 함수의 하위 셸 대기 (rc=$rc, ${dt}ms)"
+s_f3b() { f3r() { echo out; return 5; }; f3x() { exit 7; }; f3v() { F3VAR=set; }; vr_expect a b c; run a f3r; run b f3x; run c f3v; printf '%s\n' "${F3VAR:-unset}" > "$TMP/f3b.var"; }
+scenario f3b s_f3b; check 'F-3: 함수의 return 5 → a exit=5, 함수 안 exit 7 은 하위 셸만 끝냄(b exit=7, 검증 계속), 정상 함수 c 는 0' 1 $? "a exit=5${NL}b exit=7" "$TMP/f3b"
+[ "$(cat "$TMP/f3b.var")" = unset ] && grep -q '^out$' "$TMP/f3b/logs/a.log" && ok 'F-3: 함수가 부모 셸 변수를 바꾸지 않음(하위 셸 실행), 함수 출력은 로그에 기록' || bad "F-3: 변수 $(cat "$TMP/f3b.var"), 로그 $(head -c 80 "$TMP/f3b/logs/a.log" 2>&1)"
+s_f3c() { vr_expect a; run a true; }
+scenario f3c s_f3c; check 'F-3: builtin(true)은 기존 경로 그대로 → 0' 0 $? '' "$TMP/f3c"
+
 # ── 동시 중복 실행(VR-002) ───────────────────────────────────────────────────────────────
 s_race() { vr_expect a b; run a true; local i; for i in 1 2 3 4 5 6; do vr_bg R run b sh -c 'echo x >> "$1"; sleep 1' _ "$TMP/race_counter"; done; vr_wait; }
 scenario race s_race; check 'VR-002: 같은 이름의 run 을 6개 동시에 호출 → "중복 실행 시도" + 그 작업들의 종료 코드 2, b 자체는 성공' 1 $? "b 중복 실행 시도${NL}bg:R exit=2" "$TMP/race"
