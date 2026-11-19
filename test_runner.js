@@ -620,6 +620,7 @@ const integrationScript = `
         {
             fresh({ flags: ['falna'], level: 6, job: 'adventurer' });
             S.age = 35; S.physicalAge = 35; S.phase = 35;
+            if (S.location) S.location = { regionId: 'orario', since: S.location.since };   // F1D4A P3 F-E(의도적 시험 변경): F-D 로 hero_sacrifice 에 locationIn:['orario'] 이 붙어 고정 상태에 위치를 명시(레벨 관문 판정 의도 유지)
             const hero = EVENTS.find(e => e.id === 'hero_sacrifice');
             T.heroSacrificeEligibleAtLv6 = match(hero.cond) === true;
             S.level = 5;
@@ -1006,7 +1007,7 @@ const integrationScript = `
                         if (h.seq !== i + 1) riFail('seq_gap');
                         if (i < H.length - 1) { if (h.to !== H[i + 1].from) riFail('interval_not_contiguous'); if (h.to == null || h.to < h.from) riFail('bad_interval_end'); if (h.regionId === H[i + 1].regionId) riFail('same_region_move'); }
                         else if (h.to !== null) riFail('last_interval_closed');
-                        if (i > 0) { RI.moves += 1; tally(RI.movesByReason, h.reason); if (h.reason !== 'fled') riFail('unapproved_move_reason'); }
+                        if (i > 0) { RI.moves += 1; tally(RI.movesByReason, h.reason); if (h.reason !== 'fled' && !(h.reason === 'retirement' && h.eventId === 'retire')) riFail('unapproved_move_reason'); }   // F1D4A P3 F-B(의도적 시험 변경): retire[1] 메렌 이주(이유 retirement, 사건 retire)만 추가 승인
                     }
                     const last = H[H.length - 1];
                     if (R.regionId !== last.regionId || R.since !== last.from) riFail('residence_history_mismatch');

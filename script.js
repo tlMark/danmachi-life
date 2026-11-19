@@ -143,6 +143,20 @@ function getChoiceProbability(chance = {}, extraPower = 0) {
 }
 
 // F1D4A P2(E-1.1·E-2): match(c, event) — 두 번째 인자는 판정 중인 사건 객체. 지금은 어떤 키도 쓰지 않는다(dungeonReach 는 P4).
+// P3 DI-1/DI-4: 조직 시설·모집 지역 판정. 값은 조직 id 문자열. 알 수 없는 조직·문자열이 아닌 값·위치 없음은 false(fail-closed).
+//   둘 다 현재 위치 S.location.regionId 만 본다(거주지·출생지 무관). 상태 변경·난수 0.
+function orgForCond(id) {
+    if (typeof id !== 'string') return null;
+    return (gachaData.organizations || []).find(o => o && o.id === id) || null;
+}
+function atSiteOfOrg(id) {
+    const o = orgForCond(id), r = S.location && S.location.regionId;
+    return !!(o && r && Array.isArray(o.sites) && o.sites.some(st => st && st.region === r));
+}
+function inRecruitAreaOfOrg(id) {
+    const o = orgForCond(id), r = S.location && S.location.regionId;
+    return !!(o && r && Array.isArray(o.recruitArea) && o.recruitArea.includes(r));
+}
 function match(c = {}, event) {
     if (c.job && !(Array.isArray(c.job) ? c.job : [c.job]).includes(S.job)) return false;
     if (c.age && (S.phase < c.age[0] || S.phase > c.age[1])) return false;      // 육체 나이
@@ -153,6 +167,8 @@ function match(c = {}, event) {
     if (c.residenceIn && !(S.residence && c.residenceIn.includes(S.residence.regionId))) return false; // E-2: 거주지
     if (c.locationIn && !(S.location && c.locationIn.includes(S.location.regionId))) return false;     // E-2: 현재 위치만(거주지·출생지 무관)
     if (c.employerIn && !(S.employer && c.employerIn.includes(S.employer.id))) return false;           // E-2: 고용처
+    if (c.atSiteOf && !atSiteOfOrg(c.atSiteOf)) return false;                  // P3 DI-4: 현재 위치에 그 조직의 시설·지점이 있음(D-INSTITUTION §2)
+    if (c.inRecruitAreaOf && !inRecruitAreaOfOrg(c.inRecruitAreaOf)) return false;   // P3 DI-4: 현재 위치가 그 조직의 모집 지역
     if (c.hasEmployer === true && !S.employer) return false;
     if (c.hasEmployer === false && S.employer) return false;
     if (c.origin && !c.origin.includes(S.origin.id)) return false;
@@ -173,14 +189,15 @@ function match(c = {}, event) {
     if (c.max) for (const k in c.max) if (S[k] > c.max[k]) return false;
     return true;
 }
-// match() 가 실제로 판정하는 키(EN-12 대조용). atSiteOf·inRecruitAreaOf 는 P3, dungeonReach 는 P4 에서 추가한다.
+// match() 가 실제로 판정하는 키(EN-12 대조용). atSiteOf·inRecruitAreaOf 는 P3 에서 추가(아래 push), dungeonReach 는 P4 에서 추가한다.
 const MATCH_KEYS = ['job', 'age', 'cage', 'notRace', 'familia', 'familiaIn', 'residenceIn', 'locationIn', 'employerIn', 'hasEmployer', 'origin', 'race', 'hasFamilia',
     'hasPartner', 'noItem', 'relative', 'noRelative', 'flags', 'noFlags', 'falnaState', 'familiaRole', 'canEnterDungeon', 'min', 'max'];
+MATCH_KEYS.push('atSiteOf', 'inRecruitAreaOf');   // P3: 조직 시설·모집 지역 키(D-INSTITUTION §2). dungeonReach 는 P4
 // E-1.1 선택지 조건 허용 키(설계 목록 그대로). 관계 키(hasPartner·relative·noRelative)는 보조 함수가 S 를 정규화(쓰기)할 수 있어 제외.
 const CHOICE_COND_KEYS = ['job', 'age', 'cage', 'origin', 'race', 'notRace', 'flags', 'noFlags', 'falnaState', 'hasFamilia', 'familiaIn', 'familia', 'familiaRole',
     'canEnterDungeon', 'noItem', 'min', 'max', 'residenceIn', 'locationIn', 'employerIn', 'hasEmployer', 'atSiteOf', 'inRecruitAreaOf'];
 // choiceMatch(c, e): 선택지 조건에만 쓰는 판정. match() 에 ① 형식 검사 ② 허용 키 ③ min/max 유한값 요구를 더한다. 상태 변경·난수·연표 0(EN-8).
-//   허용 목록 안이지만 아직 match() 가 판정하지 않는 키(atSiteOf·inRecruitAreaOf, P3)는 판정할 수 없으므로 숨김(fail-closed).
+//   허용 목록 안이지만 아직 match() 가 판정하지 않는 키는 판정할 수 없으므로 숨김(fail-closed). P3 부터 atSiteOf·inRecruitAreaOf 는 판정 키.
 //   P2 보완(ChatGPT 1차 재검수): 조건은 배열이 아닌 일반 객체여야 한다. min/max 가 있으면 비어 있지 않은 일반 객체이고,
 //   각 조건값과 비교 대상 S[k] 가 모두 유한수여야 한다. 형식이 틀리면 숨김.
 //   P2 보완 2(44178ca 재검수): toString 태그만으로는 일반 객체가 아니다(사용자 프로토타입·클래스 인스턴스·toStringTag 위조 통과).

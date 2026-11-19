@@ -22,8 +22,13 @@ const gachaData = {
     ],
     // 신격 파밀리아가 아닌 조직·고용처(팔나를 주지 않는다). v1.7.2: familias 에서 분리.
     organizations: [
-        { id: "hostess", label: "풍요의 여주인", weight: 40, kind: "tavern", desc: "전직 모험자 출신의 강자들이 웨이트리스로 일하고 있는 위험하고 활기찬 주점." },
-        { id: "guild", label: "길드", weight: 30, kind: "administration", desc: "우라노스의 뜻에 따라 마석을 매입하고 던전과 오라리오를 통제하는 행정 기관." }
+        // F1D4A P3 DI-1(D-INSTITUTION §2): recruitArea = 조직이 사람을 뽑는 지역(조직 단위), sites = 실제 시설·지점(지점 단위, scope 는 지점 업무).
+        //   소재지 등급: 풍요의 여주인 = 오라리오 점포, 길드 본부 = 오라리오 — 원작 확정(QA 판정). 외부 지부는 미확인 → 미등록(DI-2).
+        //   scope 값은 게임 고유 분류(정의만 하고 이번 범위에서는 조건에 쓰지 않음).
+        { id: "hostess", label: "풍요의 여주인", weight: 40, kind: "tavern", desc: "전직 모험자 출신의 강자들이 웨이트리스로 일하고 있는 위험하고 활기찬 주점.",
+          recruitArea: ["orario"], sites: [{ siteId: "hostess_orario", region: "orario", kind: "shop", scope: ["tavern_service"] }] },
+        { id: "guild", label: "길드", weight: 30, kind: "administration", desc: "우라노스의 뜻에 따라 마석을 매입하고 던전과 오라리오를 통제하는 행정 기관.",
+          recruitArea: ["orario"], sites: [{ siteId: "guild_hq", region: "orario", kind: "hq", scope: ["adventurer_registration", "magic_stone_exchange", "quest_board"] }] }
     ],
     familias: [
         { id: "civilian", label: "무소속 (일반 시민)", weight: 300, kind: "none", desc: "등에 은총을 새기지 않고 평범한 생업에 종사하는 주민." },

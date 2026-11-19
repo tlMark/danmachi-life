@@ -148,14 +148,14 @@ const EVENTS = [
         { label: '서로를 위해 헤어진다', text: '좋았던 기억을 간직한 채 연인 관계를 마무리했다.', fx: { relationshipEnd: 'breakup' } }] },
     { id: 'conscript', w: 80, once: true, cond: { cage: [17, 28], origin: ['rakia'] }, text: '라키아에서 징집 명령이 내려왔다.', choices: [
         { label: '징집에 응한다', text: '전쟁터에서 거칠게 단련되었다.', fx: { power: 8, hp: -5, flags: ['soldier'], service: 'conscripted' } },
-        { label: '오라리오로 도망친다', chance: { p: .5, ok: { text: '국경을 넘어 새 삶을 시작했다.', fx: { valis: -400, bond: -3, residence: 'orario', residenceReason: 'fled', service: 'deserter' } }, fail: { text: '추격대에 붙잡혀 크게 다쳤다.', fx: { hp: -25 } } } }] },
+        { label: '오라리오로 도망친다', chance: { p: .5, ok: { text: '국경을 넘어 새 삶을 시작했다.', fx: { valis: -400, bond: -3, residence: 'orario', residenceReason: 'fled', location: 'orario', locationReason: 'fled', service: 'deserter' } }, fail: { text: '추격대에 붙잡혀 크게 다쳤다.', fx: { hp: -25 } } } }] },
     { id: 'minotaur', w: 14, once: true, cond: { canEnterDungeon: true, flags: ['falna'], age: [16, 40], job: ['adventurer'], max: { power: 35 } }, text: '상층에서 있을 리 없는 미노타우로스와 마주쳤다.', choices: [
         { label: '전력으로 도망친다', chance: { p: .5, stat: 'power', per: .004, ok: { text: '살아 돌아왔지만 공포가 오래 남았다.', fx: { hp: -15, bond: -1 } }, fail: { text: '따라잡혀 중상을 입었다.', fx: { hp: -55 } } } },
         { label: '맞서 싸운다', chance: { p: .15, stat: 'power', per: .006, ok: { text: '기적처럼 살아남아 이름이 알려졌다.', fx: { power: 25, bond: 4, feat: 2 } }, fail: { text: '압도적인 힘 앞에 쓰러졌다.', fx: { hp: -65 } } } }] },
     { id: 'expedition', w: 25, once: true, cond: { canEnterDungeon: true, flags: ['falna'], age: [25, 55], job: ['adventurer'], min: { power: 55 } }, text: '심층 원정대를 꾸린다는 소식이 돌았다.', choices: [
         { label: '참가한다', chance: { p: .5, stat: 'power', per: .003, ok: { text: '원정은 성공했고 전설로 회자되었다.', fx: { power: 25, valis: 5000, flags: ['veteran'], feat: 2 } }, fail: { text: '원정 도중 돌아오지 못했다.', fx: { die: true } } } },
         { label: '지상에 남는다', text: '대신 후방 일을 도우며 안정적으로 지냈다.', fx: { valis: 800 } }] },
-    { id: 'ritual', w: 90, once: true, cond: { cage: [14, 22], origin: ['telskyura'] }, text: '텔스큐라의 의식에 휘말려 싸움에 나서야 한다.', choices: [
+    { id: 'ritual', w: 90, once: true, cond: { cage: [14, 22], origin: ['telskyura'], residenceIn: ['telskyura'] }, text: '텔스큐라의 의식에 휘말려 싸움에 나서야 한다.', choices: [
         { label: '정면으로 싸운다', chance: { p: .5, stat: 'power', per: .005, ok: { text: '살아남아 전사로 인정받았다.', fx: { power: 15, flags: ['warrior'], feat: 1 } }, fail: { text: '싸움에서 목숨을 잃었다.', fx: { die: true } } } },
         { label: '몰래 빠져나간다', chance: { p: .4, ok: { text: '무사히 도망쳤지만 고향을 잃었다.', fx: { bond: -3 } }, fail: { text: '붙잡혀 크게 다쳤다.', fx: { hp: -40 } } } }] },
     { id: 'xenos', w: 6, once: true, cond: { canEnterDungeon: true, flags: ['falna'], age: [20, 50], job: ['adventurer'] }, text: '미궁 깊은 곳에서 이성을 가진 몬스터와 마주쳤다.', choices: [
@@ -163,7 +163,7 @@ const EVENTS = [
         { label: '길드에 보고한다', text: '포상금을 받았지만 마음 한구석이 불편했다.', fx: { valis: 1600, bond: -4 } }] },
     { id: 'retire', w: 30, once: true, cond: { age: [45, 70] }, text: '몸이 예전 같지 않다. 앞으로를 생각할 때가 왔다.', choices: [
         { label: '후배를 가르친다', text: '후배들이 따르는 사람이 되었다.', fx: { bond: 8, job: 'retired' } },
-        { label: '메렌으로 이주해 낚시로 지낸다', text: '그물을 손질하며 평온한 나날을 보냈다.', fx: { hp: 12, flags: ['fisher'], job: 'retired' } }] },
+        { label: '메렌으로 이주해 낚시로 지낸다', text: '그물을 손질하며 평온한 나날을 보냈다.', fx: { hp: 12, flags: ['fisher'], job: 'retired', residence: 'melen', residenceReason: 'retirement', location: 'melen', locationReason: 'retirement' } }] },
     { id: 'join_hard', w: 100, once: true, cond: { cage: [12, 22], hasFamilia: false, race: ['human', 'pallum'] }, text: '팔나를 받으려 파밀리아를 찾아다니지만, 특별한 재능이 없어 보이면 문전박대를 당하기 쉽다.', choices: [
         { label: '끈질기게 문을 두드린다', text: '끈질기게 문을 두드렸다.', fx: { recruit: { route: 'persistence', okText: '끝내 받아 주는 신을 만났다.', failText: '{familia}의 심사에서 탈락했다.', followup: 'recruit_after_fail' } } },
         { label: '길드 주변에서 서포터 일을 구한다', text: '짐꾼 일로 하루하루를 벌기 시작했다.', fx: { flags: ['supporter'], valis: 600 } }] },
@@ -173,13 +173,13 @@ const EVENTS = [
     { id: 'wargame', w: 8, cond: { age: [20, 55], job: ['adventurer'], hasFamilia: true, familiaRole: ['member'] }, text: '파밀리아 간의 전쟁유희가 열려 우리 파밀리아도 참가하게 되었다.', choices: [
         { label: '전선에 선다', chance: { p: .55, stat: 'power', per: .003, ok: { text: '맹활약해 승리에 크게 기여했다.', fx: { power: 12, valis: 1000, bond: 4, feat: 1 } }, fail: { text: '격전 끝에 크게 다쳤다.', fx: { hp: -50 } } } },
         { label: '후방에서 지원한다', text: '무리하지 않고 몫을 챙겼다.', fx: { valis: 300, bond: 2 } }] },
-    { id: 'clash', w: 10, cond: { age: [8, 70], origin: ['orario'] }, text: '시가지 한복판에서 파밀리아 간의 항쟁이 터졌다.', choices: [
+    { id: 'clash', w: 10, cond: { age: [8, 70], locationIn: ['orario'] }, text: '시가지 한복판에서 파밀리아 간의 항쟁이 터졌다.', choices: [
         { label: '곧장 대피한다', chance: { p: .8, ok: { text: '다치지 않고 피했다.', fx: {} }, fail: { text: '파편에 맞아 다쳤다.', fx: { hp: -20 } } } },
         { label: '구경하러 다가간다', chance: { p: .4, ok: { text: '소문 하나를 얻고 돌아왔다.', fx: { bond: 1 } }, fail: { text: '싸움에 휘말려 다쳤다.', fx: { hp: -25 } } } }] },
-    { id: 'festival', w: 12, cond: { age: [5, 70], origin: ['orario'] }, text: '도시 전체가 들뜨는 모험자 축제, 몬스터 필리아가 열렸다.', choices: [
+    { id: 'festival', w: 12, cond: { age: [5, 70], locationIn: ['orario'] }, text: '도시 전체가 들뜨는 모험자 축제, 몬스터 필리아가 열렸다.', choices: [
         { label: '마음껏 즐긴다', text: '사람들과 어울리며 잊지 못할 하루를 보냈다.', fx: { valis: -200, bond: 4 } },
         { label: '노점을 연다', text: '대목을 맞아 짭짤하게 벌었다.', fx: { valis: 400 } }] },
-    { id: 'sea', w: 15, cond: { age: [12, 60], origin: ['melen'] }, text: '배를 타고 나갔다가 던전에서 흘러나온 몬스터와 마주쳤다.', choices: [
+    { id: 'sea', w: 15, cond: { age: [12, 60], locationIn: ['melen'] }, text: '배를 타고 나갔다가 던전에서 흘러나온 몬스터와 마주쳤다.', choices: [
         { label: '서둘러 항구로 돌아간다', chance: { p: .65, stat: 'hp', per: .003, ok: { text: '무사히 돌아와 어획물을 팔았다.', fx: { valis: 200 } }, fail: { text: '배가 부서지고 다쳤다.', fx: { hp: -25, valis: -300 } } } },
         { label: '모험자에게 도움을 청한다', text: '사례금을 치렀지만 안전하게 돌아왔다.', fx: { valis: -300, bond: 1 } }] },
     { id: 'elf_touch', w: 10, cond: { age: [10, 80], race: ['elf'] }, text: '낯선 이가 허락 없이 몸에 손을 댔다.', choices: [
@@ -222,7 +222,7 @@ const EVENTS = [
     { id: 'have_child', w: 25, once: true, cond: { age: [20, 45], hasPartner: true }, text: '사랑하는 연인과 가족을 이루고, 작고 소중한 생명이 태어났다.', choices: [
         { label: '은퇴하고 아이에게 전념한다', text: '위험한 일을 내려놓고 부모로서의 삶을 시작했다.', fx: { dropFamilia: true, clearFlags: ['adventurer'], relationship: 'child', bond: 15, hp: 5 } },
         { label: '모험을 계속하며 아이를 키운다', text: '육아와 일을 병행하느라 고단하지만 큰 행복을 느낀다.', fx: { hp: -10, relationship: 'child', bond: 8, power: 2 } }] },
-    { id: 'hero_sacrifice', w: 3, once: true, cond: { age: [20, 60], min: { level: 6 } }, text: '오라리오에 흑룡이 습격해왔다. 도시의 존망이 걸린 절망적인 전투가 시작된다.', choices: [
+    { id: 'hero_sacrifice', w: 3, once: true, cond: { age: [20, 60], min: { level: 6 }, locationIn: ['orario'] }, text: '오라리오에 흑룡이 습격해왔다. 도시의 존망이 걸린 절망적인 전투가 시작된다.', choices: [
         { label: '선두에 서서 흑룡에게 돌격한다', chance: { p: 0.05, stat: 'power', per: 0.001, ok: { text: '기적적인 일격으로 흑룡을 물리치고 전설이 되었다.', fx: { milestone: 'hero', flags: ['hero'] } }, fail: { text: '흑룡의 브레스에 흔적도 없이 사라졌다.', fx: { die: true } } } },
         { label: '후방 벙커로 피난한다', text: '영웅들의 희생으로 도시는 구원받았으나 평생 죄책감을 안고 살게 되었다.', fx: { bond: -10, hp: -5 } }] },
     { id: 'guild_advisor', w: 20, cond: { canEnterDungeon: true, flags: ['falna'], age: [14, 20], job: ['adventurer'], max: { level: 1 } }, text: '길드 본부에 방문하여 어드바이저에게 던전 탐색 가이드라인을 제공받았다.', choices: [
@@ -258,8 +258,8 @@ const EVENTS = [
 
     // 직업 선택: 파밀리아와 별개로 생업을 선택한다.
     { id: 'career_choice', w: 90, once: true, cond: { cage: [13, 19], job: ['child'] }, text: '어느덧 스스로 생계를 꾸릴 나이가 되었다. 지금까지의 경험과 인연을 바탕으로 앞으로의 길을 정해야 한다.', choices: [
-        { label: '길드의 견습 직원이 된다', text: '모험자 등록과 의뢰 접수를 배우며 도시의 행정과 던전 정보를 익혔다.', fx: { job: 'guild_staff', organization: 'guild', valis: 500, bond: 2 } },
-        { label: '주점 ‘풍요의 여주인’에서 일한다', text: '전직 모험자 출신 점원들 틈에서 홀 일을 배우기 시작했다. (신의 파밀리아가 아니라 고용처이므로 팔나는 없다)', fx: { job: 'waitstaff', organization: 'hostess' } },
+        { label: '길드의 견습 직원이 된다', cond: { inRecruitAreaOf: 'guild' }, text: '모험자 등록과 의뢰 접수를 배우며 도시의 행정과 던전 정보를 익혔다.', fx: { job: 'guild_staff', organization: 'guild', valis: 500, bond: 2 } },   // P3 DI-4
+        { label: '주점 ‘풍요의 여주인’에서 일한다', cond: { inRecruitAreaOf: 'hostess' }, text: '전직 모험자 출신 점원들 틈에서 홀 일을 배우기 시작했다. (신의 파밀리아가 아니라 고용처이므로 팔나는 없다)', fx: { job: 'waitstaff', organization: 'hostess' } },   // P3 DI-4
         { label: '상점에서 장사를 배운다', text: '물건의 값과 사람들의 마음을 읽는 법을 익히며 상인의 길에 들어섰다.', fx: { job: 'merchant', valis: 900 } },
         { label: '농장 일을 돕는다', text: '계절에 맞춰 씨를 뿌리고 거두는 삶을 시작했다.', fx: { job: 'farmer', hp: 5, valis: 400 } },
         { label: '치유사의 조수가 된다', text: '약초와 치료 도구를 다루며 다친 이들을 돌보는 일을 배웠다.', fx: { job: 'healer', bond: 3, valis: 300 } },
@@ -267,7 +267,7 @@ const EVENTS = [
         { label: '모험자 파밀리아에 들어간다', text: '모험자 파밀리아의 문을 두드렸다.', fx: { recruit: { route: 'self_apply', okText: '팔나를 받고 던전에 도전할 기회를 얻었다.', failText: '받아 주는 파밀리아를 찾지 못했다.' } } },
         { label: '서포터로 일한다', text: '모험자들의 짐을 나르고 전리품을 정리하는 일을 시작했다.', fx: { job: 'supporter', valis: 600 } }
     ] },
-    { id: 'guild_counter', w: 22, cool: 4, maxTimes: 3, cond: { age: [18, 70], job: ['guild_staff'] }, text: '길드 창구에는 의뢰를 접수하려는 모험자와 항의하러 온 시민이 뒤섞여 긴 줄을 만들었다.', choices: [
+    { id: 'guild_counter', w: 22, cool: 4, maxTimes: 3, cond: { age: [18, 70], job: ['guild_staff'], employerIn: ['guild'], atSiteOf: 'guild' }, text: '길드 창구에는 의뢰를 접수하려는 모험자와 항의하러 온 시민이 뒤섞여 긴 줄을 만들었다.', choices: [
         { label: '초보 모험자의 의뢰서를 꼼꼼히 확인한다', text: '실수를 미리 찾아내 큰 사고를 막았다. 감사 인사가 작은 보람으로 남았다.', fx: { bond: 3, valis: 350 } },
         { label: '마석 감정 업무를 맡는다', text: '시세를 정확히 맞혀 길드의 신뢰를 얻었다.', fx: { valis: 700, power: 1 } }
     ] },
@@ -323,7 +323,7 @@ const EVENTS = [
         { label: '시간을 들여 정밀하게 수리한다', text: '무기의 균형을 바로잡아 단골의 신뢰를 얻었다.', fx: { valis: 800, bond: 3 } },
         { label: '빠르게 수리하고 다음 주문을 받는다', text: '많은 주문을 처리했지만 마감 품질은 아쉬웠다.', fx: { valis: 1100, bond: -1 } }
     ] },
-    { id: 'waitstaff_shift', w: 18, cool: 3, maxTimes: 2, cond: { age: [18, 75], job: ['waitstaff'] }, text: '풍요의 여주인에 단체 손님이 몰려들었다. 바쁜 홀에서 손님들의 요구를 놓치지 않아야 한다.', choices: [
+    { id: 'waitstaff_shift', w: 18, cool: 3, maxTimes: 2, cond: { age: [18, 75], job: ['waitstaff'], employerIn: ['hostess'], atSiteOf: 'hostess' }, text: '풍요의 여주인에 단체 손님이 몰려들었다. 바쁜 홀에서 손님들의 요구를 놓치지 않아야 한다.', choices: [
         { label: '동료와 호흡을 맞춰 주문을 처리한다', text: '손님들이 만족스럽게 식사를 마쳤고 팁도 넉넉했다.', fx: { valis: 700, bond: 3 } },
         { label: '문제가 생긴 테이블을 직접 맡는다', text: '언쟁을 가라앉히고 단골손님을 얻었다.', fx: { bond: 4 } }
     ] },

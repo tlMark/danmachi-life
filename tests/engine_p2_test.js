@@ -137,6 +137,7 @@ test('EN-12 조건 키·값 정적 검사', () => {
   const SHAPE = { job: v => typeof v === 'string' || strArr(v), age: range, cage: range, min: numObj, max: numObj,
     hasFamilia: v => typeof v === 'boolean', hasPartner: v => typeof v === 'boolean', hasEmployer: v => typeof v === 'boolean', canEnterDungeon: v => v === true };
   for (const k of ['notRace', 'familia', 'familiaIn', 'residenceIn', 'locationIn', 'employerIn', 'origin', 'race', 'noItem', 'relative', 'noRelative', 'flags', 'noFlags', 'falnaState', 'familiaRole']) SHAPE[k] = strArr;
+  SHAPE.atSiteOf = SHAPE.inRecruitAreaOf = v => typeof v === 'string' && v.length > 0;   // F1D4A P3(의도적 시험 변경): 조직 id 문자열 키 추가(D-INSTITUTION §3)
   check('EN-12 형식 표가 MATCH_KEYS 전체를 덮음', MK.every(k => SHAPE[k]) && Object.keys(SHAPE).length === MK.length);
   const badKey = [], badVal = []; let nEv = 0, nCh = 0;
   for (const e of T.G('EVENTS')) {
