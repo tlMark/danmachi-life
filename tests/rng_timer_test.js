@@ -148,7 +148,17 @@ async function chromiumPage(browser, timerCapMs) {
                 const v = JSON.parse(((r.stdout || '').match(/^v178:\s*(\{.*\})\s*$/m) || [])[1] || 'null');
                 return { status: r.status, out: r.stdout || '', v, lifeDigest: ((r.stdout || '').match(/^lifeDigest:\s*(\S+)/m) || [])[1], completed: ((r.stdout || '').match(/^completed:\s*(\d+)/m) || [])[1] };
             };
-            const f1 = mk(g.stdout), now = mk(cur);
+            // F1D4A P3(승인된 TM-2b 어댑터, 의도적 시험 변경): P3 F-D·F-B 로 F1 러너 안의 고정 상태 단언·RI 이유 검사가 현재 게임 데이터와 맞지 않아
+            //   F1 러너가 끝까지 실행되지 않는다. git 의 F1 원본(F1_COMMIT)·고정 파일은 바꾸지 않고, 이 시험이 만드는 F1 러너 **사본에만**
+            //   현재 러너와 같은 두 줄을 적용해 같은 입력 상태로 실행한다. 각 치환은 정확히 1곳이어야 하며(아니면 예외 → 시험 실패), 기대값은 그대로.
+            const P3_COMPAT = [
+                ["            S.age = 35; S.physicalAge = 35; S.phase = 35;\n            const hero = EVENTS.find(e => e.id === 'hero_sacrifice');",
+                 "            S.age = 35; S.physicalAge = 35; S.phase = 35;\n            if (S.location) S.location = { regionId: 'orario', since: S.location.since };   // F1D4A P3 F-E(의도적 시험 변경): F-D 로 hero_sacrifice 에 locationIn:['orario'] 이 붙어 고정 상태에 위치를 명시(레벨 관문 판정 의도 유지)\n            const hero = EVENTS.find(e => e.id === 'hero_sacrifice');"],
+                ["if (i > 0) { RI.moves += 1; tally(RI.movesByReason, h.reason); if (h.reason !== 'fled') riFail('unapproved_move_reason'); }",
+                 "if (i > 0) { RI.moves += 1; tally(RI.movesByReason, h.reason); if (h.reason !== 'fled' && !(h.reason === 'retirement' && h.eventId === 'retire')) riFail('unapproved_move_reason'); }   // F1D4A P3 F-B(의도적 시험 변경): retire[1] 메렌 이주(이유 retirement, 사건 retire)만 추가 승인"]];
+            const p3compat = src => P3_COMPAT.reduce((acc, [from, to], i) => { if (acc.split(from).length !== 2) throw new Error('TM-2b P3 어댑터 #' + i + ': 치환 대상이 1곳이 아님'); return acc.replace(from, () => to); }, src);
+            check('TM-2b P3 어댑터: 두 치환문이 현재 러너에 그대로 들어 있음(현재 러너와 같은 입력 상태) · F1 원본에는 각 1곳', P3_COMPAT.every(([from, to]) => cur.split(to).length === 2 && g.stdout.split(from).length === 2));
+            const f1 = mk(p3compat(g.stdout)), now = mk(cur);
             const CTX = "            const ev = (activeShowEventContext.length ? activeShowEventContext[activeShowEventContext.length - 1] : lastShownEventId) || '(no-event)';";
             const mutant = mk(cur, src => { if (src.split(CTX).length !== 2) throw new Error('TM-2b: 변이 대상 문장이 1개가 아님'); return src.replace(CTX, "            const ev = lastShownEventId || '(no-event)';   /* MUTATION: 활성 사건 스택 미사용 */"); });
             // 세 러너(F1 · 현재 · 변이)에 같은 유효성 검사를 적용한다. 실행 실패·계측 자료 누락은 "변이 검출"이 아니라 시험 실패다.

@@ -146,7 +146,7 @@ function getChoiceProbability(chance = {}, extraPower = 0) {
 // P3 DI-1/DI-4: 조직 시설·모집 지역 판정. 값은 조직 id 문자열. 알 수 없는 조직·문자열이 아닌 값·위치 없음은 false(fail-closed).
 //   둘 다 현재 위치 S.location.regionId 만 본다(거주지·출생지 무관). 상태 변경·난수 0.
 function orgForCond(id) {
-    if (typeof id !== 'string') return null;
+    if (typeof id !== 'string' || id.length === 0) return null;   // 비어 있지 않은 문자열만
     return (gachaData.organizations || []).find(o => o && o.id === id) || null;
 }
 function atSiteOfOrg(id) {
@@ -167,8 +167,9 @@ function match(c = {}, event) {
     if (c.residenceIn && !(S.residence && c.residenceIn.includes(S.residence.regionId))) return false; // E-2: 거주지
     if (c.locationIn && !(S.location && c.locationIn.includes(S.location.regionId))) return false;     // E-2: 현재 위치만(거주지·출생지 무관)
     if (c.employerIn && !(S.employer && c.employerIn.includes(S.employer.id))) return false;           // E-2: 고용처
-    if (c.atSiteOf && !atSiteOfOrg(c.atSiteOf)) return false;                  // P3 DI-4: 현재 위치에 그 조직의 시설·지점이 있음(D-INSTITUTION §2)
-    if (c.inRecruitAreaOf && !inRecruitAreaOfOrg(c.inRecruitAreaOf)) return false;   // P3 DI-4: 현재 위치가 그 조직의 모집 지역
+    // P3 DI-4: 값의 참·거짓이 아니라 키의 존재로 검사한다(P3 보완: '' · null · false · 0 · undefined 우회 차단 → 거짓).
+    if (Object.prototype.hasOwnProperty.call(c, 'atSiteOf') && !atSiteOfOrg(c.atSiteOf)) return false;                  // 현재 위치에 그 조직의 시설·지점이 있음(D-INSTITUTION §2)
+    if (Object.prototype.hasOwnProperty.call(c, 'inRecruitAreaOf') && !inRecruitAreaOfOrg(c.inRecruitAreaOf)) return false;   // 현재 위치가 그 조직의 모집 지역
     if (c.hasEmployer === true && !S.employer) return false;
     if (c.hasEmployer === false && S.employer) return false;
     if (c.origin && !c.origin.includes(S.origin.id)) return false;
@@ -236,6 +237,7 @@ function choiceCondNormalize(c) {
     const n = choiceSnapshot(c);
     if (!n) return null;
     for (const k of Object.keys(n)) if (!CHOICE_COND_KEYS.includes(k) || !MATCH_KEYS.includes(k)) return null;
+    for (const k of ['atSiteOf', 'inRecruitAreaOf']) if (k in n && !(typeof n[k] === 'string' && n[k].length > 0)) return null;   // P3 보완: 조직 id 는 비어 있지 않은 문자열(아니면 형식 오류)
     for (const lim of ['min', 'max']) {
         if (!(lim in n)) continue;
         const m = choiceSnapshot(n[lim]), ks = m ? Object.keys(m) : [];

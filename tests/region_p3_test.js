@@ -49,6 +49,26 @@ test('E-2 fail-closed: 알 수 없는 조직 · 문자열이 아닌 값 · 위�
   for (const v of ["'__nope__'", "['guild']", '1', 'true', '{}']) check('AS-3 값 ' + v + ' → false', T.G(`match({ atSiteOf: ${v} })`) === false && T.G(`match({ inRecruitAreaOf: ${v} })`) === false);
   s.location = null; check('AS-4 위치 없음 → false', T.G("match({ atSiteOf: 'guild' })") === false && T.G("match({ inRecruitAreaOf: 'guild' })") === false);
 });
+// P3 보완(ChatGPT 1차 검수 REJECT): 키가 있으면 값과 무관하게 검사 — falsy 값('' · null · false · 0 · undefined)도 거짓(우회 차단).
+const FALSY = ["''", 'null', 'false', '0', 'undefined'];
+test('E-2 falsy 값 우회 차단: match · choiceMatch · 사건 조건 · 선택지 조건(visibleChoices · chooseBody) 모두 거짓', () => {
+  for (const key of ['atSiteOf', 'inRecruitAreaOf']) for (const v of FALSY) {
+    const T = makeCtx(); const s = placeAt(T, { location: 'orario', age: 30 });   // 위치 orario: 정상 값이면 참이 되는 상태에서 확인
+    check(`FS-1 ${key}: ${v} → match 거짓`, T.G(`match({ ${key}: ${v} })`) === false);
+    check(`FS-2 ${key}: ${v} → choiceMatch 거짓(형식 오류)`, T.G(`choiceMatch({ ${key}: ${v} })`) === false && T.G(`choiceCondValid({ ${key}: ${v} })`) === false);
+    T.G(`EVENTS.push({ id: '__fs_ev', w: 0, text: 't', cond: { ${key}: ${v} }, choices: [{ label: 'a', text: 'aa', fx: {} }] })`);
+    check(`FS-3 ${key}: ${v} → 사건 조건 후보 아님`, T.G("match(EVENTS.find(e => e.id === '__fs_ev').cond)") === false);
+    T.G(`EVENTS.push({ id: '__fs_ch', w: 0, text: 't', cond: {}, choices: [{ label: '보임', text: 'ok', fx: {} }, { label: 'X', cond: { ${key}: ${v} }, text: 'xx', fx: { valis: 777 } }] })`);
+    check(`FS-4 ${key}: ${v} → 선택지 숨김`, JSON.stringify(T.G("visibleChoices(EVENTS.find(e => e.id === '__fs_ch')).map(c => c.label)")) === '["보임"]');
+    T.G("showEvent(EVENTS.find(e => e.id === '__fs_ch'))"); const b = snap(s), c0 = T.calls();
+    T.G("chooseBody(EVENTS.find(e => e.id === '__fs_ch').choices[1])");
+    const d = T.G("followupDiagLog.filter(d => d.event === 'hidden_choice_rejected')");
+    check(`FS-5 ${key}: ${v} → chooseBody 거부(cond_malformed) · S·난수 불변`, snap(s) === b && T.calls() === c0 && d.length === 1 && d[0].reason === 'cond_malformed', d);
+  }
+  const T = makeCtx(); placeAt(T, { location: 'orario' });
+  check('FS-6 대조: 정상 문자열은 참(위치 orario)', T.G("match({ atSiteOf: 'guild' })") === true && T.G("match({ inRecruitAreaOf: 'hostess' })") === true && T.G("choiceMatch({ atSiteOf: 'guild' })") === true);
+  check('FS-7 키가 없으면 검사하지 않음(다른 조건만)', T.G('match({})') === true && T.G("match({ job: [S.job] })") === true);
+});
 test('E-2 순수성: 판정이 S·난수·연표·진단을 바꾸지 않음', () => {
   const T = makeCtx(); const s = placeAt(T, { location: 'orario' }); const b = snap(s), c0 = T.calls(), d0 = T.G('followupDiagLog.length');
   T.G("for (let i = 0; i < 20; i++) { match({ atSiteOf: 'guild' }); match({ inRecruitAreaOf: 'hostess' }); choiceMatch({ inRecruitAreaOf: 'guild' }); }");
