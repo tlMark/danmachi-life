@@ -261,6 +261,14 @@ function choiceVerdict(ch, e) {
     }
 }
 function choiceVisible(ch, e) { return choiceVerdict(ch, e).ok; }
+// 참조 대조: ch 가 사건 e 의 choices 배열에 실제로 들어 있는 같은 객체인가(값·id 비교 아님). 예외는 거부.
+function choiceInEvent(ch, e) {
+    try {
+        if (!e || !Array.isArray(e.choices)) return false;
+        for (let i = 0; i < e.choices.length; i++) if (e.choices[i] === ch) return true;
+        return false;
+    } catch (err) { return false; }
+}
 function visibleChoices(e) { return e.choices.filter(ch => choiceVisible(ch, e)); }
 
 function say(text, cls = '', age) {
@@ -1011,12 +1019,47 @@ function nextYear() {
     }
 }
 
+// ── P2 보완 4(신뢰 경계 A안): 사용자 입력 경계 = 사건 선택지 버튼의 클릭 경로 ─────────────────────────────
+//   choose()·chooseBody() 는 UI 보안 경계가 아니라 엔진·시험 하네스 전용 내부 API다. 합성 선택지 직접 호출은 그대로 허용한다
+//   (이 조치는 직접 호출의 임의 객체 입력을 막지 않는다). 실제 EVENTS 는 신뢰된 정적 사건 데이터로 취급하고(Node 시험에서 Proxy 0·
+//   일반 객체 선택지를 강제), 콘솔·페이지 코드를 임의 실행할 수 있는 사용자는 위협 모델 밖이다.
+//   showEvent 는 표시할 때마다 표시 기록 { seq, event } 를 만들고 버튼이 그 기록·사건·선택지 참조를 캡처한다.
+//   클릭 시 ① 그 표시가 지금 활성 표시인가(stale_button) ② 캡처한 사건 객체의 원본이 실제 EVENTS 에 있는가(event_not_in_events, 아래 eventSourceInEvents)
+//   ③ 활성 사건이 캡처한 사건과 같은 객체이고 아직 해결되지 않았는가(event_not_active) ④ 선택지가 그 사건 choices 의 실제 참조인가
+//   (choice_not_in_event) 를 객체 참조로 확인한다. 실패하면 choose() 를 부르지 않는다(효과·확률 판정·난수 0). 표시 기록은 S 밖이다.
+let eventShowSeq = 0, activeEventShow = null;
+// 표시된 사건 e 의 원본을 실제 EVENTS 에서 객체 참조로 찾는다. nextYear 는 가중치를 조정한 얕은 복사본({ ...e, w })을 표시하므로
+//   "원본 자체(src === e)" 또는 "같은 id 이고 choices 배열이 원본과 같은 참조(src.choices === e.choices)"인 경우만 인정한다(id 문자열만으로는 인정 안 함).
+function eventSourceInEvents(e) {
+    if (!e || typeof e !== 'object' || !Array.isArray(EVENTS)) return null;
+    for (let i = 0; i < EVENTS.length; i++) {
+        const src = EVENTS[i];
+        if (src === e || (src && src.id === e.id && Array.isArray(src.choices) && src.choices === e.choices)) return src;
+    }
+    return null;
+}
+function eventChoiceClickCheck(show, e, ch) {
+    try {
+        if (!S) return 'no_state';
+        if (!show || show !== activeEventShow) return 'stale_button';
+        if (!eventSourceInEvents(e)) return 'event_not_in_events';
+        if (show.event !== e || S.currentEventId !== e.id) return 'event_not_active';
+        if (!choiceInEvent(ch, e)) return 'choice_not_in_event';
+        return null;
+    } catch (err) { return 'click_check_error'; }
+}
+function clickEventChoice(show, e, ch) {
+    const why = eventChoiceClickCheck(show, e, ch);
+    if (why) { followupDiag('choice_click_rejected', { eventId: S ? (S.currentEventId ?? null) : null, reason: why }); return; }
+    return choose(ch);
+}
 function showEvent(e) {
     if (haltedEntry('showEvent')) return;   // H1 정지 가드(반환 undefined)
     // E-1.3: 보이는 선택지가 0개면 상태·연표·버튼·타이머·난수를 건드리기 전에 false. 사건 조건은 다시 보지 않는다(nextYear ⑫ 의 책임).
     const vis = visibleChoices(e);
     if (vis.length === 0) { followupDiag('event_no_visible_choice', { where: 'showEvent', eventId: e.id }); return false; }
     S.currentEventId = e.id;   // v1.7.8-2i: 기록 전용, choose() 의 finally 에서 null
+    const show = activeEventShow = { seq: ++eventShowSeq, event: e };   // P2 보완 4: 이번 표시(버튼이 캡처)
     say(e.text, 'event', S.age);
     if (e.once) S.done.push(e.id);
     S.eventCounts[e.id] = (S.eventCounts[e.id] || 0) + 1;
@@ -1026,7 +1069,7 @@ function showEvent(e) {
     vis.forEach(ch => {   // E-1.4: 보이는 선택지만 버튼으로 만든다
         const b = document.createElement('button');
         b.className = 'choice'; b.textContent = ch.label;
-        b.onclick = () => choose(ch);
+        b.onclick = () => clickEventChoice(show, e, ch);   // P2 보완 4: 클릭 시 참조 재검증 후 choose()
         $('choices').appendChild(b);
     });
     if ($('auto').checked) scheduleAuto(() => {

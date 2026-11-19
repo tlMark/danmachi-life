@@ -439,4 +439,147 @@ test('P2 보완 3 F-12: 판정 함수(choiceVerdict·visibleChoices)는 잘못�
   check('PF-12', snap(s) === b && T.calls() === c0 && T.G('followupDiagLog.length') === d0 && T.G('syncInvariantLog.length') === y0 && T.G('__gr.length') === 0, T.G('__gr'));
 });
 
+// ── P2 보완 4(신뢰 경계 A안): 사건 선택지 버튼의 클릭 경로 참조 재검증 ───────────────────────────────────────
+// 보호 범위는 사용자 UI 의 버튼 클릭 경로뿐이다. choose()·chooseBody() 직접 호출(엔진·하네스 내부 API)은 이 시험의 대상이 아니다.
+// 합성 사건(EVENTS 에 넣은 시험용 사건)과 실제 사건(sick) 둘 다 쓴다. nextYear 와 같은 얕은 복사본({ ...e, w }) 표시도 확인한다.
+const CLK = { id: '__en_clk', w: 0, text: 't', cond: {}, choices: [{ label: 'A', text: 'aa', fx: { valis: 11 } }, { label: 'B', text: 'bb', fx: { valis: 22 } },
+  { label: 'C', chance: { p: 0.5, stat: 'hp', per: 0, ok: { text: 'co', fx: {} }, fail: { text: 'cf', fx: {} } } }] };
+const OTH = { id: '__en_oth', w: 0, text: 'o', cond: {}, choices: [{ label: 'O', text: 'oo', fx: { valis: 777 } }] };
+const clkDiag = T => diags(T, 'choice_click_rejected');
+// 거부 확인: 클릭(또는 clickEventChoice) 뒤 S·난수·연표·UI 불변, 진단 +1 · 이유 일치
+const expectClickRejected = (T, label, fire, why) => {
+  const s = T.S(), b = snap(s), c0 = T.calls(), log0 = s.logHistory.length, ui0 = T.el('choices').innerHTML, d0 = clkDiag(T).length; let threw = null;
+  try { fire(); } catch (err) { threw = String(err); }
+  const d = clkDiag(T);
+  check(label + ' → 거부(' + why + '): 예외 없음 · choose 미호출(효과·확률 판정·난수 0) · S·연표·UI 불변', threw === null && snap(s) === b && T.calls() === c0 && s.logHistory.length === log0 && T.el('choices').innerHTML === ui0, threw);
+  check(label + ' 진단 choice_click_rejected 1건 reason=' + why, d.length === d0 + 1 && d[d.length - 1].reason === why, d[d.length - 1]);
+};
+test('P2 보완 4 F-13a: 정상 선택지 버튼 클릭은 기존 choose() 결과와 같음(합성 사건 · 실제 사건 · nextYear 식 얕은 복사본)', () => {
+  const cases = [['합성 __en_clk A', T => { push(T, CLK); return "EVENTS.find(e => e.id === '__en_clk')"; }, 0], ['합성 __en_clk C(chance)', T => { push(T, CLK); return "EVENTS.find(e => e.id === '__en_clk')"; }, 2],
+    ['실제 sick 0', () => "EVENTS.find(e => e.id === 'sick')", 0], ['실제 sick 1(chance)', () => "EVENTS.find(e => e.id === 'sick')", 1],
+    ['실제 sick 얕은 복사본(nextYear 와 같은 { ...e, w })', () => "(() => { const src = EVENTS.find(e => e.id === 'sick'); return { ...src, w: src.w * 0.12 }; })()", 1]];
+  for (const [name, mk, idx] of cases) {
+    const A = makeCtx({ seed: 9 }), B = makeCtx({ seed: 9 }); const sa = life(A, 30), sb = life(B, 30);
+    const ea = mk(A), eb = mk(B);
+    A.G('var __ev = ' + ea + '; showEvent(__ev)'); B.G('var __ev = ' + eb + '; showEvent(__ev)');
+    const ca = A.calls(), cb = B.calls();
+    A.buttons()[idx].click();                                   // 클릭 경로
+    B.G('choose(__ev.choices[' + idx + '])');                   // 기존 직접 경로(같은 선택지 참조)
+    check('PF-13a ' + name + ' 클릭 = 직접 choose: S 깊은 비교 · 난수 호출 수 · 연표 동일, 거부 진단 0',
+      snap(sa) === snap(sb) && A.calls() - ca === B.calls() - cb && JSON.stringify(sa.logHistory) === JSON.stringify(sb.logHistory) && clkDiag(A).length === 0);
+  }
+});
+test('P2 보완 4 F-13b: 현재 사건에 없는 객체 · 다른 사건의 선택지 · 다른 사건 객체 → 클릭 경로 거부', () => {
+  const T = makeCtx(); life(T, 30); push(T, CLK); push(T, OTH);
+  T.G("var __ev = EVENTS.find(e => e.id === '__en_clk'), __oth = EVENTS.find(e => e.id === '__en_oth'); showEvent(__ev)");
+  expectClickRejected(T, 'PF-13b 현재 사건에 없는 새 객체', () => T.G("clickEventChoice(activeEventShow, __ev, { label: 'F', text: 'ff', fx: { valis: 777 } })"), 'choice_not_in_event');
+  expectClickRejected(T, 'PF-13b 값이 같은 복제 선택지(참조 다름)', () => T.G("clickEventChoice(activeEventShow, __ev, { ...__ev.choices[0] })"), 'choice_not_in_event');
+  expectClickRejected(T, 'PF-13b 다른 사건의 선택지 참조', () => T.G('clickEventChoice(activeEventShow, __ev, __oth.choices[0])'), 'choice_not_in_event');
+  expectClickRejected(T, 'PF-13b 다른 사건 객체(활성 아님)', () => T.G('clickEventChoice(activeEventShow, __oth, __oth.choices[0])'), 'event_not_active');
+  expectClickRejected(T, 'PF-13b 표시 기록 위조(같은 내용의 새 객체)', () => T.G('clickEventChoice({ seq: activeEventShow.seq, event: __ev }, __ev, __ev.choices[0])'), 'stale_button');
+  check('PF-13b 거부 뒤에도 정상 버튼은 동작', (T.buttons()[0].click(), T.S().logHistory.some(l => l.text === 'aa')));
+});
+test('P2 보완 4 F-13c: 이전 사건의 stale 버튼 → 거부(같은 사건 재표시 · 다른 사건 표시 · 이미 해결된 사건)', () => {
+  { const T = makeCtx(); life(T, 30); push(T, CLK);
+    T.G("var __ev = EVENTS.find(e => e.id === '__en_clk'); showEvent(__ev)"); const old = T.buttons();
+    T.G("$('choices').innerHTML = ''; S.currentEventId = null; showEvent(__ev)");        // 같은 사건 객체를 다시 표시(합성)
+    expectClickRejected(T, 'PF-13c 같은 사건 재표시 뒤 이전 표시의 버튼', () => old[0].click(), 'stale_button');
+    expectClickRejected(T, 'PF-13c 같은 사건 재표시 뒤 이전 표시의 chance 버튼(난수 0)', () => old[2].click(), 'stale_button'); }
+  { const T = makeCtx(); life(T, 30); push(T, CLK); push(T, OTH);
+    T.G("showEvent(EVENTS.find(e => e.id === '__en_clk'))"); const old = T.buttons();
+    T.G("$('choices').innerHTML = ''; S.currentEventId = null; showEvent(EVENTS.find(e => e.id === '__en_oth'))");
+    expectClickRejected(T, 'PF-13c 다른 사건 표시 뒤 이전 사건의 버튼', () => old[1].click(), 'stale_button'); }
+  { const T = makeCtx(); life(T, 30); push(T, CLK);
+    T.G("showEvent(EVENTS.find(e => e.id === '__en_clk'))"); const old = T.buttons();
+    old[0].click();                                                                        // 정상 해결(currentEventId → null)
+    const v1 = T.S().valis;
+    expectClickRejected(T, 'PF-13c 이미 해결된 사건의 다른 버튼', () => old[1].click(), 'event_not_active');
+    expectClickRejected(T, 'PF-13c 이미 해결된 사건의 같은 버튼 두 번째 클릭', () => old[0].click(), 'event_not_active');
+    check('PF-13c 효과는 한 번만', T.S().valis === v1); }
+});
+test('P2 보완 4 F-13d: 실제 EVENTS 에 원본이 없는 사건의 버튼 → 거부(id 문자열만 같은 경우 포함)', () => {
+  { const T = makeCtx(); life(T, 30);
+    T.G("showEvent({ id: '__ghost', text: 'g', choices: [{ label: 'G', text: 'gg', fx: { valis: 777 } }] })");
+    expectClickRejected(T, 'PF-13d EVENTS 에 없는 사건', () => T.buttons()[0].click(), 'event_not_in_events'); }
+  { const T = makeCtx(); life(T, 30);
+    T.G("(() => { const src = EVENTS.find(e => e.id === 'sick'); showEvent({ ...src, choices: src.choices.slice() }); })()");   // id 같음 · choices 배열 참조 다름
+    expectClickRejected(T, 'PF-13d id 만 같은 사건(choices 배열 복제)', () => T.buttons()[0].click(), 'event_not_in_events'); }
+  { const T = makeCtx(); life(T, 30);
+    T.G("(() => { const src = EVENTS.find(e => e.id === 'sick'); showEvent({ ...src, id: '__sick_alias' }); })()");          // choices 참조 같음 · id 다름
+    expectClickRejected(T, 'PF-13d choices 참조만 같고 id 다른 사건', () => T.buttons()[1].click(), 'event_not_in_events'); }
+});
+test('P2 보완 4 F-13e: 내부 API 는 그대로(합성 선택지 직접 choose 허용) · 자동 진행 경로 유지', () => {
+  const T = makeCtx(); life(T, 30); push(T, CLK); T.G("showEvent(EVENTS.find(e => e.id === '__en_clk'))");
+  T.G("choose({ label: 'syn', text: 'synthetic', fx: { valis: 5 } })");
+  check('PF-13e 합성 선택지 직접 choose 는 실행됨(내부 API · 보호 범위 밖)', T.S().logHistory.some(l => l.text === 'synthetic') && clkDiag(T).length === 0);
+  const U = makeCtx({ timers: 'queue' }); life(U, 30); push(U, CLK); U.el('auto').checked = true; U.G("showEvent(EVENTS.find(e => e.id === '__en_clk'))");
+  const c0 = U.calls(); U.runTimer();
+  check('PF-13e 자동 진행: 버튼 클릭 경로로 진행(R2 1 + 선택 결과), 거부 0', U.calls() - c0 >= 1 && U.S().logHistory.some(l => ['aa', 'bb', 'co', 'cf'].includes(l.text)) && clkDiag(U).length === 0);
+});
+
+// ── P2 보완 4: 실제 EVENTS 정적 데이터 무결성(Node util.types.isProxy 재귀 검사) ─────────────────────────────
+// 규칙: 값마다 Proxy 여부를 가장 먼저 확인(그 전에는 속성 열거·접근 없음). 자체 속성 서술자의 데이터 값(value)만 재귀(getter/setter 미실행,
+// 접근자는 기록). WeakSet 으로 순환 방지. 함수는 Proxy 여부만 확인하고 내부로 들어가지 않는다.
+const nodeUtil = require('util');
+function scanEvents(EV, objProto) {
+  const out = { proxies: [], accessors: [], nonPlainChoices: [], nonArrayChoices: [], events: 0, choices: 0, nodes: 0 }, seen = new WeakSet();
+  const walk = (v, path) => {
+    if (v === null || (typeof v !== 'object' && typeof v !== 'function')) return;
+    if (nodeUtil.types.isProxy(v)) { out.proxies.push(path); return; }   // 첫 확인
+    if (typeof v === 'function' || seen.has(v)) return; seen.add(v); out.nodes++;
+    for (const k of Reflect.ownKeys(v)) {
+      const d = Reflect.getOwnPropertyDescriptor(v, k);
+      if (!('value' in d)) { out.accessors.push(path + '.' + String(k)); continue; }
+      walk(d.value, path + '.' + String(k));
+    }
+  };
+  const plain = v => { const p = Object.getPrototypeOf(v); return !Array.isArray(v) && (p === null || p === objProto); };
+  if (nodeUtil.types.isProxy(EV)) { out.proxies.push('EVENTS'); return out; }
+  walk(EV, 'EVENTS');
+  if (!Array.isArray(EV)) return out;
+  for (let i = 0; i < EV.length; i++) {
+    const ed = Reflect.getOwnPropertyDescriptor(EV, i), e = ed && 'value' in ed ? ed.value : undefined;
+    if (!e || typeof e !== 'object' || nodeUtil.types.isProxy(e)) continue; out.events++;
+    const cd = Reflect.getOwnPropertyDescriptor(e, 'choices'), chs = cd && 'value' in cd ? cd.value : undefined;
+    if (!chs || nodeUtil.types.isProxy(chs) || !Array.isArray(chs)) { out.nonArrayChoices.push(i); continue; }
+    for (let j = 0; j < chs.length; j++) {
+      const hd = Reflect.getOwnPropertyDescriptor(chs, j), ch = hd && 'value' in hd ? hd.value : undefined; out.choices++;
+      if (!ch || typeof ch !== 'object' || nodeUtil.types.isProxy(ch) || !plain(ch)) out.nonPlainChoices.push(i + ':' + j);
+    }
+  }
+  return out;
+}
+const scanOf = T => scanEvents(T.G('EVENTS'), T.G('Object.prototype'));
+const scanOk = r => r.proxies.length === 0 && r.accessors.length === 0 && r.nonPlainChoices.length === 0 && r.nonArrayChoices.length === 0;
+test('P2 보완 4 F-14a: 실제 로드된 EVENTS(events.js) 전체 — Proxy 0 · 접근자 0 · 모든 선택지가 일반 객체', () => {
+  const T = makeCtx(); const r = scanOf(T);
+  check('PF-14a 실제 EVENTS 81개 · 선택지 ' + r.choices + '개 · 검사 노드 ' + r.nodes + '개, 문제 0', r.events === 81 && T.G('EVENTS.length') === 81 && r.choices > 0 && scanOk(r), r);
+});
+test('P2 보완 4 F-14b: EVENTS 안에 Proxy 가 있으면 검사 실패 · 검사 중 trap 호출 0', () => {
+  const inject = [['사건 cond 에 Proxy', "EVENTS[3].cond = new Proxy({}, __rec)"], ['선택지 cond 에 Proxy', "EVENTS[5].choices[0].cond = new Proxy({}, __rec)"],
+    ['선택지 cond.min 에 Proxy', "EVENTS[6].choices[0].cond = { min: new Proxy({ hp: 1 }, __rec) }"], ['선택지 자체가 Proxy', "EVENTS[7].choices.push(new Proxy({ label: 'p' }, __rec))"],
+    ['choices 배열이 Proxy', "EVENTS[8].choices = new Proxy(EVENTS[8].choices, __rec)"], ['사건 자체가 Proxy', "EVENTS.push(new Proxy({ id: '__px', choices: [] }, __rec))"],
+    ['fx 깊은 곳에 Proxy', "EVENTS[9].choices[0].fx = { deep: [{ x: new Proxy({}, __rec) }] }"]];
+  for (const [name, code] of inject) {
+    const T = makeCtx();
+    T.G("var __trap = 0; var __rec = new Proxy({}, { get(t, k) { return function () { __trap++; return Reflect[k].apply(null, arguments); }; } })");
+    T.G(code); const r = scanOf(T);
+    check('PF-14b ' + name + ' → Proxy 검출 · 검사 실패 · trap 0', r.proxies.length >= 1 && !scanOk(r) && T.G('__trap') === 0, { proxies: r.proxies, trap: T.G('__trap') });
+  }
+});
+test('P2 보완 4 F-14c: 비일반 선택지 객체 · 접근자 · 순환 참조', () => {
+  for (const [name, code, field] of [['사용자 프로토타입 선택지', "EVENTS[4].choices.push(Object.assign(Object.create({ z: 1 }), { label: 'u' }))", 'nonPlainChoices'],
+    ['Date 선택지', "EVENTS[4].choices.push(new Date(0))", 'nonPlainChoices'], ['클래스 인스턴스 선택지', "EVENTS[4].choices.push(new (class K {})())", 'nonPlainChoices'],
+    ['배열 선택지', "EVENTS[4].choices.push([1])", 'nonPlainChoices'], ['원시값 선택지', "EVENTS[4].choices.push('x')", 'nonPlainChoices'],
+    ['choices 가 배열 아님', "EVENTS[4].choices = { 0: {} }", 'nonArrayChoices'],
+    ['getter 속성', "var __g = 0; Object.defineProperty(EVENTS[4].choices[0], 'text', { get() { __g++; return 'x'; }, enumerable: true })", 'accessors']]) {
+    const T = makeCtx(); T.G(code); const r = scanOf(T);
+    check('PF-14c ' + name + ' → 검사 실패(' + field + ')', r[field].length >= 1 && !scanOk(r), r[field]);
+    if (field === 'accessors') check('PF-14c getter 미실행', T.G('__g') === 0);
+  }
+  const T = makeCtx(); T.G('EVENTS[0].choices[0].__self = EVENTS[0]; EVENTS[1].cond.__loop = EVENTS'); let r, threw = null;
+  try { r = scanOf(T); } catch (err) { threw = String(err); }
+  check('PF-14c 순환 참조 → 검사 종료(예외 없음) · 순환 자체는 문제 아님', threw === null && scanOk(r), threw || r);
+});
+
 R.finish('engine_p2_test');
