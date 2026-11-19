@@ -138,4 +138,25 @@ test('LK-S8/LUCK-16/LUCK-19 정적 검사', () => {
   check('LUCK-19c ⑫ 재검사는 원본 e.cond 를 읽지 않음', !/match\(e\.cond/.test(ny));
 });
 
+// ── cec18a9 ChatGPT 1차 반려 보완(LUCK-20): null 프로토타입 원본 거부(다른 realm 우회 차단) ─────────────────
+test('LUCK-20 null 프로토타입 원본(같은 realm·다른 realm)은 최상위·값 위치 모두 거부, 정상 리터럴은 통과', () => {
+  const T = makeCtx(); const s = life(T); const b = snap(s), c0 = T.calls();
+  T.ctx.__xNull = vm.runInNewContext("const o = Object.create(null); o.cage = [0, 99]; o"); // 다른 realm 의 null 프로토타입(최상위)
+  T.ctx.__xNullMin = vm.runInNewContext("const m = Object.create(null); m.power = 1; m");    // 다른 realm 의 null 프로토타입(min 값)
+  check('LUCK-20a 다른 realm null 프로토타입 최상위 거부', T.G('eventCondSnapshot(__xNull).ok') === false);
+  check('LUCK-20b 다른 realm null 프로토타입 min 값 거부', T.G('eventCondSnapshot({ min: __xNullMin }).ok') === false);
+  check('LUCK-20c 같은 realm null 프로토타입 최상위 거부(realm 구별 불가 입력)', T.G("eventCondSnapshot(Object.assign(Object.create(null), { age: [1, 2] })).ok") === false);
+  check('LUCK-20d 같은 realm null 프로토타입 max 값 거부', T.G("eventCondSnapshot({ max: Object.assign(Object.create(null), { bond: 5 }) }).ok") === false);
+  check('LUCK-20e 대조: 같은 내용의 리터럴은 통과', T.G("eventCondSnapshot({ age: [1, 2], max: { bond: 5 }, min: { power: 1 } }).ok") === true);
+  check('LUCK-20f 스냅숏 출력(null 프로토타입)을 다시 넣으면 거부(입력·출력 구분)', T.G("eventCondSnapshot(eventCondSnapshot({ age: [1, 2] }).snap).ok") === false);
+  check('LUCK-20g 검사 중 S·난수 불변', snap(s) === b && T.calls() === c0);
+});
+test('LUCK-20h 다른 realm null 프로토타입 조건 사건은 nextYear 후보 제외·진단 1회', () => {
+  const T = makeCtx(); const s = life(T);
+  T.ctx.__xNull = vm.runInNewContext("const o = Object.create(null); o.age = [0, 200]; o");
+  T.G("EVENTS.push({ id: '__luck20', w: 100000, cond: __xNull, text: 't', choices: [{ t: 'a', fx: {} }] })");
+  let shown = 0; for (let i = 0; i < 6; i++) { T.G('nextYear()'); if (T.S().currentEventId === '__luck20' || T.S().eventCounts.__luck20) shown++; if (T.G('S.pendingFollowup') || T.G('progressHalted')) break; T.G("$('choices').innerHTML = ''"); }
+  check('LUCK-20h', shown === 0 && fdiag(T, 'event_cond_malformed').filter(d => d.eventId === '__luck20').length === 1, fdiag(T, 'event_cond_malformed'));
+});
+
 R.finish('eventcond_test');

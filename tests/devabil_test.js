@@ -208,4 +208,95 @@ test('DA-dup 이미 보유한 id 를 선택하는 경로는 진단만(중복 기
   check('DA-dup', s.devAbilities.length === 1 && diagKinds(T).includes('devability_duplicate_acquire') && s.devAbilityHistory.length === 0);
 });
 
+// ── cec18a9 ChatGPT 1차 반려 보완(DEV-17·18·19·21) ──────────────────────────────────────────────
+// 아래 시험의 습득 경로도 모두 합성 정의·합성 활성화·합성 문구('시험 문구')다. 실제 생애에서는 습득·문구가 없다.
+test('DEV-17 append-only 복원 계약: 성공·실패 커밋 모두 기존 이력 항목의 참조·내용·동결 불변, 복원은 덧붙인 항목만 제거', () => {
+  const T = makeCtx(); enable(T); const s = falnaAt(T, 1); T.G('tryLevelUp()');
+  const h = s.devAbilityHistory, e0 = h[0], j0 = JSON.stringify(e0);
+  check('DEV-17a 이력 항목 동결(수정 차단)', Object.isFrozen(e0) && (() => { try { T.G('"use strict"; S.devAbilityHistory[0].id = "x"'); return false; } catch (_) { return true; } })() && e0.id !== 'x');
+  // 실패 커밋: 이력 push 는 성공한 뒤 문구 단계에서 실패 → 덧붙인 항목만 제거, 기존 항목은 같은 참조·내용
+  T.G("DEVABIL_TEXT.acquire = '시험 문구'"); s.feat = 50; s.abil = { str: 600, vit: 0, dex: 0, agi: 0, mag: 0 };
+  T.G("S.logHistory.push = function (x) { if (x && x.text === '시험 문구') throw new Error('log push fail'); return Array.prototype.push.call(this, x); }");
+  let threw = false; try { T.G('tryLevelUp()'); } catch (_) { threw = true; }
+  check('DEV-17b 실패 뒤 이력 = 같은 배열·길이 1·첫 항목 같은 참조·같은 내용', threw && s.devAbilityHistory === h && h.length === 1 && h[0] === e0 && JSON.stringify(h[0]) === j0);
+  check('DEV-17c 정적: 커밋 함수는 이력에 push 외의 쓰기(원소 대입·splice·shift·unshift·pop) 없음', (() => {
+    const src = T.G('commitDevAbilityChange.toString()').replace(/\/\/[^\n]*/g, '');
+    return !/devAbilityHistory\s*\[[^\]]*\]\s*=(?!=)|devAbilityHistory\.(splice|shift|unshift|pop|sort|reverse|fill|copyWithin)\(/.test(src);
+  })());
+});
+function domTexts(T) { return T.el('log').kids.map(k => k.html); }
+function sayFailCase(name, inject) {
+  test('DEV-18 실제 say: ' + name + ' → 화면 요소·logHistory·습득 상태 함께 복원(레벨업 유지·정지·안내)', () => {
+    const T = makeCtx({ timers: 'queue' }); enable(T); const s = falnaAt(T, 1); T.G("DEVABIL_TEXT.acquire = '시험 문구'");
+    const ab0 = s.devAbilities, h0 = s.devAbilityHistory, log0 = s.logHistory.length;
+    T.G(inject);
+    let threw = null; try { T.G('tryLevelUp()'); } catch (e) { threw = String(e && e.message); }
+    const texts = domTexts(T);
+    check(name + ' 예외 재던짐 · 레벨업 유지(Lv.2) · 정지', threw !== null && s.level === 2 && T.G('progressHalted') === true, { threw });
+    check(name + ' 화면에 습득 문구 요소 없음(삽입 뒤 제거)', !texts.some(t => t.includes('시험 문구')), texts.slice(-3));
+    check(name + ' 레벨업 문구는 화면·연표에 그대로(레벨업 미복원)', texts.some(t => t.includes('위계가 승화')) && s.logHistory.some(l => l.text.includes('위계가 승화')));
+    check(name + ' logHistory 에 습득 문구 없음·레벨업 뒤 길이', !s.logHistory.some(l => l.text === '시험 문구') && s.logHistory.length >= log0);
+    check(name + ' 습득 상태·이력 복원', s.devAbilities === ab0 && ab0.length === 0 && s.devAbilityHistory === h0 && h0.length === 0);
+    check(name + ' 정지 안내 화면 1건(logHistory 미기록)', texts.filter(t => /오류가 발생해 진행을 멈췄다/.test(t)).length === 1 && !s.logHistory.some(l => /진행을 멈췄다/.test(l.text)));
+    check(name + ' 진단 commit_failed 1', diagKinds(T).filter(k => k === 'devability_commit_failed').length === 1 && T.G('devAbilityDiagLog[devAbilityDiagLog.length-1].restoreErrors.length') === 0);
+  });
+}
+// DOM 삽입(appendChild) 뒤 S.logHistory.push 단계에서 실패 — say 를 대체하지 않고 실제 say 를 통과시킨다.
+sayFailCase('DOM 삽입 뒤 logHistory.push 실패', "S.logHistory.push = function (x) { if (x && x.text === '시험 문구') throw new Error('log push fail'); return Array.prototype.push.call(this, x); }");
+// DOM 삽입·logHistory 기록 뒤 scrollIntoView 단계에서 실패.
+sayFailCase('DOM 삽입·logHistory 기록 뒤 스크롤 실패', "var __ce = document.createElement; document.createElement = function () { var e = __ce.apply(this, arguments); e.scrollIntoView = function () { if (String(e.innerHTML).indexOf('시험 문구') >= 0) throw new Error('scroll fail'); }; return e; }");
+test('DEV-18 대조: 실패가 없으면 습득 문구가 화면·연표에 1건씩 남음(합성 문구)', () => {
+  const T = makeCtx(); enable(T); const s = falnaAt(T, 1); T.G("DEVABIL_TEXT.acquire = '시험 문구'"); T.G('tryLevelUp()');
+  check('DEV-18c', domTexts(T).filter(t => t.includes('시험 문구')).length === 1 && s.logHistory.filter(l => l.text === '시험 문구').length === 1 && s.devAbilities.length === 1 && T.G('progressHalted') === false);
+});
+test('DEV-19 커밋 실패 시 자동 진행 타이머 취소 + 정지 안내 + 재개·자동 재시도 없음', () => {
+  const T = makeCtx({ timers: 'queue' }); enable(T); const s = falnaAt(T, 1);
+  T.G('var __fired = 0; scheduleAuto(function () { __fired++; }, 10); scheduleAuto(function () { __fired++; }, 20);');
+  const pending = T.G('autoTimers.slice()');
+  T.G('Object.freeze(S.devAbilityHistory)');
+  let threw = false; try { T.G('tryLevelUp()'); } catch (_) { threw = true; }
+  check('DEV-19a 예약 타이머 모두 취소(autoTimers 비움, clearTimeout 호출)', threw && pending.length === 2 && T.G('autoTimers.length') === 0 && pending.every(id => T.cleared.includes(id)) && T.timers.length === 0);
+  check('DEV-19b 정지 안내 1건', domTexts(T).filter(t => /오류가 발생해 진행을 멈췄다/.test(t)).length === 1);
+  check('DEV-19c 레벨업 유지·정지', s.level === 2 && T.G('progressHalted') === true);
+  const lv = s.level; T.G('nextYear()'); T.G('tryLevelUp()'); T.G('convertExp()');
+  check('DEV-19d 정지 뒤 진행·재시도 없음(타이머 미실행, 레벨·습득·진단 불변)', T.G('__fired') === 0 && s.level === lv && s.devAbilities.length === 0 && diagKinds(T).filter(k => k === 'devability_commit_failed').length === 1);
+  T.G('showHaltNotice()');
+  check('DEV-19e 같은 생애의 중복 안내 없음(후속 선택 안 중첩 정지 대비)', domTexts(T).filter(t => /진행을 멈췄다/.test(t)).length === 1);
+  T.G('startLife()');
+  check('DEV-19f 새 생애: 정지 해제·승계 없음', T.G('progressHalted') === false && T.S().devAbilities.length === 0);
+});
+test('DEV-19g 후속 선택 안에서 습득 커밋 실패(중첩 정지): 기존 X0~X6 처리 유지, 안내 1건, 전체 롤백', () => {
+  const T = makeCtx(); enable(T); const s = falnaAt(T, 1);
+  T.G("FOLLOWUP_KINDS.__t = { prompt: 'p', options: () => [{ id: 'a', label: 'a' }], resolve: () => { Object.freeze(S.devAbilityHistory); tryLevelUp(); } }");
+  T.G("S.pendingFollowup = { kind: '__t', phase: 'awaiting_choice', sourceEventId: 'x' }");
+  let threw = false; try { T.G("chooseFollowup('a')"); } catch (_) { threw = true; }
+  check('DEV-19g', threw && T.G('progressHalted') === true && s.level === 1 && s.devAbilities.length === 0 && domTexts(T).filter(t => /진행을 멈췄다/.test(t)).length === 1
+    && diagKinds(T).includes('devability_commit_failed') && T.G("followupDiagLog.some(d => d.event === 'followup_resolve_exception')"));
+});
+function falnaCase(name, setup, allowed) {
+  test('DEV-21 ' + name + (allowed ? ' → 습득 허용' : ' → 습득 차단(진단만)'), () => {
+    const T = makeCtx(); enable(T); const s = falnaAt(T, 1); setup(s, T);
+    const fs0 = s.falnaState, fl0 = s.flags.slice(), c0 = T.calls(); let threw = false;
+    try { T.G('tryLevelUp()'); } catch (_) { threw = true; }
+    check(name + ' 레벨업은 그대로(Lv.2)·예외 없음·정지 없음·난수 0', !threw && s.level === 2 && T.G('progressHalted') === false && T.calls() === c0);
+    check(name + ' 팔나 기록·flag 불변(독립성)', s.falnaState === fs0 && JSON.stringify(s.flags) === JSON.stringify(fl0));
+    if (allowed) check(name + ' 습득 1', s.devAbilities.length === 1 && !diagKinds(T).includes('devability_falna_blocked'));
+    else check(name + ' 습득 0·이력 0·진단 falna_blocked 1', s.devAbilities.length === 0 && s.devAbilityHistory.length === 0 && diagKinds(T).filter(k => k === 'devability_falna_blocked').length === 1, T.G('devAbilityDiagLog'));
+  });
+}
+const fam = (s, T) => { s.familia = T.G('gachaData.familias').find(f => f.id === 'loki'); };
+falnaCase('active(flag·소속·기록 일치)', (s, T) => { fam(s, T); s.falnaState = 'active'; s.falnaHolder = 'loki'; }, true);
+falnaCase('unbound(flag·무소속·기록 일치)', s => { s.familia = null; s.falnaState = 'unbound'; }, true);
+falnaCase('범위 안 소속 변경 지연(기록 active / 원천 unbound)', s => { s.familia = null; s.falnaState = 'active'; }, true);
+falnaCase('기록 sealed / flag 있음(불일치)', s => { s.falnaState = 'sealed'; }, false);
+falnaCase('기록 none / flag 있음(불일치)', s => { s.falnaState = 'none'; }, false);
+falnaCase('기록 active / flag 없음(불일치, 원천 none)', s => { s.flags = s.flags.filter(f => f !== 'falna'); s.falnaState = 'active'; }, false);
+falnaCase('기록 unbound / flag 없음·팔나 이력 있음(불일치, 원천 sealed)', s => { s.flags = s.flags.filter(f => f !== 'falna'); s.falnaHistory = [{ familiaId: 'loki' }]; s.falnaState = 'unbound'; }, false);
+falnaCase('sealed 일치(flag 없음·이력 있음)', s => { s.flags = s.flags.filter(f => f !== 'falna'); s.falnaHistory = [{ familiaId: 'loki' }]; s.falnaState = 'sealed'; }, false);
+falnaCase('none 일치(flag 없음·이력 없음)', s => { s.flags = s.flags.filter(f => f !== 'falna'); s.falnaHistory = []; s.falnaState = 'none'; }, false);
+test('DEV-21 비활성(실제 구성)에서는 팔나 판정·진단도 하지 않음(결과 중립)', () => {
+  const T = makeCtx(); const s = falnaAt(T, 1); s.falnaState = 'sealed'; T.G('tryLevelUp()');
+  check('DEV-21z', s.level === 2 && T.G('devAbilityDiagLog.length') === 0);
+});
+
 R.finish('devabil_test');

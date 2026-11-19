@@ -80,11 +80,14 @@ function renderStatsFromClone() {
     try { S = cloneStateForRender(real); renderStats(); }
     finally { S = real; }
 }
+let haltNoticeShownGen = -1;       // F1D4A DEV-19: 같은 생애에서 정지 안내 중복 방지(발전 어빌리티 커밋 실패가 후속 선택 안에서 나면 두 경로가 모두 안내를 부른다)
 function showHaltNotice() {        // 화면 전용(logHistory 미기록)
+    if (haltNoticeShownGen === lifeGen) return;
     const d = document.createElement('div');
     d.className = 'entry result bad';
     d.innerHTML = '선택을 처리하는 중 오류가 발생해 진행을 멈췄다. 처음부터 다시 시작해 주세요.';
     $('log').appendChild(d);
+    haltNoticeShownGen = lifeGen;
     d.scrollIntoView({ block: 'nearest' });
 }         // kind → { prompt, options(S, pending) → [{ id, label, stay }], resolve(S, optionId, pending) }
 // v1.7.8-2i: 팔나 상태 기록(설계 r2k-4 §2.8). 기록 전용 — 난수·판정·성장 경로를 바꾸지 않는다.
@@ -741,7 +744,14 @@ function selectDevAbility(sortedCands, seed, toLevel) {
     for (const c of sortedCands) { cum += c.weight; if (r < cum) return c.id; }
     return null;
 }
-// ③ 커밋: 습득 하위 트랜잭션(devAbilities·devAbilityHistory·연표 한 줄). 실패하면 셋만 복원 → 정지(U-D10) → 진단 → 예외 재던짐.
+// ③ 커밋: 습득 하위 트랜잭션(devAbilities·devAbilityHistory·연표 한 줄과 그 화면 요소).
+//    실패하면 이 항목들만 복원 → 정지(U-D10: 타이머 취소·정지 안내) → 진단 → 예외 재던짐. 레벨업은 되돌리지 않는다.
+// DEV-17 복원 계약(보장 범위):
+//  - devAbilities: 동결 배열 copy-on-write 이므로 이전 배열 참조로 되돌리면 내용까지 원래대로다.
+//  - devAbilityHistory: **append-only** 계약(기존 항목 수정·삭제 금지, 항목은 동결). 복원은 배열 참조와 길이로 "이번 커밋이 덧붙인 항목"만 제거한다.
+//    기존 항목의 값 변경·삭제까지 되돌리는 깊은 복원이 아니다(계약상 그런 변경은 일어나지 않으며 시험 DA-17·DEV-17 로 확인).
+//  - logHistory: 길이로 이번 커밋이 덧붙인 항목만 제거(같은 append-only 전제).
+//  - 화면(#log): say 가 덧붙인 요소를 커밋 전 마지막 자식 뒤로 모두 제거(DEV-18). 그 밖의 화면은 건드리지 않는다.
 function commitDevAbilityChange(change) {
     const entry = Object.freeze({ kind: change.kind, id: change.id ?? null, from: change.from ?? null, to: change.to ?? null, level: S.level, age: S.age });
     let nextArr = null;
@@ -750,21 +760,30 @@ function commitDevAbilityChange(change) {
         nextArr = Object.freeze((Array.isArray(S.devAbilities) ? S.devAbilities : []).slice().concat([rec]));
     }
     const has = k => Object.prototype.hasOwnProperty.call(S, k);
+    const text = change.kind === 'acquire' ? DEVABIL_TEXT.acquire : null;       // W-D2 미승인: null 이면 연표·화면 문구 없음
+    const willSay = typeof text === 'string' && !!text;
     const snap = { abHas: has('devAbilities'), abRef: S.devAbilities, hHas: has('devAbilityHistory'), hRef: S.devAbilityHistory,
-        hLen: Array.isArray(S.devAbilityHistory) ? S.devAbilityHistory.length : null, logLen: Array.isArray(S.logHistory) ? S.logHistory.length : null };
+        hLen: Array.isArray(S.devAbilityHistory) ? S.devAbilityHistory.length : null, logLen: Array.isArray(S.logHistory) ? S.logHistory.length : null,
+        logEl: null, domLast: null };
     try {
+        if (willSay) { snap.logEl = $('log'); snap.domLast = snap.logEl.lastChild; }   // DEV-18: 문구를 낼 때만 화면 복원 기준점(커밋 전 마지막 자식)
         if (nextArr) { S.devAbilities = nextArr; if (S.devAbilities !== nextArr) throw new Error('devAbilities assignment failed'); }   // 배열 교체(copy-on-write). 비엄격 모드의 조용한 대입 실패도 예외로
         if (!Array.isArray(S.devAbilityHistory)) S.devAbilityHistory = [];
-        S.devAbilityHistory.push(entry);                                        // append-only
-        const text = change.kind === 'acquire' ? DEVABIL_TEXT.acquire : null;   // W-D2 미승인: null 이면 연표 없음
-        if (typeof text === 'string' && text) say(text, 'growth');
+        S.devAbilityHistory.push(entry);                                        // append-only(기존 항목 수정·삭제 금지)
+        if (willSay) say(text, 'growth');                                       // 상태·이력 기록 뒤 마지막 단계. 실패하면 화면 요소까지 복원
     } catch (err) {
+        progressHalted = true;                                                  // U-D10 첫 문장: 이후 정리 단계가 실패해도 정지는 유지(레벨업은 유지, 정상 진행 재개 금지)
         const errs = [];
         const step = (name, fn) => { try { fn(); } catch (e) { errs.push(name); } };
+        step('clearTimers', clearAutoTimers);                                   // DEV-19: 예약된 자동 진행 취소
         step('devAbilities', () => { if (!snap.abHas) delete S.devAbilities; else S.devAbilities = snap.abRef; });
         step('devAbilityHistory', () => { if (!snap.hHas) delete S.devAbilityHistory; else { S.devAbilityHistory = snap.hRef; if (snap.hLen != null) S.devAbilityHistory.length = snap.hLen; } });
         step('logHistory', () => { if (snap.logLen != null && Array.isArray(S.logHistory) && S.logHistory.length > snap.logLen) S.logHistory.length = snap.logLen; });
-        progressHalted = true;                                                  // U-D10: 레벨업은 유지, 정상 진행 재개 금지
+        step('dom', () => {                                                     // DEV-18: say 가 덧붙인 화면 요소 제거(DOM 삽입 뒤 logHistory·스크롤 단계 실패 포함)
+            const el = snap.logEl; if (!el) return;
+            while (el.lastChild && el.lastChild !== snap.domLast) el.removeChild(el.lastChild);
+        });
+        step('notice', showHaltNotice);                                         // DEV-19: 정지 안내(화면 전용, 기존 문구 재사용). 화면 복원 뒤에 붙인다
         step('diag', () => devAbilityDiag('devability_commit_failed', { change: change.kind, id: change.id ?? null, message: String(err && err.message), restoreErrors: errs }));
         throw err;
     }
@@ -773,6 +792,11 @@ function commitDevAbilityChange(change) {
 // Lv.2 이상 실제 레벨업 직후의 스테이터스 갱신(습득). tryLevelUp 에서만 부른다.
 function statusUpdateAfterRankUp(fromLevel, toLevel) {
     if (!(toLevel >= 2) || !devAbilityAcquisitionEnabled) return false;      // U-D2 미정 동안 비활성
+    // DEV-21: 습득 단계의 모든 쓰기보다 먼저 팔나 상태를 확인한다. 기록 상태(S.falnaState, canUseFalna)와 판정 원천(deriveFalnaState: flag·소속·이력)이
+    // **둘 다** active·unbound 여야 한다(U-D8). sealed·none 이거나 둘 중 하나라도 어긋나면 습득 0 + 진단만(fail-closed). 레벨업·팔나 상태는 바꾸지 않는다.
+    // 범위 안에서 소속만 바뀐 경우(기록 active / 원천 unbound)는 둘 다 허용 상태이므로 통과한다.
+    { const stored = S.falnaState, derived = deriveFalnaState();
+      if (!canUseFalna() || (derived !== 'active' && derived !== 'unbound')) { devAbilityDiag('devability_falna_blocked', { stored: stored ?? null, derived }); return false; } }
     const defs = gachaData.devAbilities, v = validateDevAbilityDefs(defs);
     if (!v.ok) { devAbilityDiag('devability_definition_invalid', { errors: v.errors.slice() }); commitDevAbilityChange({ kind: 'definition_invalid' }); return false; }
     if (!devAbilitySeedValid()) { devAbilityDiag('devability_seed_invalid', {}); return false; }   // 습득 0 + 진단만
@@ -1121,7 +1145,9 @@ const ECOND_PRIM = v => v === null || typeof v === 'string' || typeof v === 'num
 // 넣으면(test_runner.js sandbox) 전역 Array.prototype 은 호스트 것이지만, 같은 스크립트의 리터럴(events.js 데이터 포함)은 이 컨텍스트의
 // 기본 프로토타입을 쓴다. 리터럴 기준이면 게임 코드와 사건 데이터가 같은 기본 프로토타입을 비교한다(LUCK-10).
 const ECOND_ARRAY_PROTO = Object.getPrototypeOf([]), ECOND_OBJECT_PROTO = Object.getPrototypeOf({});
-function ecPlainObjProto(v) { const p = Object.getPrototypeOf(v); return p === ECOND_OBJECT_PROTO || p === null; }   // 같은 realm 만(LUCK-10)
+// LUCK-20: 입력 객체는 이 realm 의 Object.prototype 을 직접 상속한 리터럴 객체만 허용한다. null 프로토타입 원본은 realm 을 구별할 수 없으므로
+// (다른 realm 의 Object.create(null) 도 같아 보임) 거부한다. 정적 EVENTS 의 조건은 모두 리터럴이라 영향 없음(LK-11e). 스냅숏 **출력**만 null 프로토타입이다.
+function ecPlainObjProto(v) { return Object.getPrototypeOf(v) === ECOND_OBJECT_PROTO; }
 function ecOwnDataValues(v) {   // 자체 키가 모두 열거 가능한 데이터 속성이고 Symbol 키가 없으면 [키, 값] 목록, 아니면 null
     if (Object.getOwnPropertySymbols(v).length) return null;
     const out = [];

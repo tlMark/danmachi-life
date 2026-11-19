@@ -11,6 +11,9 @@ function makeElement(counter) {
     classList: { _s: new Set(), add(...n) { n.forEach(x => this._s.add(x)); }, remove(...n) { n.forEach(x => this._s.delete(x)); }, contains(x) { return this._s.has(x); } },
     addEventListener(type, fn) { (this.listeners ||= {})[type] = fn; }, scrollIntoView() {},
     appendChild(c) { this.kids.push(c); c.isConnected = true; counter.dom++; return c; },
+    // F1D4A DEV-18: 화면 복원 시험용 최소 DOM 동작(실제 DOM 의 lastChild·removeChild 와 같은 의미). 기존 시험 동작은 바꾸지 않는다.
+    get lastChild() { return this.kids.length ? this.kids[this.kids.length - 1] : null; },
+    removeChild(c) { const i = this.kids.lastIndexOf(c); if (i < 0) throw new Error('removeChild: not a child'); this.kids.splice(i, 1); c.isConnected = false; counter.dom++; return c; },
     querySelectorAll() { return this.kids; },
     click() { counter.clicks++; if (typeof this.onclick === 'function') return this.onclick(); if (this.listeners && this.listeners.click) return this.listeners.click(); } };
   Object.defineProperty(e, 'innerHTML', { get() { return e.html; }, set(v) { e.kids.forEach(k => { k.isConnected = false; }); e.kids = []; e.html = String(v); counter.dom++; } });
