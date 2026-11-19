@@ -177,7 +177,8 @@ test('EN-2 이후 선택지가 보이게 되면 다시 후보가 됨(once·쿨�
   check('EN-2d 버튼은 보이는 선택지 1개만', T.buttons().length === 1 && T.buttons()[0].textContent === '숨김 A');
 });
 test('EN-2b ⑫ 방어(합성: ⑩ 을 우회한 사본) → 진단 event_recheck_failed 1, showEvent 미호출, 사건 없음과 같은 처리', () => {
-  const T = makeCtx({ seed: 11, patch: [['script.js', 'return match(e.cond, e) && visibleChoices(e).length > 0;', 'return match(e.cond, e);']] });
+  // F1D4A D-LUCK 엔진 경계(의도적 시험 변경): ⑩ 이 원본 대신 조건 스냅숏(cs.snap)으로 판정하게 되어 패치 대상 문자열만 바꿈. 기대값 불변.
+  const T = makeCtx({ seed: 11, patch: [['script.js', 'return match(cs.snap, e) && visibleChoices(e).length > 0;', 'return match(cs.snap, e);']] });
   const s = life(T, 29); push(T, ZERO({ cond: { cage: [30, 30] } })); wrapShow(T);
   const before = s.age; T.G('nextYear()');
   const d = diags(T, 'event_recheck_failed');
@@ -185,7 +186,8 @@ test('EN-2b ⑫ 방어(합성: ⑩ 을 우회한 사본) → 진단 event_rechec
   check('EN-2b showEvent 에 0개 사건이 전달되지 않음·소비 없음', !T.G('__shown').includes('__en_zero') && !s.done.includes('__en_zero') && !(s.eventCounts || {}).__en_zero && s.age > before);
 });
 test('EN-2b 재검사의 사건 조건 실패(합성: ⑩ 의 사건 조건을 참으로 바꾼 사본) → part cond', () => {
-  const T = makeCtx({ seed: 12, patch: [['script.js', 'return match(e.cond, e) && visibleChoices(e).length > 0;', 'return e.id === "__en_cond" ? S.age === 30 : match(e.cond, e) && visibleChoices(e).length > 0;']] });
+  // F1D4A D-LUCK 엔진 경계(의도적 시험 변경): 패치 대상 문자열만 cs.snap 으로 바꿈. 기대값 불변(⑫ 는 ⑩ 의 같은 스냅숏으로 재검사).
+  const T = makeCtx({ seed: 12, patch: [['script.js', 'return match(cs.snap, e) && visibleChoices(e).length > 0;', 'return e.id === "__en_cond" ? S.age === 30 : match(cs.snap, e) && visibleChoices(e).length > 0;']] });
   const s = life(T, 29); push(T, { id: '__en_cond', w: 1e7, text: 't', cond: { cage: [30, 30], job: ['__nobody__'] }, maxTimes: 99, cool: 0, choices: [{ label: 'a', fx: {} }] }); wrapShow(T);
   T.G('nextYear()'); const d = diags(T, 'event_recheck_failed');
   check('EN-2b-cond', d.length === 1 && d[0].part === 'cond' && !T.G('__shown').includes('__en_cond'), d);

@@ -45,7 +45,10 @@ function takeRollbackSnapshot() {
     const has = k => Object.prototype.hasOwnProperty.call(S, k);
     const copy = v => Array.isArray(v) ? v.slice() : (v && typeof v === 'object') ? { ...v } : v;
     const rb = { values: {}, copies: {}, containers: {}, logLen: Array.isArray(S.logHistory) ? S.logHistory.length : null,
-        levelHistory: { has: has('levelHistory'), ref: S.levelHistory, len: Array.isArray(S.levelHistory) ? S.levelHistory.length : null } };
+        levelHistory: { has: has('levelHistory'), ref: S.levelHistory, len: Array.isArray(S.levelHistory) ? S.levelHistory.length : null },
+        // F1D4A D-DEVABIL(DEV-2·8·9): 배열 copy-on-write → 참조만, append-only 이력 → 참조·길이. 레벨·레벨 이력과 같은 복원 호출에서 함께 되돌린다.
+        devAbilities: { has: has('devAbilities'), ref: S.devAbilities },
+        devAbilityHistory: { has: has('devAbilityHistory'), ref: S.devAbilityHistory, len: Array.isArray(S.devAbilityHistory) ? S.devAbilityHistory.length : null } };
     ROLLBACK_VALUE_FIELDS.forEach(k => { rb.values[k] = { has: has(k), value: S[k] }; });
     ['flags', 'employer', 'abil'].forEach(k => { rb.copies[k] = { has: has(k), value: copy(S[k]) }; });
     ROLLBACK_CONTAINER_FIELDS.forEach(k => { rb.containers[k] = { has: has(k), ref: S[k] }; });
@@ -62,6 +65,9 @@ function restoreRollbackSnapshot(rb) {
     if (!lh.has) delete S.levelHistory;
     else if (S.levelHistory !== lh.ref) S.levelHistory = lh.ref;
     if (lh.has && lh.len != null && Array.isArray(S.levelHistory) && S.levelHistory.length > lh.len) S.levelHistory.length = lh.len;
+    const da = rb.devAbilities, dh = rb.devAbilityHistory;
+    if (da) { if (!da.has) delete S.devAbilities; else S.devAbilities = da.ref; }
+    if (dh) { if (!dh.has) delete S.devAbilityHistory; else { S.devAbilityHistory = dh.ref; if (dh.len != null && Array.isArray(S.devAbilityHistory) && S.devAbilityHistory.length > dh.len) S.devAbilityHistory.length = dh.len; } }
 }
 // R-E: 예외 경로 전용 렌더. renderStats 가 조회 중 만들 수 있는 컨테이너(관계·아이템)가 실제 S 에 생기지 않도록 복제본으로 그린다.
 function cloneStateForRender(v) {
@@ -671,6 +677,112 @@ function convertExp() {
     return converted || leveled;
 }
 
+// ── F1D4A D-DEVABIL 1단계(설계 r3) ────────────────────────────────────────────────────────────
+// 발전 어빌리티 보유 상태는 S.devAbilities(배열 copy-on-write, 동결)·S.devAbilityHistory(append-only)에 둔다. 기본 능력치 S.abil 과 분리.
+// 습득은 tryLevelUp 이 Lv.2 이상으로 올린 직후(statusUpdateAfterRankUp)에만. 최초 팔나·재취득·재수여·기록 전용 전이에서는 없음.
+// 선택은 S.lineageSeed 기반 결정적 해시(메인 RNG 미사용). 진단은 전용 배열 devAbilityDiagLog(S 밖).
+// U-D2(후보 자격·가중치) 미정 → 습득 비활성(devAbilityAcquisitionEnabled = false). 구조·계약만 준비하며 수치를 임의로 정하지 않는다.
+// W-D1·W-D2(문안) 미승인 → DEVABIL_TEXT 는 null 이고, null 이면 연표·화면 문구를 남기지 않는다.
+const devAbilityDiagLog = [];        // 발전 어빌리티 전용 진단(S 밖). lifeDigest·RNG 에 관여하지 않으며 복원 대상이 아니다.
+let devAbilityAcquisitionEnabled = false;
+const DEVABIL_TEXT = { acquire: null };
+const DEVABIL_RANKS = ['I', 'H', 'G', 'F', 'E', 'D', 'C', 'B', 'A', 'S'];
+const DEVABIL_HASH_TAG = 'devability-select-v1';
+function devAbilityDiag(kind, data) { devAbilityDiagLog.push({ kind, at: S ? S.age : null, level: S ? S.level : null, ...(data || {}) }); }
+// 정의 데이터 동결(로드 시 1회). 실행 중 정의 수정 금지 계약.
+(function freezeDevAbilityDefs() {
+    const defs = gachaData.devAbilities;
+    if (!Array.isArray(defs)) return;
+    defs.forEach(d => { if (d && typeof d === 'object') { if (d.source && typeof d.source === 'object') Object.freeze(d.source); if (d.eligibility && typeof d.eligibility === 'object') Object.freeze(d.eligibility); Object.freeze(d); } });
+    Object.freeze(defs);
+})();
+// DEV-15: 정의 데이터 검증. 정의 배열 참조 단위로 1회 검증하고 결과를 캐시한다(배열은 동결되어 있어 같은 참조면 내용이 같다).
+let devAbilityDefsCache = { ref: undefined, result: null };
+function validateDevAbilityDefs(defs) {
+    if (devAbilityDefsCache.ref === defs && devAbilityDefsCache.result) return devAbilityDefsCache.result;
+    const errors = [];
+    try {
+        if (!Array.isArray(defs)) errors.push('defs_not_array');
+        else {
+            const ids = new Set();
+            defs.forEach((d, i) => {
+                if (!choiceIsPlainObj(d)) { errors.push('def_not_plain:' + i); return; }
+                if (typeof d.id !== 'string' || !d.id) errors.push('id:' + i);
+                else if (ids.has(d.id)) errors.push('dup_id:' + d.id); else ids.add(d.id);
+                if (!Number.isInteger(d.weight) || d.weight < 1) errors.push('weight:' + d.id);
+                const e = d.eligibility;
+                if (!choiceIsPlainObj(e) || Object.keys(e).join() !== 'minLevel' || !Number.isInteger(e.minLevel) || e.minLevel < 2) errors.push('eligibility:' + d.id);
+            });
+            const W = defs.reduce((a, d) => a + (d && Number.isInteger(d.weight) ? d.weight : 0), 0);
+            if (!(W < 2 ** 31)) errors.push('weight_total');
+        }
+    } catch (err) { errors.push('exception:' + String(err && err.message)); }
+    const result = Object.freeze({ ok: errors.length === 0, errors: Object.freeze(errors) });
+    devAbilityDefsCache = { ref: defs, result };
+    return result;
+}
+// CT-13: S.lineageSeed 유효성. 대체값·강제 변환·재생성 없음.
+function devAbilitySeedValid() {
+    const d = Object.getOwnPropertyDescriptor(S, 'lineageSeed');
+    return !!d && ('value' in d) && typeof d.value === 'number' && Number.isInteger(d.value) && d.value >= 0 && d.value <= 0xFFFFFFFF;
+}
+// ① 후보 생성(순수): 자격(eligibility.minLevel ≤ toLevel), 보유 id 제외. 결과는 id 정렬된 [{ id, weight }].
+function devAbilityCandidates(defs, toLevel) {
+    const held = new Set((Array.isArray(S.devAbilities) ? S.devAbilities : []).map(r => r && r.id));
+    return defs.filter(d => !held.has(d.id) && d.eligibility.minLevel <= toLevel).map(d => ({ id: d.id, weight: d.weight }))
+        .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+}
+// ② 선택(순수, 결정적): fnv(입력) % W 누적 버킷. Math.random·S 쓰기·진단·연표 없음.
+function selectDevAbility(sortedCands, seed, toLevel) {
+    const W = sortedCands.reduce((a, c) => a + c.weight, 0);
+    if (!sortedCands.length || W <= 0) return null;
+    const h = GameCore.Lineage.fnv(2166136261, JSON.stringify([DEVABIL_HASH_TAG, seed, toLevel, sortedCands.map(c => [c.id, c.weight])])) >>> 0;
+    const r = h % W; let cum = 0;
+    for (const c of sortedCands) { cum += c.weight; if (r < cum) return c.id; }
+    return null;
+}
+// ③ 커밋: 습득 하위 트랜잭션(devAbilities·devAbilityHistory·연표 한 줄). 실패하면 셋만 복원 → 정지(U-D10) → 진단 → 예외 재던짐.
+function commitDevAbilityChange(change) {
+    const entry = Object.freeze({ kind: change.kind, id: change.id ?? null, from: change.from ?? null, to: change.to ?? null, level: S.level, age: S.age });
+    let nextArr = null;
+    if (change.kind === 'acquire') {
+        const rec = Object.freeze({ id: change.id, rank: 'I', exp: 0, acquiredAtLevel: S.level, age: S.age });
+        nextArr = Object.freeze((Array.isArray(S.devAbilities) ? S.devAbilities : []).slice().concat([rec]));
+    }
+    const has = k => Object.prototype.hasOwnProperty.call(S, k);
+    const snap = { abHas: has('devAbilities'), abRef: S.devAbilities, hHas: has('devAbilityHistory'), hRef: S.devAbilityHistory,
+        hLen: Array.isArray(S.devAbilityHistory) ? S.devAbilityHistory.length : null, logLen: Array.isArray(S.logHistory) ? S.logHistory.length : null };
+    try {
+        if (nextArr) { S.devAbilities = nextArr; if (S.devAbilities !== nextArr) throw new Error('devAbilities assignment failed'); }   // 배열 교체(copy-on-write). 비엄격 모드의 조용한 대입 실패도 예외로
+        if (!Array.isArray(S.devAbilityHistory)) S.devAbilityHistory = [];
+        S.devAbilityHistory.push(entry);                                        // append-only
+        const text = change.kind === 'acquire' ? DEVABIL_TEXT.acquire : null;   // W-D2 미승인: null 이면 연표 없음
+        if (typeof text === 'string' && text) say(text, 'growth');
+    } catch (err) {
+        const errs = [];
+        const step = (name, fn) => { try { fn(); } catch (e) { errs.push(name); } };
+        step('devAbilities', () => { if (!snap.abHas) delete S.devAbilities; else S.devAbilities = snap.abRef; });
+        step('devAbilityHistory', () => { if (!snap.hHas) delete S.devAbilityHistory; else { S.devAbilityHistory = snap.hRef; if (snap.hLen != null) S.devAbilityHistory.length = snap.hLen; } });
+        step('logHistory', () => { if (snap.logLen != null && Array.isArray(S.logHistory) && S.logHistory.length > snap.logLen) S.logHistory.length = snap.logLen; });
+        progressHalted = true;                                                  // U-D10: 레벨업은 유지, 정상 진행 재개 금지
+        step('diag', () => devAbilityDiag('devability_commit_failed', { change: change.kind, id: change.id ?? null, message: String(err && err.message), restoreErrors: errs }));
+        throw err;
+    }
+    return true;
+}
+// Lv.2 이상 실제 레벨업 직후의 스테이터스 갱신(습득). tryLevelUp 에서만 부른다.
+function statusUpdateAfterRankUp(fromLevel, toLevel) {
+    if (!(toLevel >= 2) || !devAbilityAcquisitionEnabled) return false;      // U-D2 미정 동안 비활성
+    const defs = gachaData.devAbilities, v = validateDevAbilityDefs(defs);
+    if (!v.ok) { devAbilityDiag('devability_definition_invalid', { errors: v.errors.slice() }); commitDevAbilityChange({ kind: 'definition_invalid' }); return false; }
+    if (!devAbilitySeedValid()) { devAbilityDiag('devability_seed_invalid', {}); return false; }   // 습득 0 + 진단만
+    const cands = devAbilityCandidates(defs, toLevel);
+    const id = selectDevAbility(cands, S.lineageSeed, toLevel);
+    if (!id) { commitDevAbilityChange({ kind: 'no_candidate' }); return false; }
+    if ((S.devAbilities || []).some(r => r && r.id === id)) { devAbilityDiag('devability_duplicate_acquire', { id }); return false; }
+    return commitDevAbilityChange({ kind: 'acquire', id, to: 'I' });
+}
+
 function tryLevelUp() {
     if (haltedEntry('tryLevelUp')) return;   // H3 정지 가드
     const level = Number.isFinite(S.level) ? Math.max(1, S.level) : 1;
@@ -687,6 +799,7 @@ function tryLevelUp() {
     say(`위업을 인정받아 위계가 승화되었다. <b class="lv">Lv.${level} → Lv.${S.level}</b>`, 'event levelup');
     S.alias = pickAlias();
     if (S.level >= 2) say(`신회에서 이명이 정해졌다: ${S.alias.label}`, 'result');
+    statusUpdateAfterRankUp(level, S.level);   // F1D4A D-DEVABIL: 레벨업 공식 뒤에만 덧붙임(레벨업은 되돌리지 않음)
     return true;
 }
 
@@ -905,6 +1018,8 @@ function startLife() {
           residence: { regionId: origin.id, since: 0 }, residenceHistory: [{ seq: 1, regionId: origin.id, from: 0, to: null, reason: 'birth', eventId: null }], service: {},
           // F1D4A P2(E-3): 출생 시 현재 위치 = 출생지. 거주지와 따로 만든다. 난수 0. lifeDigest 입력 아님.
           location: { regionId: origin.id, since: 0 }, locationHistory: [{ seq: 1, regionId: origin.id, from: 0, to: null, reason: 'birth', eventId: null }] };   // 2a: 비활성 데이터 모델(동작 연결 없음)
+    S.devAbilities = Object.freeze([]); S.devAbilityHistory = [];   // F1D4A D-DEVABIL: 새 생애는 이전 생애의 습득 상태를 승계하지 않는다
+    eventCondMalformedSeen.clear();   // F1D4A D-LUCK 엔진 경계: 생애당 1회 진단 집합 초기화(S 밖)
     $('log').innerHTML = ''; $('choices').innerHTML = '';
     switchScreen('screen-play');
     apply((MODS.origins[origin.id] || {}).fx);
@@ -995,6 +1110,72 @@ function handleRelationEvents(events) {
     });
 }
 
+// ── F1D4A D-LUCK 엔진 경계(설계 r5, LUCK-1·6~19) ────────────────────────────────────────────────
+// 입력 범위: 정적 EVENTS 의 사건 조건만(같은 realm). 외부·실행 중 생성 조건 객체는 이 경계로 넘기지 않는다(LUCK-16).
+// 형식 단계(구조·속성 종류)와 의미 단계(match 본문 그대로)를 분리한다. 형식 단계는 Math.random 을 부르지 않는다(메인 RNG 호출 수·지점 불변).
+// 접근자 함수는 실행하지 않지만(서술자로만 읽음) 대상이 Proxy 면 trap 은 실행될 수 있다. trap 예외는 형식 위반으로 거부한다.
+const eventCondSnapByCand = new WeakMap();   // ⑩ 후보 레코드 → 조건 스냅숏(S·사건 데이터 밖, 후보 레코드는 매년 새로 만든다)
+const eventCondMalformedSeen = new Set();    // 생애당 사건 1회 진단용 키('EVENTS:' + id). startLife 에서 비운다(S 밖)
+const ECOND_PRIM = v => v === null || typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean';
+// 같은 realm 의 기본 프로토타입은 전역 Array/Object 가 아니라 **리터럴에서** 얻는다. 시험 하네스가 vm 샌드박스에 호스트의 Array·Object 를
+// 넣으면(test_runner.js sandbox) 전역 Array.prototype 은 호스트 것이지만, 같은 스크립트의 리터럴(events.js 데이터 포함)은 이 컨텍스트의
+// 기본 프로토타입을 쓴다. 리터럴 기준이면 게임 코드와 사건 데이터가 같은 기본 프로토타입을 비교한다(LUCK-10).
+const ECOND_ARRAY_PROTO = Object.getPrototypeOf([]), ECOND_OBJECT_PROTO = Object.getPrototypeOf({});
+function ecPlainObjProto(v) { const p = Object.getPrototypeOf(v); return p === ECOND_OBJECT_PROTO || p === null; }   // 같은 realm 만(LUCK-10)
+function ecOwnDataValues(v) {   // 자체 키가 모두 열거 가능한 데이터 속성이고 Symbol 키가 없으면 [키, 값] 목록, 아니면 null
+    if (Object.getOwnPropertySymbols(v).length) return null;
+    const out = [];
+    for (const k of Object.getOwnPropertyNames(v)) {
+        const d = Object.getOwnPropertyDescriptor(v, k);
+        if (!d || !d.enumerable || !('value' in d)) return null;
+        out.push([k, d.value]);
+    }
+    return out;
+}
+function ecSnapArray(v) {   // LUCK-15: length 는 유일하게 허용하는 비열거 자체 속성. 인덱스 0..n-1 연속 자체 데이터 속성, 원소는 원시값
+    if (!Array.isArray(v) || Object.getPrototypeOf(v) !== ECOND_ARRAY_PROTO) return null;
+    if (Object.getOwnPropertySymbols(v).length) return null;
+    const ld = Object.getOwnPropertyDescriptor(v, 'length');
+    if (!ld || !('value' in ld) || ld.enumerable || !Number.isInteger(ld.value) || ld.value < 0) return null;
+    const n = ld.value, names = Object.getOwnPropertyNames(v);
+    if (names.length !== n + 1) return null;   // 구멍·추가 키 거부
+    const out = [];
+    for (let i = 0; i < n; i++) {
+        const d = Object.getOwnPropertyDescriptor(v, String(i));
+        if (!d || !d.enumerable || !('value' in d) || !ECOND_PRIM(d.value)) return null;
+        out.push(d.value);
+    }
+    return out;
+}
+function ecSnapObject(v) {   // min·max 등: 같은 realm 일반 객체, 값은 원시값
+    if (v === null || typeof v !== 'object' || Array.isArray(v) || !ecPlainObjProto(v)) return null;
+    const kv = ecOwnDataValues(v); if (!kv) return null;
+    const out = Object.create(null);
+    for (const [k, x] of kv) { if (!ECOND_PRIM(x)) return null; out[k] = x; }
+    return out;
+}
+// 형식 단계: { ok:true, snap } | { ok:false, reason }. undefined → 빈 조건(Object.create(null)), null → 형식 위반(LUCK-11·18).
+function eventCondSnapshot(c) {
+    try {
+        if (c === undefined) return { ok: true, snap: Object.create(null) };
+        if (c === null || typeof c !== 'object' || Array.isArray(c) || !ecPlainObjProto(c)) return { ok: false, reason: 'cond_not_plain' };
+        const kv = ecOwnDataValues(c); if (!kv) return { ok: false, reason: 'cond_props' };
+        const snap = Object.create(null);
+        for (const [k, v] of kv) {
+            if (ECOND_PRIM(v)) snap[k] = v;
+            else if (Array.isArray(v)) { const a = ecSnapArray(v); if (!a) return { ok: false, reason: 'array:' + k }; snap[k] = a; }
+            else { const o = ecSnapObject(v); if (!o) return { ok: false, reason: 'value:' + k }; snap[k] = o; }
+        }
+        return { ok: true, snap };
+    } catch (err) { return { ok: false, reason: 'exception' }; }
+}
+function noteEventCondMalformed(e, reason) {   // 진단은 S 밖(followupDiagLog), 생애·사건당 1회
+    const key = 'EVENTS:' + (e && e.id);
+    if (eventCondMalformedSeen.has(key)) return;
+    eventCondMalformedSeen.add(key);
+    followupDiag('event_cond_malformed', { eventId: e && e.id, reason });
+}
+
 function nextYear() {
     if (haltedEntry('nextYear')) return;   // H1 정지 가드
     // T1-F: 후속 선택이 남아 있으면 다음 해로 넘어가지 않는다(DOM·RNG·상태 변경보다 먼저 검사).
@@ -1013,18 +1194,24 @@ function nextYear() {
         if (S.hp <= 0) { S.cause = '몸이 더는 버티지 못했다.'; return endLife(); }
         const naturalDeathChance = GameCore.Aging.naturalDeathChance(S.phase, aging.rate);
         if (S.phase > 65 && Math.random() < naturalDeathChance) { S.cause = '긴 생을 마치고 조용히 눈을 감았다.'; return endLife(); }
+        const yearCondSnaps = new Map();   // 이번 추첨에서만 쓰는 사건 → 조건 스냅숏(후보 레코드 연결용, 매년 새로 만든다)
         const pool = EVENTS.filter(e => {
             const count = S.eventCounts[e.id] || 0;
             const last = S.lastEventPhase[e.id];
             if (e.once && S.done.includes(e.id)) return false;
             if (!e.once && count >= (e.maxTimes || 2)) return false;
             if (last != null && S.phase - last < (e.cool || 2)) return false;
-            return match(e.cond, e) && visibleChoices(e).length > 0;   // E-1.2 ⑩: 보이는 선택지 0개 사건은 추첨 전에 제외
-        }).map(e => ({ ...e, w: e.w * (S.recentEvents.slice(-4).includes(e.id) ? 0.12 : 1) }));
+            // F1D4A D-LUCK 엔진 경계(LUCK-1·6~8·12): 사건 조건은 형식 검사를 통과한 스냅숏으로만 판정한다. 위반이면 후보에서 제외(fail-closed).
+            const cs = eventCondSnapshot(e.cond);
+            if (!cs.ok) { noteEventCondMalformed(e, cs.reason); return false; }
+            yearCondSnaps.set(e, cs.snap);   // 후보가 되지 않은 사건의 스냅숏은 후보 레코드에 연결되지 않으므로 쓰이지 않는다
+            return match(cs.snap, e) && visibleChoices(e).length > 0;   // E-1.2 ⑩: 보이는 선택지 0개 사건은 추첨 전에 제외
+        }).map(e => { const rec = { ...e, w: e.w * (S.recentEvents.slice(-4).includes(e.id) ? 0.12 : 1) }; eventCondSnapByCand.set(rec, yearCondSnaps.get(e)); return rec; });
         const e = getRandomItemByWeight([...pool, { w: 5, none: true }], 'w');
         if (!e.none) {
             // E-1.2 ⑫: 표시 전 재검사(정상 흐름에서는 ⑩ 과 같은 결과). 실패하면 진단을 남기고 "사건 없음"과 똑같이 처리한다.
-            const condOk = match(e.cond, e), visOk = condOk && visibleChoices(e).length > 0;
+            const recSnap = eventCondSnapByCand.get(e);   // LUCK-12: ⑩ 에서 만든 같은 스냅숏을 다시 쓴다(원본 e.cond 를 다시 읽지 않음). 없으면 fail-closed
+            const condOk = !!recSnap && match(recSnap, e), visOk = condOk && visibleChoices(e).length > 0;
             if (!condOk || !visOk) {
                 followupDiag('event_recheck_failed', { where: 'nextYear', part: !condOk ? 'cond' : 'choices', eventId: e.id });
                 if (S.age > 2) skipped++;

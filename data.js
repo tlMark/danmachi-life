@@ -46,6 +46,16 @@ const gachaData = {
         { id: "astraea", label: "아스트레아 파밀리아", weight: 10, kind: "canon", official: true, desc: "과거 오라리오의 어둠에 맞서 질서를 수호하려 했던 정의의 파벌." },
         { id: "hestia", label: "헤스티아 파밀리아", weight: 1, kind: "canon", official: true, desc: "변변한 홈조차 없었으나, 놀라운 성장을 기록하며 기적을 써내려가는 파밀리아." }
     ],
+    // F1D4A D-DEVABIL 1단계(설계 r3): 발전 어빌리티 정의(정적, 로드 시 동결). 이름의 근거는 항목별 관리(모두 "조사 보고 기재 — 원작 출처 검증 대기").
+    //   weight·eligibility 는 U-D2(후보 자격·가중치) 미정 → null. null 인 동안 습득은 비활성(script.js devAbilityAcquisitionEnabled)이며 수치를 임의로 정하지 않는다.
+    //   행운: 원작 근거 범위 = 본편 3권 에필로그 ~ 4권 1장(교회 스테이터스 갱신 장면), 페이지·전자판 위치·원문 인용 미확인. 확률 배율은 원작 수치 미확인.
+    devAbilities: [
+        { id: "hunter", ko: "헌터", kanji: "狩人", rarity: "common", weight: null, eligibility: null, source: { name: "검증 대기", effect: "미정(1차 효과 없음)" } },
+        { id: "blacksmith", ko: "대장장이", kanji: "鍛冶", rarity: "common", weight: null, eligibility: null, source: { name: "검증 대기", effect: "미정(1차 효과 없음)" } },
+        { id: "mixing", ko: "조합", kanji: "調合", rarity: "common", weight: null, eligibility: null, source: { name: "검증 대기(보유자·최초 습득 레벨 검증 대기)", effect: "미정(1차 효과 없음)" } },
+        { id: "mystery", ko: "신비", kanji: "神秘", rarity: "rare", weight: null, eligibility: null, source: { name: "검증 대기", effect: "미정(1차 효과 없음)" } },
+        { id: "luck", ko: "행운", kanji: "幸運", rarity: "very_rare", weight: null, eligibility: null, source: { name: "검증 대기(본편 3권 에필로그~4권 1장, 위치·원문 미확인)", effect: "정성적 서술만, 원작 수치 미확인" } }
+    ],
     talents: [
         { id: "none", label: "무재능", weight: 400, desc: "신탁(팔나)을 받아도 어떤 마법이나 스킬도 발현되지 않는 지극히 평범한 그릇." },
         { id: "dev_ability_hunter", label: "발전 어빌리티: 사냥꾼/내성", weight: 180, desc: "오랜 전투 경험을 통해 독에 저항하거나 몬스터의 약점을 찌르는 기술을 터득했습니다." },
