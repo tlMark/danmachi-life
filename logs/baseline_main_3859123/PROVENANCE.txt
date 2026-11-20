@@ -1,0 +1,16 @@
+P5 기준선 — 3859123 (F1D4A P5 최종 통합, 사용자 승인 "[P5 최종 통합 단계 진행 승인]" §3 신규 P5 기준선 생성)
+기준 커밋: 385912348c05eb6bb43cff2dc59d97ae197eded3   (P5 D-FEAT, Codex 2차 검수 통과. 승인된 의도적 변경 ③ 포함, 사용자 채택 밸런스)
+기존 기준선 logs/baseline_main_f63c851/(main f63c851)·logs/v178_f1/(F1 역사적 기준)은 이 기준과 별개이며 삭제·덮어쓰기하지 않았다. 세 기준을 혼용하지 않는다.
+게임 코드 관계: 이후 커밋 61f819f 는 tests/feat_p5_test.js 만 바꾸므로 이 기준의 tr·digest 결과에 영향이 없다.
+생성 방법: 저장소에서 "git archive 3859123 | tar -x" 로 꺼낸 깨끗한 사본(이전 P5 48k 실행 소스 /tmp/p5_3859123/src 와 diff -r 차이 0)에서 실행.
+  tr_20261104.log : cd <사본> && env SIM_SEED=20261104 node test_runner.js > tr_20261104.log 2>&1; printf 'exit=%s\n' $? >> tr_20261104.log
+  tr_777.log      : 같은 명령, SIM_SEED=777   (P1 02·03 단계와 같은 형식: 출력 전체 + 끝줄 exit=N)
+  digest10.json   : node <사본>/logs/v178_f1/tools/digest10.js <사본> digest10.json   (비교 json 없이 실행 → vsRef 'n/a')
+                    10구성: physical/{777,314159,8675309,20261104}, calendar/20261104, newborn_parent_familia/20261104, off/{777,314159,8675309,20261104}. 각 3000생애, MAX_PARALLEL=3(기본)
+                    10구성 모두 exit=0, completed=3000, inv=true, exc=0 (digest10_run.log)
+  digest10_run.log: 위 명령의 표준 출력
+  48k_SHA256SUMS.txt: 같은 사본에서 MAX_PARALLEL=3 node logs/v178_f1/tools/run48k.js 로 만든 32개 산출물 해시와 16구성 lifeDigest·rngCallDigest
+실행 환경: v22.23.4, Linux 6.18.44-fc-v726 x86_64, vCPU 4. 생성 시작 2026-11-20T14:19:18Z / 종료 2026-11-20T14:45:42Z. 실행자 Claude Code. ChatGPT·Codex 독립 재실행 아님.
+재현 확인: tr 두 로그는 3859123 P1 실행(02·03 단계, /tmp/p1_verify_3859123)과 바이트 동일. 48k 32개 산출물은 이전 P5 48k 실행(FD-7)과 32/32 바이트 동일.
+사용처: tests/p1_verify.sh 의 05p_p5_byte_compare(로그 바이트 비교), 06p_digest10_strict_p5(digest 엄격 대조). 05·06(F1)·05m·06m(f63c851)은 재정의하지 않고 그대로 남는다.
+갱신 규칙: 이 기준은 사용자 승인 없이 바꾸지 않는다. 결과가 바뀌는 의도적 변경이 승인되면 새 커밋 기준으로 새 폴더를 만든다(이 폴더는 덮어쓰지 않음).
