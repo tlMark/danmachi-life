@@ -156,7 +156,9 @@ const EVENTS = [
         { label: '참가한다', chance: { p: .5, stat: 'power', per: .003, ok: { text: '원정은 성공했고 전설로 회자되었다.', fx: { power: 25, valis: 5000, flags: ['veteran'], feat: 2 } }, fail: { text: '원정 도중 돌아오지 못했다.', fx: { die: true } } } },
         { label: '지상에 남는다', text: '대신 후방 일을 도우며 안정적으로 지냈다.', fx: { valis: 800 } }] },
     { id: 'ritual', w: 90, once: true, cond: { cage: [14, 22], origin: ['telskyura'], residenceIn: ['telskyura'] }, text: '텔스큐라의 의식에 휘말려 싸움에 나서야 한다.', choices: [
-        { label: '정면으로 싸운다', chance: { p: .5, stat: 'power', per: .005, ok: { text: '살아남아 전사로 인정받았다.', fx: { power: 15, flags: ['warrior'], feat: 1 } }, fail: { text: '싸움에서 목숨을 잃었다.', fx: { die: true } } } },
+        // P5 DF-6(P-1): 팔나판(앞)·비팔나판 복제. 라벨·확률·실패 같음, 비팔나판 ok 에서 feat 만 뺌. 데이터 인덱스: 몰래 빠져나간다 [1]→[2]
+        { label: '정면으로 싸운다', cond: { flags: ['falna'] }, chance: { p: .5, stat: 'power', per: .005, ok: { text: '살아남아 전사로 인정받았다.', fx: { power: 15, flags: ['warrior'], feat: 1 } }, fail: { text: '싸움에서 목숨을 잃었다.', fx: { die: true } } } },
+        { label: '정면으로 싸운다', cond: { noFlags: ['falna'] }, chance: { p: .5, stat: 'power', per: .005, ok: { text: '살아남아 전사로 인정받았다.', fx: { power: 15, flags: ['warrior'] } }, fail: { text: '싸움에서 목숨을 잃었다.', fx: { die: true } } } },
         { label: '몰래 빠져나간다', chance: { p: .4, ok: { text: '무사히 도망쳤지만 고향을 잃었다.', fx: { bond: -3 } }, fail: { text: '붙잡혀 크게 다쳤다.', fx: { hp: -40 } } } }] },
     { id: 'xenos', w: 6, once: true, cond: { canEnterDungeon: true, flags: ['falna'], age: [20, 50], job: ['adventurer'] }, text: '미궁 깊은 곳에서 이성을 가진 몬스터와 마주쳤다.', choices: [
         { label: '대화를 시도한다', text: '인간과 몬스터 사이의 비밀스러운 유대가 생겼다.', fx: { flags: ['xenos_friend'], bond: 10 } },
@@ -238,7 +240,7 @@ const EVENTS = [
         { label: '비싼 소모품이라 포기한다', text: '마검에 의존하지 않고 자신의 순수한 전투력만으로 미궁에 도전하기로 했다.', fx: { valis: 0 } } ] },
     { id: 'encounter_goliath', w: 12, once: true, cond: { canEnterDungeon: true, flags: ['falna'], job: ['adventurer'], min: { level: 2 } }, text: '17계층 통곡의 대벽에서 신장 7m의 계층 터주(몬스터 렉스) 골라이아스와 조우했다.', choices: [
         { label: '파티원들과 연계하여 전면전에 나선다', chance: { p: 0.4, stat: 'power', per: 0.005, ok: { text: '사투 끝에 골라이아스를 토벌하고 18계층 리빌라 마을로 무사히 진입했다.', fx: { valis: 20000, feat: 3 } }, fail: { text: '계층 터주의 압도적인 파괴력에 짓눌려 뼈가 부러지는 중상을 입었다.', fx: { hp: -50 } } } },
-        { label: '패스 퍼레이드를 일으켜 다른 파티에 몬스터 떠넘긴다', text: '비겁한 수단으로 목숨은 건졌으나 오라리오 내에서 모험자로서의 평판이 하락했다.', fx: { hp: -10, feat: -2 } } ] },
+        { label: '패스 퍼레이드를 일으켜 다른 파티에 몬스터 떠넘긴다', text: '비겁한 수단으로 목숨은 건졌으나 오라리오 내에서 모험자로서의 평판이 하락했다.', fx: { hp: -10 } } ] },
     { id: 'buy_elemental_cloth', w: 15, cond: { age: [15, 50], job: ['adventurer'], noItem: ['salamander_wool', 'undine_cloth'], min: { level: 2, valis: 8000 } }, text: '중층과 하층의 가혹한 환경을 버티기 위해 정령의 가호가 깃든 방호포를 구매할 기회가 생겼다.', choices: [
         { label: '살라만다 울 구매 (화염 내성)', text: '헬 하운드의 화염과 중층의 열기를 견딜 수 있는 살라만다 울을 장비했다.', fx: { valis: -8000, getItem: 'salamander_wool' } },
         { label: '운디네 클로스 구매 (수속성 내성)', text: '물의 미로도시(25~27계층) 공략에 필수적인 운디네 클로스를 장비했다.', fx: { valis: -8000, getItem: 'undine_cloth' } },
@@ -250,11 +252,11 @@ const EVENTS = [
         { label: '비상용으로 듀얼 포션을 대량 구매한다', text: '위험한 던전 탐색 중 큰 위기를 넘길 수 있는 생명줄을 확보했다.', fx: { valis: -2000, getItem: 'dual_potion' } },
         { label: '일반 포션으로 만족한다', text: '비용을 아꼈으나, 전투 지속력에는 한계가 남았다.', fx: { valis: 0 } } ] },
     { id: 'find_grimoire', w: 3, once: true, cond: { canEnterDungeon: true, flags: ['falna'], age: [15, 60], job: ['adventurer'], min: { level: 3 } }, text: '던전 탐색 중 혹은 우연한 기회로, 읽는 것만으로 마법을 각성시켜 준다는 초희귀 마도서 『그리므와르』를 손에 넣었다.', choices: [
-        { label: '마도서를 직접 읽어 마법을 각성한다', text: '책은 재가 되어 사라졌지만, 강력한 마법을 깨우쳐 압도적인 힘을 얻었다.', fx: { feat: 5, flags: ['magic_user'], getItem: 'grimoire' } },
+        { label: '마도서를 직접 읽어 마법을 각성한다', text: '책은 재가 되어 사라졌지만, 강력한 마법을 깨우쳐 압도적인 힘을 얻었다.', fx: { flags: ['magic_user'], getItem: 'grimoire' } },
         { label: '경매에 올려 막대한 부를 얻는다', text: '최상위 파밀리아에게 1억 발리스가 넘는 가격에 매각하여 평생 쓸 돈을 벌었다.', fx: { valis: 1000000 } } ] },
     { id: 'daedalus_orb', w: 5, once: true, cond: { canEnterDungeon: true, flags: ['falna'], job: ['adventurer'], min: { level: 3 } }, text: '어둠의 파벌(이블스)의 잔당을 토벌하던 중, 붉은 눈알에 D가 새겨진 기괴한 아이템 『다이달로스의 눈』을 주웠다.', choices: [
         { label: '인조 미궁 크노소스 탐색에 뛰어든다', chance: { p: 0.3, stat: 'power', per: 0.005, ok: { text: '미궁의 함정을 돌파하고 엄청난 밀수품과 마석을 탈취했다.', fx: { valis: 50000, feat: 4 } }, fail: { text: '독 포자를 뿜는 몬스터와 폭발 트랩에 휘말려 사경을 헤맸다.', fx: { hp: -60, valis: -10000 } } } },
-        { label: '위험한 물건이라 판단해 길드에 넘긴다', text: '길드로부터 포상금을 받고 불필요한 위험을 피했다.', fx: { valis: 15000, feat: 1 } } ] },
+        { label: '위험한 물건이라 판단해 길드에 넘긴다', text: '길드로부터 포상금을 받고 불필요한 위험을 피했다.', fx: { valis: 15000 } } ] },
 
     // 직업 선택: 파밀리아와 별개로 생업을 선택한다.
     { id: 'career_choice', w: 90, once: true, cond: { cage: [13, 19], job: ['child'] }, text: '어느덧 스스로 생계를 꾸릴 나이가 되었다. 지금까지의 경험과 인연을 바탕으로 앞으로의 길을 정해야 한다.', choices: [
@@ -297,7 +299,7 @@ const EVENTS = [
         { label: '소박한 선물을 건넨다', text: '작은 정성이 관계를 다시 단단하게 만들었다.', fx: { valis: -100, bond: 3 } }
     ] },
     { id: 'city_disaster', w: 10, once: true, cond: { age: [10, 80] }, text: '도시 외곽에서 화재가 번져 주민들이 대피하기 시작했다. 불길은 바람을 타고 주거 구역으로 향하고 있었다.', choices: [
-        { label: '이웃을 대피시키는 일을 돕는다', text: '연기 속에서 사람들을 이끌어냈고 감사 인사를 받았다.', fx: { hp: -8, bond: 5, feat: 1 } },
+        { label: '이웃을 대피시키는 일을 돕는다', text: '연기 속에서 사람들을 이끌어냈고 감사 인사를 받았다.', fx: { hp: -8, bond: 5 } },
         { label: '안전한 곳으로 피신한다', text: '다치지는 않았지만 며칠 동안 도시의 피해 소식을 들어야 했다.', fx: { bond: -1 } }
     ] },
     { id: 'old_friend', w: 16, cool: 4, maxTimes: 2, cond: { age: [16, 85] }, text: '어린 시절 알고 지내던 친구와 우연히 재회했다. 서로 다른 길을 걸어온 시간이 대화 사이에 놓여 있었다.', choices: [
@@ -305,7 +307,7 @@ const EVENTS = [
         { label: '함께 작은 일을 시작한다', text: '서로의 장점을 살려 소소한 수익을 얻었다.', fx: { bond: 2, valis: 600 } }
     ] },
     { id: 'mentor', w: 14, once: true, cond: { age: [25, 65], min: { bond: 5 } }, text: '당신의 성실함을 눈여겨본 연장자가 자신의 경험을 전해 주겠다고 제안했다.', choices: [
-        { label: '제자로 들어가 배운다', text: '오랜 경험에서 나온 조언은 이후의 선택에 큰 도움이 되었다.', fx: { power: 5, bond: 4, feat: 1 } },
+        { label: '제자로 들어가 배운다', text: '오랜 경험에서 나온 조언은 이후의 선택에 큰 도움이 되었다.', fx: { power: 5, bond: 4 } },
         { label: '독립적으로 해 보겠다고 답한다', text: '스스로 판단하고 책임지는 법을 배웠다.', fx: { bond: 2, valis: 300 } }
     ] },
     { id: 'supporter_route', w: 18, cool: 3, maxTimes: 2, cond: { age: [16, 60], job: ['supporter'], flags: ['falna'], hasFamilia: true, familiaRole: ['member'] }, text: '소속 파밀리아의 원정대가 짐이 많고 귀환 경로도 험한 탐색에 나선다. 팔나를 받은 서포터로서 준비와 판단이 중요해졌다.', choices: [
@@ -329,7 +331,9 @@ const EVENTS = [
     ] },
     { id: 'soldier_patrol', w: 18, cool: 3, maxTimes: 2, cond: { age: [18, 60], job: ['soldier'] }, text: '국경 경비 중 정체를 알 수 없는 무리가 접근했다. 먼저 움직이면 충돌을 막을 수도 있지만 위험을 감수해야 한다.', choices: [
         { label: '정찰을 보내 상황을 확인한다', text: '상대가 물러나 불필요한 충돌을 피했다.', fx: { bond: 2, power: 2 } },
-        { label: '부대를 이끌고 길목을 지킨다', chance: { p: 0.6, stat: 'power', per: 0.002, ok: { text: '침착한 지휘로 경계를 마쳤다.', fx: { power: 4, feat: 1 } }, fail: { text: '작은 교전에서 부상을 입었다.', fx: { hp: -18 } } } }
+        // P5 DF-6b(P-1): 팔나판(앞)·비팔나판 복제. 데이터 인덱스: 길목을 지킨다 [1]→[1](팔나)·[2](비팔나)
+        { label: '부대를 이끌고 길목을 지킨다', cond: { flags: ['falna'] }, chance: { p: 0.6, stat: 'power', per: 0.002, ok: { text: '침착한 지휘로 경계를 마쳤다.', fx: { power: 4, feat: 1 } }, fail: { text: '작은 교전에서 부상을 입었다.', fx: { hp: -18 } } } },
+        { label: '부대를 이끌고 길목을 지킨다', cond: { noFlags: ['falna'] }, chance: { p: 0.6, stat: 'power', per: 0.002, ok: { text: '침착한 지휘로 경계를 마쳤다.', fx: { power: 4 } }, fail: { text: '작은 교전에서 부상을 입었다.', fx: { hp: -18 } } } }
     ] },
     { id: 'neighborhood_help', w: 18, cool: 3, maxTimes: 2, cond: { age: [7, 85] }, text: '이웃이 이사 준비로 곤란을 겪고 있었다. 하루 정도 시간을 내면 큰 도움이 될 것 같다.', choices: [
         { label: '짐을 나르는 일을 돕는다', text: '이웃과 가까워졌고 작은 답례도 받았다.', fx: { bond: 3, valis: 150 } },
@@ -348,7 +352,7 @@ const EVENTS = [
         { label: '비가 그칠 때까지 안전한 곳에서 기다린다', text: '큰 피해 없이 비가 지나갔다.', fx: { hp: 1 } }
     ] },
     { id: 'lost_child', w: 12, once: true, cond: { age: [16, 80] }, text: '시장 한복판에서 길을 잃고 울고 있는 아이를 발견했다. 아이는 보호자의 이름조차 제대로 말하지 못했다.', choices: [
-        { label: '길드에 도움을 요청해 보호자를 찾는다', text: '아이를 가족에게 돌려보냈고 길드 직원의 칭찬을 들었다.', fx: { bond: 5, feat: 1 } },
+        { label: '길드에 도움을 요청해 보호자를 찾는다', text: '아이를 가족에게 돌려보냈고 길드 직원의 칭찬을 들었다.', fx: { bond: 5 } },
         { label: '주변 상인들과 함께 아이를 찾는다', text: '상인들의 협력으로 아이의 가족을 찾아냈다.', fx: { bond: 4 } }
     ] },
     { id: 'small_injury', w: 16, cool: 4, maxTimes: 2, cond: { age: [10, 80] }, text: '일을 하던 중 발을 헛디뎌 가벼운 부상을 입었다. 며칠은 무리하지 않는 편이 좋겠다.', choices: [
@@ -368,7 +372,7 @@ const EVENTS = [
         { label: '지금의 생활을 지킨다', text: '익숙한 일상에 남아 주변 사람들과 시간을 보냈다.', fx: { bond: 2 } }
     ] },
     { id: 'community_role', w: 12, once: true, cond: { age: [30, 75], cage: [30, 400], min: { bond: 8 } }, text: '주민들이 마을의 일을 맡아 줄 사람을 찾고 있다. 사람들의 신뢰를 얻은 당신에게도 제안이 왔다.', choices: [
-        { label: '공동체 일을 맡는다', text: '사람들의 의견을 조율하며 책임감과 보람을 느꼈다.', fx: { bond: 5, valis: 500, feat: 1 } },
+        { label: '공동체 일을 맡는다', text: '사람들의 의견을 조율하며 책임감과 보람을 느꼈다.', fx: { bond: 5, valis: 500 } },
         { label: '다른 이에게 자리를 양보한다', text: '자신보다 더 적합한 사람을 추천하고 뒤에서 도왔다.', fx: { bond: 3 } }
     ] },
     // ---- v1.7: 가족 관계 이벤트 (S.relations의 살아 있는 가족이 있을 때만 발생) ----
