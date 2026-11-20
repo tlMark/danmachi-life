@@ -167,6 +167,62 @@ test('FD-3 동적: 4 상태 × ritual·soldier_patrol — 보이는 복제본 �
   }
 });
 
+// ── FD-3h 숨은 복제본 chooseBody() 직접 호출(Codex 2차 지적 2-1 후속 시험) ──────────────────
+// 위 FD-3d 는 choose() 경유이고 currentEventId 를 빼고 비교한다(choose 의 finally 가 currentEventId 를 지우므로). 이 시험은 그것을 대신하지 않고 더한다.
+// chooseBody 를 직접 부르면 finally 가 없으므로 S 전체(currentEventId 포함)를 빼는 필드 없이 비교한다.
+// 합성 상태 주입(life)이며, 표시는 실제 showEvent 로 한다(currentEventId·버튼은 showEvent 가 설정).
+// 계수: getChoiceProbability(확률 판정)·apply(효과 적용)·say(로그)·takePowerBoost 호출 수를 감싸서 센다. 감싸기는 동작을 바꾸지 않는다.
+function wrapCounters(T) {
+  T.G(`var __fd3h = { prob: 0, apply: 0, say: 0, boost: 0 };
+    (function () { const gp = getChoiceProbability, ap = apply, sy = say, tb = GameCore.Items.takePowerBoost;
+      getChoiceProbability = function () { __fd3h.prob++; return gp.apply(this, arguments); };
+      apply = function () { __fd3h.apply++; return ap.apply(this, arguments); };
+      say = function () { __fd3h.say++; return sy.apply(this, arguments); };
+      GameCore.Items.takePowerBoost = function () { __fd3h.boost++; return tb.apply(this, arguments); }; })()`);
+  return () => J(T.G('__fd3h'));
+}
+test('FD-3h 숨은 복제본 chooseBody 직접 호출: 4 상태 × ritual·soldier_patrol — 진단 +1, S 전체·RNG·DOM 불변, 효과·확률 판정 미실행', () => {
+  const diagN = T => T.G("followupDiagLog.filter(d => d.event === 'hidden_choice_rejected').length");
+  for (const st of STATES) for (const id of ['ritual', 'soldier_patrol']) {
+    const T = makeCtx(); const s = life(T, st, { job: id === 'soldier_patrol' ? 'soldier' : undefined });
+    const cnt = wrapCounters(T);
+    T.G(`showEvent(EVENTS.find(e => e.id === '${id}'))`);
+    check(`FD-3h ${st}/${id} showEvent 뒤 currentEventId = '${id}'`, s.currentEventId === id, s.currentEventId);
+    const e = E(T, id), i = PAIR_AT[id];
+    const vis = T.G(`visibleChoices(EVENTS.find(e => e.id === '${id}'))`);
+    const hidden = vis.includes(e.choices[i]) ? i + 1 : i;
+    const hf = st === 'active' || st === 'unbound';
+    check(`FD-3h ${st}/${id} 숨은 복제본 = [${hidden}](${hf ? '비팔나판' : '팔나판'}) · 화면에 없음`, hidden === (hf ? i + 1 : i) && !vis.includes(e.choices[hidden]));
+    const s0 = snap(s), c0 = T.calls(), d0 = diagN(T), k0 = cnt(), dom0 = T.dom(), last0 = T.G('followupDiagLog.length');
+    const ret = T.G(`chooseBody(EVENTS.find(e => e.id === '${id}').choices[${hidden}])`);
+    const added = T.G(`followupDiagLog.slice(${last0})`);
+    check(`FD-3h ${st}/${id} hidden_choice_rejected 증가량 = 정확히 1`, diagN(T) === d0 + 1, { before: d0, after: diagN(T) });
+    check(`FD-3h ${st}/${id} 새 진단 1건 = { hidden_choice_rejected, eventId '${id}', reason cond_unmet }`, added.length === 1 && added[0].event === 'hidden_choice_rejected' && added[0].eventId === id && added[0].reason === 'cond_unmet', added);
+    check(`FD-3h ${st}/${id} S 전체 직렬화 동일(currentEventId 포함, 제외 필드 없음)`, snap(s) === s0);
+    check(`FD-3h ${st}/${id} currentEventId 그대로 '${id}'`, s.currentEventId === id, s.currentEventId);
+    check(`FD-3h ${st}/${id} RNG 호출 수 동일`, T.calls() === c0, { before: c0, after: T.calls() });
+    // 호출 전 값은 showEvent 의 사건 문구 로그(say 1회)를 포함한다. 판정 대상은 chooseBody 호출 동안의 증가량 0 이다.
+    check(`FD-3h ${st}/${id} 호출 동안 확률 판정·효과 적용·로그·힘 소모품 호출 증가 0`, cnt() === k0, { before: k0, after: cnt() });
+    check(`FD-3h ${st}/${id} DOM(선택지 버튼·로그 등) 불변`, T.dom() === dom0);
+    check(`FD-3h ${st}/${id} 반환값 undefined(조기 반환)`, ret === undefined, ret);
+  }
+});
+// 대조(비공허 확인): 같은 계수가 실제 적용을 잡아내는지 — 보이는 복제본을 chooseBody 로 부르면 확률 판정·적용·RNG 가 일어나고 진단은 늘지 않는다.
+test('FD-3h 대조: 보이는 복제본 chooseBody 직접 호출은 수락(확률 판정·적용·RNG 발생, 거부 진단 증가 0)', () => {
+  for (const st of STATES) for (const id of ['ritual', 'soldier_patrol']) {
+    const T = makeCtx(); const s = life(T, st, { job: id === 'soldier_patrol' ? 'soldier' : undefined });
+    const cnt = wrapCounters(T);
+    T.G(`showEvent(EVENTS.find(e => e.id === '${id}'))`);
+    const e = E(T, id), i = PAIR_AT[id];
+    const visIdx = T.G(`visibleChoices(EVENTS.find(e => e.id === '${id}'))`).includes(e.choices[i]) ? i : i + 1;
+    const s0 = snap(s), c0 = T.calls(), d0 = T.G("followupDiagLog.filter(d => d.event === 'hidden_choice_rejected').length");
+    T.G(`chooseBody(EVENTS.find(e => e.id === '${id}').choices[${visIdx}])`);
+    const k = T.G('__fd3h');
+    check(`FD-3h 대조 ${st}/${id} 보이는 [${visIdx}] 수락: 확률 판정 ≥1·적용 ≥1·RNG 증가·S 변화·거부 진단 0`,
+      k.prob >= 1 && k.apply >= 1 && T.calls() > c0 && snap(s) !== s0 && T.G("followupDiagLog.filter(d => d.event === 'hidden_choice_rejected').length") === d0, { k, c0, c1: T.calls() });
+  }
+});
+
 // ── FD-5 R2 매핑: 같은 난수 → 원본과 같은 라벨·같은 결과 ─────────────────────────────────
 // 원본 = 현재 events.js 에 되돌림 패치(복제 쌍 → f63c851 의 단일 선택지). 패치 문자열이 맞지 않으면 makeCtx 가 예외를 던져 시험이 실패한다.
 const RITUAL_NEW = `        // P5 DF-6(P-1): 팔나판(앞)·비팔나판 복제. 라벨·확률·실패 같음, 비팔나판 ok 에서 feat 만 뺌. 데이터 인덱스: 몰래 빠져나간다 [1]→[2]
