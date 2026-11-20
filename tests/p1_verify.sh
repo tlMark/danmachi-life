@@ -20,7 +20,8 @@ if [ -L "$C" ] || { [ ! -e "$C" ] && ! mkdir -- "$C" 2>/dev/null; } || [ -L "$C"
     vr_finish; exit $?
 fi
 # 이번 실행에서 반드시 끝나야 하는 항목(아래 run 호출과 1:1). 여기 없는 이름으로는 run 할 수 없고, 여기 있는데 기록이 없으면 실패다.
-vr_expect 01_syntax 02_tr_20261104 03_tr_777 04_digest10_vs_F1 05_f1_byte_compare 06_digest10_strict 07_verify_run_selftest \
+# 05·06 = F1 역사적 기준(logs/v178_f1, 보존·불변) 대조. 05m·06m = 현재 main 기준선(logs/baseline_main_f63c851) 대조. 서로 섞지 않고 각각 판정한다.
+vr_expect 01_syntax 02_tr_20261104 03_tr_777 04_digest10_vs_F1 05_f1_byte_compare 05m_main_byte_compare 06_digest10_strict 06m_digest10_strict_main 07_verify_run_selftest \
     10_followup_pf_test 10_followup_halt_test 10_f1_joinhard_test 10_f1_transition_test 10_god_gone_2ba_test 10_residence_ri_test 10_sync_2i_test 10_jobsince_test 10_recruit_2bb_test \
     11_f1_mutation 12_jobsince_mutation 13_recruit_2bb_mutation 14_d3_wiring_mutation \
     20_browser_file 21_browser_inline 30_rng_sites_test 31_rng_timer_test 40_cmp_physical 41_cmp_off 42_cmp_cal_newborn
@@ -33,6 +34,18 @@ f1cmp() {   # F1 기록 로그와의 바이트 비교(증빙: 양쪽 SHA-256 과
         echo "  이번 실행  $(sha256sum < "$L/${n}_tr_$s.log" | cut -d' ' -f1)  logs/${n}_tr_$s.log"
         echo "  F1 기록    $(sha256sum < "logs/v178_f1/tr_$s.log" | cut -d' ' -f1)  (저장소) logs/v178_f1/tr_$s.log"
         if cmp "$L/${n}_tr_$s.log" "logs/v178_f1/tr_$s.log"; then echo "  cmp: 바이트 단위 동일"; else echo "  cmp: 다름"; bad=1; fi
+    done
+    return $bad
+}
+MAINB=logs/baseline_main_f63c851
+maincmp() {   # 현재 main 기준선(f63c851) 로그와의 바이트 비교(증빙: 양쪽 SHA-256 과 cmp 결과). F1 기록 비교(f1cmp)와 별개
+    local bad=0
+    for s in 20261104 777; do
+        local n=02; [ "$s" = 777 ] && n=03
+        echo "seed $s"
+        echo "  이번 실행  $(sha256sum < "$L/${n}_tr_$s.log" | cut -d' ' -f1)  logs/${n}_tr_$s.log"
+        echo "  main 기준  $(sha256sum < "$MAINB/tr_$s.log" | cut -d' ' -f1)  (저장소) $MAINB/tr_$s.log"
+        if cmp "$L/${n}_tr_$s.log" "$MAINB/tr_$s.log"; then echo "  cmp: 바이트 단위 동일"; else echo "  cmp: 다름"; bad=1; fi
     done
     return $bad
 }
@@ -50,6 +63,7 @@ vr_bg tr_777 run 03_tr_777 env SIM_SEED=777 node test_runner.js
 vr_bg digest10 run 04_digest10_vs_F1 node logs/v178_f1/tools/digest10.js "$ROOT" "$L/04_digest10.json" logs/v178_f1/digest10_vs_s3.json
 vr_wait
 run 05_f1_byte_compare f1cmp
+run 05m_main_byte_compare maincmp
 vr_bg regress9 regress9
 vr_bg f1_mutation run 11_f1_mutation node tests/f1_mutation.js
 vr_bg mut3 mut3
@@ -59,5 +73,7 @@ run 20_browser_file node tests/browser_test.js 24
 run 21_browser_inline env BROWSER_LOAD=inline node tests/browser_test.js 24
 # digest10 도구는 lifeDigest 만 비교하고 종료 코드에 반영하지 않으므로, lifeDigest · rngCallDigest · 종료 코드 · 완주 수 · 불변식을 F1 기록과 직접 대조한다
 run 06_digest10_strict node tests/digest10_strict.js "$L/04_digest10.json" logs/v178_f1/digest10_vs_s3.json
+# 같은 04 실행 결과를 현재 main 기준선(f63c851)과 엄격 대조(판정 규칙은 06 과 같고 기준 파일만 다름)
+run 06m_digest10_strict_main node tests/digest10_strict.js "$L/04_digest10.json" "$MAINB/digest10.json" 'main f63c851 기준'
 vr_finish
 exit $?

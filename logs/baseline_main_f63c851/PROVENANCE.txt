@@ -1,0 +1,14 @@
+현재 main 기준선 — f63c851 (F1D4A 기준선 정리, 사용자 승인 "F1 역사적 기준 보존 및 현재 main 기준선 추가")
+기준 커밋: f63c85142e8eb0dcfb191734e8578fb5af4c7e62   (P3 보완까지 반영된 main. 승인된 의도적 변경 P2·P3 포함)
+F1 역사적 기준(logs/v178_f1/)은 이 기준과 별개이며 삭제·덮어쓰기하지 않았다. 두 기준을 혼용하지 않는다.
+생성 방법: 저장소에서 "git archive f63c851 | tar -x" 로 꺼낸 깨끗한 사본(파일별 SHA256 은 패키지의 src_SHA256SUMS.txt)에서 실행.
+  tr_20261104.log : cd <사본> && env SIM_SEED=20261104 node test_runner.js > tr_20261104.log 2>&1; printf 'exit=%s\n' $? >> tr_20261104.log
+  tr_777.log      : 같은 명령, SIM_SEED=777   (P1 02·03 단계와 같은 형식: 출력 전체 + 끝줄 exit=N)
+  digest10.json   : node <사본>/logs/v178_f1/tools/digest10.js <사본> digest10.json   (비교 json 없이 실행 → vsRef 'n/a')
+                    10구성: physical/{777,314159,8675309,20261104}, calendar/20261104, newborn_parent_familia/20261104, off/{777,314159,8675309,20261104}. 각 3000생애, MAX_PARALLEL=3(기본)
+  digest10_run.log: 위 명령의 표준 출력
+실행 환경: v22.23.4, Linux 6.18.44-fc-v726 x86_64, vCPU 4. 생성 시작 2026-11-20T04:20:52Z / 종료 2026-11-20T04:24:14Z. 실행자 Claude Code. ChatGPT·Codex 독립 재실행 아님.
+재현 확인: tr 두 로그는 이전 f63c851 P1 실행(02·03 단계)과 바이트 동일, digest10 은 이전 f63c851 P1 04 단계와 10/10 동일(lifeDigest·rngCallDigest·exit·완주·불변식·예외).
+사용처: tests/p1_verify.sh 의 05m_main_byte_compare(로그 바이트 비교), 06m_digest10_strict_main(digest 엄격 대조). 05·06(F1 대조)은 역사적 비교로 그대로 남는다.
+48,000생애(4시드×4모드) 기준 결과는 용량(약 38MB) 때문에 저장소에 넣지 않고 해시 목록만 48k_SHA256SUMS.txt 로 둔다(별도 커밋).
+갱신 규칙: 이 기준은 사용자 승인 없이 바꾸지 않는다. 결과가 바뀌는 의도적 변경(P5 등)이 승인되면 새 커밋 기준으로 새 폴더를 만든다(이 폴더는 덮어쓰지 않음).
