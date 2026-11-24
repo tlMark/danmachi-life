@@ -64,12 +64,13 @@ test('RB-T10-7 원시값 예외', () => {
 
 test('PF-9 예외 시 R1 복원 내용(기록 길이·내용·2-i)', () => {
   const T = setup(); open(T); const s = T.S();
-  const log0 = JSON.stringify(s.logHistory), job0 = s.job, js0 = s.jobSince, flags0 = JSON.stringify(s.flags), st0 = s.falnaState, tr0 = JSON.stringify(s.falnaTransitions), cp0 = JSON.stringify(s.conversionPending), n0 = T.G('syncInvariantLog.length');
+  const log0 = JSON.stringify(s.logHistory), job0 = s.job, js0 = s.jobSince, flags0 = JSON.stringify(s.flags), st0 = s.falnaState, tr0 = JSON.stringify(s.falnaTransitions), cp0 = JSON.stringify(s.conversionPending), n0 = T.G('syncInvariantLog.length'), sb0 = JSON.stringify(['syncBaseline' in s, s.syncBaseline]);
   throwingGo(T);
   check('PF-9a job·jobSince·flags·bond·valis 원복', s.job === job0 && s.jobSince === js0 && JSON.stringify(s.flags) === flags0);
   check('PF-9b logHistory 길이·기존 항목 내용 동일', JSON.stringify(s.logHistory) === log0);
   check('PF-9c 2-i: falnaState·전이·conversionPending 불변, syncDepth 0', s.falnaState === st0 && JSON.stringify(s.falnaTransitions) === tr0 && JSON.stringify(s.conversionPending) === cp0 && T.G('syncDepth') === 0);
-  check('PF-9d 2-i 기준값은 pending_after_exception 으로 남고(초기화하지 않음) 새 생애에서 정리', s.syncBaseline && s.syncBaseline.status === 'pending_after_exception', s.syncBaseline);
+  // 의도적 시험 변경(F1D4A N2-1, RB-1a 사용자 결정 2026-11-23): 이전 기대 'pending_after_exception 으로 남음' → '스냅숏 시점 값으로 복원'
+  check('PF-9d 2-i 기준값 = 스냅숏 시점 값(RB-1a 원자 롤백)', JSON.stringify(['syncBaseline' in s, s.syncBaseline]) === sb0, [s.syncBaseline, sb0]);
   check('PF-9e 화면에 오류 안내 1건(logHistory 미기록)', T.el('log').kids.filter(k => /오류가 발생해 진행을 멈췄다/.test(k.html)).length === 1 && !s.logHistory.some(x => /오류가 발생해/.test(x.text)));
   check('PF-9f syncInvariantLog 추가 0', T.G('syncInvariantLog.length') === n0);
 });

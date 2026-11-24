@@ -94,8 +94,9 @@ const rbRun = (opts, where, afterOpen) => {
   const f = openFollowup(opts); if (afterOpen) afterOpen(f.T, f.s); injectAt(f.T, where);
   const pre = snap(f.s, RB_EXC), log0 = JSON.stringify(f.s.logHistory), lh0 = JSON.stringify(f.s.levelHistory), items0 = JSON.stringify([f.s.items, f.s.itemUses, f.s.itemsConsumed]);
   const tr0 = JSON.stringify([f.s.falnaState, f.s.falnaHolder, f.s.falnaTransitions, f.s.conversionPending]);
+  const sb0 = JSON.stringify(['syncBaseline' in f.s, f.s.syncBaseline]);   // F1D4A N2-1(RB-1a, 사용자 결정 2026-11-23): 기준값도 스냅숏 값으로 되돌린다
   let err = null; try { f.T.G("chooseFollowup('supporter')"); } catch (e) { err = e; }
-  return { ...f, pre, log0, lh0, items0, tr0, err };
+  return { ...f, pre, log0, lh0, items0, tr0, sb0, err };
 };
 for (const [where, name] of [['a', 'E-1 직후'], ['b', 'setJob 직후'], ['c', 'setJob 확인 실패'], ['d', 'apply 내부'], ['e', 'L-2 연표 직후']]) {
   test('RB-T1/T2 예외 지점 (' + where + ') ' + name + ' [예외 주입·시험용 액수]', () => {
@@ -104,7 +105,8 @@ for (const [where, name] of [['a', 'E-1 직후'], ['b', 'setJob 직후'], ['c', 
     check('RB-T2 ' + where + ' S 전체 = 스냅숏(제외: pending·currentEventId·syncBaseline)', snap(r.s, RB_EXC) === r.pre);
     check('RB-T5 ' + where + ' logHistory·levelHistory 내용 동일', JSON.stringify(r.s.logHistory) === r.log0 && JSON.stringify(r.s.levelHistory) === r.lh0);
     check('RB-T6 ' + where + ' 아이템 컨테이너 내용 동일', JSON.stringify([r.s.items, r.s.itemUses, r.s.itemsConsumed]) === r.items0);
-    check('RB-T3 ' + where + ' 2-i 상태 불변·syncDepth 0·기준값 pending_after_exception', JSON.stringify([r.s.falnaState, r.s.falnaHolder, r.s.falnaTransitions, r.s.conversionPending]) === r.tr0 && r.T.G('syncDepth') === 0 && r.s.syncBaseline && r.s.syncBaseline.status === 'pending_after_exception');
+    // 의도적 시험 변경(F1D4A N2-1, RB-1a 사용자 결정 2026-11-23): 이전 기대 '기준값 pending_after_exception 으로 남음' → '기준값 = 스냅숏 시점 값'(원자 롤백)
+    check('RB-T3 ' + where + ' 2-i 상태 불변·syncDepth 0·기준값 = 스냅숏 시점 값(RB-1a)', JSON.stringify([r.s.falnaState, r.s.falnaHolder, r.s.falnaTransitions, r.s.conversionPending]) === r.tr0 && r.T.G('syncDepth') === 0 && JSON.stringify(['syncBaseline' in r.s, r.s.syncBaseline]) === r.sb0, [r.s.syncBaseline, r.sb0]);
     const stats = r.T.el('stats').html;
     check('RB-T4 ' + where + ' 렌더된 발리스 = 원복된 S.valis', stats.includes('발리스<b>' + r.s.valis + '</b>'), stats);
   });

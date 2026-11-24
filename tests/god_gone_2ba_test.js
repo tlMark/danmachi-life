@@ -46,7 +46,11 @@ test('GG-1 조건: active 만 후보(사용자 결정 — 팔나 조건 추가)'
 });
 test('GG-2 성공: 봉인 → 송환 파밀리아 제외 재수여, 직업·레벨·능력치 보존', () => {
   for (const seed of [1, 11, 777, 20261104, 5]) {
-    const T = makeCtx(seed); const s = activeMember(T, 'loki'); const abil = JSON.stringify(s.abil), lv = s.level, lh = s.levelHistory.length;
+    const T = makeCtx(seed); const s = activeMember(T, 'loki');
+    // 의도적 시험 변경(F1D4A N2-3c (나), 사용자 결정 2026-11-23): 재수여에도 carryPotential 을 호출한다. 실제 생애의 active 단원은 팔나 취득 때 잠재력이 이월돼 0 이므로
+    // 합성 사전 상태도 그와 맞춘다(이전 fixture 는 팔나 플래그가 있는데 잠재력이 남은 불일치 상태였다). 잠재력이 남은 경우의 이월은 tests/n2_link_test.js 에서 따로 본다.
+    s.potential = 0;
+    const abil = JSON.stringify(s.abil), lv = s.level, lh = s.levelHistory.length;
     const n = T.G('syncInvariantLog.length'); const c0 = T.calls();
     run(T, e => e.choices[0].chance.ok);
     const H = s.familiaHistory;
@@ -54,7 +58,8 @@ test('GG-2 성공: 봉인 → 송환 파밀리아 제외 재수여, 직업·레�
     check('GG-2b seed ' + seed + ' 상태 active·새 holder ≠ loki', s.falnaState === 'active' && s.falnaHolder && s.falnaHolder !== 'loki' && s.familia && s.familia.id === s.falnaHolder && s.flags.includes('falna'), { st: s.falnaState, h: s.falnaHolder });
     check('GG-2c seed ' + seed + ' 소속 이력: loki 종료(god_returned) + 새 소속(viaConversion)', H.length === 2 && H[0].leftReason === 'god_returned' && H[0].leftAt === 30 && H[1].viaConversion === true && H[1].leftAt === null && H[1].familiaId === s.familia.id, H);
     check('GG-2d seed ' + seed + ' 직업 adventurer 유지(Q7)·레벨·능력치 보존', s.job === 'adventurer' && s.level === lv && JSON.stringify(s.abil) === abil);
-    check('GG-2e seed ' + seed + ' falnaHistory regrant 1건 추가·conversionPending null·statusResumeAge = 31', s.falnaHistory.length === 2 && s.falnaHistory[1].kind === 'regrant' && s.conversionPending === null && s.statusResumeAge === 31);
+    // 의도적 시험 변경(F1D4A N2-1b (가)·변경 이력 #2, 2026-11-23): 이전 기대 statusResumeAge = 31(나이+1) → null(유예 없음)
+    check('GG-2e seed ' + seed + ' falnaHistory regrant 1건 추가·conversionPending null·statusResumeAge = null', s.falnaHistory.length === 2 && s.falnaHistory[1].kind === 'regrant' && s.conversionPending === null && s.statusResumeAge === null);
     check('GG-2f seed ' + seed + ' 동기화 불변식 기록 0', syncLogAfter(T, n).length === 0, syncLogAfter(T, n));
     const lhNew = s.levelHistory.slice(lh);
     check('GG-2h seed ' + seed + ' 레벨 이력 falna_again 1건(Lv 불변)·비 levelup 항목 수 = falnaHistory 수', lhNew.length === 1 && lhNew[0].kind === 'falna_again' && lhNew[0].from === lv && lhNew[0].to === lv && s.levelHistory.filter(h => h.kind !== 'levelup').length === s.falnaHistory.length, lhNew);
