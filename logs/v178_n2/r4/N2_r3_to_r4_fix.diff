@@ -1,0 +1,140 @@
+--- r3/script.js
++++ r4/script.js
+@@ -197,9 +197,15 @@
+ function observeRollbackState(x) {
+     if (!x || !x.application) return;
+     const r = x.application, obs = { application: null, history: null, blocked: null };
+-    let curA;
+-    try { const dA = Object.getOwnPropertyDescriptor(S, 'application'); curA = dA && 'value' in dA ? dA.value : undefined; obs.application = { replaced: dA && !('value' in dA) ? null : (r.has ? curA !== r.ref : !!dA) }; } catch (e) { obs.application = { replaced: null }; }
++    let curA, appObservable = false;
++    // QA r3 필수 1: S.application 자체가 접근자이거나 descriptor 를 얻지 못하면 자식 배열을 관찰하지 않는다(replaced·changed 는 null 로 둔다).
++    try {
++        const dA = Object.getOwnPropertyDescriptor(S, 'application');
++        if (dA && !('value' in dA)) obs.application = { replaced: null, observable: false };
++        else { curA = dA ? dA.value : undefined; appObservable = true; obs.application = { replaced: r.has ? curA !== r.ref : !!dA, observable: true }; }
++    } catch (e) { obs.application = { replaced: null, observable: false }; }
+     for (const k of ['history', 'blocked']) {
++        if (!appObservable) { obs[k] = { replaced: null, changed: null }; continue; }
+         const h = r[k] || { has: false }; let o = { replaced: null, changed: null };
+         try {
+             const d = curA && typeof curA === 'object' ? Object.getOwnPropertyDescriptor(curA, k) : undefined;
+@@ -245,8 +251,15 @@
+     run('application', () => {
+         const r = x.application;
+         if (!r.has) { delete S.application; return { status: rbxHas(S, 'application') ? 'failed' : 'ok' }; }
+-        if (S.application !== r.ref) S.application = r.ref;
+-        if (S.application !== r.ref) return { status: 'failed' };
++        // descriptor 로만 읽고 쓴다: 예외 시점에 S.application 이 접근자가 됐어도 getter·setter 를 부르지 않는다
++        { const d = Object.getOwnPropertyDescriptor(S, 'application');
++          if (!(d && 'value' in d && d.value === r.ref && d.writable && d.enumerable && d.configurable)) {
++              if (d && !d.configurable) return { status: 'failed' };
++              if (d) delete S.application;
++              rbxDefine(S, 'application', r.ref);
++          }
++          const d2 = Object.getOwnPropertyDescriptor(S, 'application');
++          if (!(d2 && 'value' in d2 && d2.value === r.ref)) return { status: 'failed' }; }
+         if (!r.isObj) return { status: 'ok' };
+         if (!r.own) { damaged.push('input_damaged(schema):application'); return { status: 'unverified' }; }   // 접근자·비표준 descriptor: 복원 근거 없음
+         let st; try { st = rbxOwnRestore(r.ref, r.own); } catch (e) { st = 'failed'; }
+--- r3/tests/n2_rollback_test.js
++++ r4/tests/n2_rollback_test.js
+@@ -302,8 +302,13 @@
+   check('RB-2B-5c 생성자 교체: Proxy(Array) → 거부', T.G('(() => { const p = Object.create(Array.prototype); const P = new Proxy(Array, {}); p.constructor = P; const a = [1]; Object.setPrototypeOf(a, p); return rbxArrayList(a); })()') === null);
+   check('RB-2B-5d 인스턴스 own constructor 추가 → 거부', T.G('(() => { const a = [1]; a.constructor = Object; return rbxArrayList(a); })()') === null);
+   check('RB-2B-6 빈 칸·접근자 원소·length 고정 → 거부', T.G('rbxArrayList([1, , 3])') === null && T.G("(() => { const a = [1]; Object.defineProperty(a, '0', { get() { return 1; }, enumerable: true, configurable: true }); return rbxArrayList(a); })()") === null && T.G('rbxArrayList(Object.freeze([1]))') === null);
++  // 판정 범위(QA r3 필수 2): rbxArrayList 는 '배열이 속한 realm 의' 원생 Array 를 검사한다.
++  //   → constructor 가 바뀐 realm 의 배열은 거부(fail-closed), 정상인 별도 realm 의 배열은 지원한다. 모든 realm 을 거부한다는 뜻이 아니다.
+   const T2 = setup(); T2.G('Array.prototype.constructor = function Array() {}');
+-  check('RB-2B-7 전역 Array.prototype.constructor 가 바뀐 환경 → 모든 배열 거부(fail-closed)', T2.G('rbxArrayList([1])') === null);
++  check('RB-2B-7a constructor 가 바뀐 게임 realm 의 배열 → 거부(fail-closed)', T2.G('rbxArrayList([1])') === null);
++  check('RB-2B-7b 같은 상황에서 정상인 별도 realm(시험 host·별도 vm)의 배열 → 지원(정책)', JSON.stringify(T2.G('rbxArrayList')([7])) === '[7]' && JSON.stringify(T2.G('rbxArrayList')(vm.runInNewContext('[8]'))) === '[8]');
++  { const T3 = setup(); const r = runCase(T3, "S => { S.bond += 1; }", (T, s) => { appPrep(T, s); T.G('Array.prototype.constructor = function Array() {}'); });
++    check('RB-2B-7c constructor 가 바뀐 게임 realm 에서 롤백 → partial(unverified)·schema(성공으로 보지 않음)', r.report.rollback === 'partial(unverified)' && /schema/.test(r.report.input), r.report && { rb: r.report.rollback, input: r.report.input }); }
+ });
+ // RB-2C: S 배열 10종의 L1·L2·L3 책임
+ const KEYS10 = ['items', 'itemsConsumed', 'relations', 'familiaHistory', 'falnaHistory', 'falnaTransitions', 'aspirationHistory', 'residenceHistory', 'locationHistory', 'levelHistory'];
+@@ -351,4 +356,22 @@
+     check('RB-2C-4 ' + k + ' unverified·schema', r.report.bundles['array:' + k].status === 'unverified' && new RegExp('schema\\):' + k).test(r.report.input), r.report.bundles['array:' + k]);
+   }
+ });
++// QA r3 필수 1: 최상위 S.application 자체가 접근자(RB-2A-5 의 S.application.history 접근자와 구분)
++test('RB-2A-7 예외 시점 S.application 이 접근자: 자식 관찰 중단(replaced·changed null), getter 호출 0, 원래 참조 데이터 속성으로 복원', () => {
++  const T = setup();
++  const r = runCase(T, "S => { const a = S.application; Object.defineProperty(S, 'application', { get() { globalThis.__gz++; return a; }, set(v) { globalThis.__gz++; }, enumerable: true, configurable: true }); }", appPrep, T => T.G('globalThis.__gz = 0'));
++  const [h, b] = appBundles(r);
++  check('RB-2A-7 history·blocked replaced null·changed null', h.replaced === null && h.changed === null && b.replaced === null && b.changed === null, [h, b]);
++  check('RB-2A-7 롤백 전체 getter·setter 호출 0', T.G('globalThis.__gz') === 0, T.G('globalThis.__gz'));
++  const d = Object.getOwnPropertyDescriptor(r.s, 'application');
++  check('RB-2A-7 복원 뒤 S.application 은 원래 객체의 데이터 속성·묶음 ok', d && 'value' in d && d.value === r.ids.application && r.report.bundles.application.status === 'ok' && h.refRestored === true, r.report.bundles.application);
++});
++test('RB-2A-8 S.application descriptor 획득 자체가 실패: 자식 관찰 중단(null)', () => {
++  const T = setup();
++  const r = runCase(T, "S => { globalThis.__gopd = Object.getOwnPropertyDescriptor; let once = true; Object.getOwnPropertyDescriptor = function (o, k) { if (once && o === S && k === 'application') { once = false; throw new Error('gopd'); } return globalThis.__gopd(o, k); }; }", appPrep);
++  T.G('Object.getOwnPropertyDescriptor = globalThis.__gopd');
++  const [h, b] = appBundles(r);
++  check('RB-2A-8 history·blocked replaced null·changed null', h.replaced === null && h.changed === null && b.replaced === null && b.changed === null, [h, b]);
++  check('RB-2A-8 원래 예외 전파·정지', r.err && r.err.message === 'boom' && T.G('progressHalted') === true);
++});
+ finish('n2_rollback_test');
+--- r3/tests/rng_sites_test.js
++++ r4/tests/rng_sites_test.js
+@@ -104,13 +104,13 @@
+ // cec18a9 반려 보완(DEV-17~21·LUCK-20: 정지 안내 중복 방지·화면 복원·팔나 확인·주석): 다시 줄 번호만 이동(분류·개수 불변).
+ //   cec18a9 줄 → 이번 줄: 129→132, 934→958, 1041→1065, 1196→1222, 1283→1309, 1315→1341 / 호출 457→460, 1003~1005→1027~1029, 1043→1067, 1210→1236
+ // F1D4A N2(RB-1 원자 롤백 확장·N2 팔나 연결 함수·관문 추가): 다시 줄 번호만 이동(분류·개수 불변, 새 난수 지점 없음).
+-//   406a03b 줄 → 이번 줄: 132→376, 958→1264, 1065→1373, 1222→1530, 1309→1617, 1341→1649 / 호출 460→758, 1027~1029→1334~1336, 1067→1375, 1236→1544
+-const EXPECT_DIRECT = { 'script.js': { 6: '(wrapper)', 376: '(shared)', 1264: 'R4', 1373: 'R4', 1530: 'R5', 1617: 'R2', 1649: 'R3' }, 'core/growth.js': { 102: 'R4' },
++//   406a03b 줄 → 이번 줄: 132→389, 958→1277, 1065→1386, 1222→1543, 1309→1630, 1341→1662 / 호출 460→771, 1027~1029→1347~1349, 1067→1388, 1236→1557
++const EXPECT_DIRECT = { 'script.js': { 6: '(wrapper)', 389: '(shared)', 1277: 'R4', 1386: 'R4', 1543: 'R5', 1630: 'R2', 1662: 'R3' }, 'core/growth.js': { 102: 'R4' },
+     'core/relations.js': { 89: '(shared)', 113: 'R4', 150: 'R4', 153: 'R4', 174: 'R4', 186: 'R4', 187: 'R4', 196: 'R4', 207: 'R4', 253: 'R4', 257: 'R4', 271: 'R4' } };
+-const EXPECT_CALL = { 'script.js': { 758: 'R4', 1264: 'R4', 1334: 'R4', 1335: 'R4', 1336: 'R4', 1375: 'R4', 1544: 'R1' }, 'core/relations.js': { 115: 'R4', 154: 'R4', 194: 'R4' } };
++const EXPECT_CALL = { 'script.js': { 771: 'R4', 1277: 'R4', 1347: 'R4', 1348: 'R4', 1349: 'R4', 1388: 'R4', 1557: 'R1' }, 'core/relations.js': { 115: 'R4', 154: 'R4', 194: 'R4' } };
+ const asTable = kind => { const o = {}; for (const s of src.filter(x => x.kind === kind)) { (o[s.file] = o[s.file] || {})[s.line] = s.cls; } return o; };
+ check('지점 표: Math.random 표현 20곳의 (파일, 줄, 분류)가 설계 §4.1.1 표와 같음', eq(asTable('direct'), EXPECT_DIRECT), JSON.stringify(asTable('direct')));
+-check('지점 표: 공유·래퍼 함수 호출 10곳의 (파일, 줄, 분류)가 설계 표와 같음(R1 은 nextYear 1544 한 곳 — F1 885)', eq(asTable('call'), EXPECT_CALL), JSON.stringify(asTable('call')));
++check('지점 표: 공유·래퍼 함수 호출 10곳의 (파일, 줄, 분류)가 설계 표와 같음(R1 은 nextYear 1557 한 곳 — F1 885)', eq(asTable('call'), EXPECT_CALL), JSON.stringify(asTable('call')));
+ {   // 독립 정적 검색: 주석을 뺀 줄에서 Math.random 을 센다
+     let n = 0; texts.forEach(t => t.split('\n').forEach(l => { const code = l.replace(/\/\/.*$/, ''); n += (code.match(/Math\.random/g) || []).length; }));
+     check('지점 표: 항목 수 = 독립 정적 검색 결과 수(Math.random 20)', n === 20 && src.filter(s => s.kind === 'direct').length === 20, 'grep=' + n);
+@@ -302,7 +302,7 @@
+     check('VM-6 생애 구간에 R1·R3·R4·R5·HARNESS 가 모두 관측됨(주 루프는 자동 진행을 끄므로 R2 는 0)', ['R1', 'R3', 'R4', 'R5', 'HARNESS'].every(c => lives.byCls[c] > 0) && !lives.byCls.R2, JSON.stringify(lives.byCls));
+     check('VM-6 단위 시험 구간(자동 진행 단위 시험 포함)에 R2 가 관측됨', J.tally.unit.byCls.R2 > 0);
+     const r1 = 'script.js:getRandomItemByWeight:random#1<-script.js:nextYear:call-getRandomItemByWeight#1';
+-    check('VM-10 공유 함수 호출: R1 은 (getRandomItemByWeight 376, nextYear 1544 — F1 122·885) 쌍 하나로만 집계', lives.byId[r1] === lives.byCls.R1);
++    check('VM-10 공유 함수 호출: R1 은 (getRandomItemByWeight 389, nextYear 1557 — F1 122·885) 쌍 하나로만 집계', lives.byId[r1] === lives.byCls.R1);
+     check('VM-10 래퍼·공유 함수를 거친 호출은 호출자 지점과 쌍으로 기록(rnd ← rollFamiliaBody, weightedPick ← 관계 함수)', Object.keys(lives.byId).some(k => k.startsWith('script.js:rnd:random#1<-script.js:rollFamiliaBody:call-rnd#1')) && Object.keys(lives.byId).some(k => k.startsWith('core/relations.js:weightedPick:random#1<-core/relations.js:')));
+     check('VM-10 공유·래퍼 함수의 Math.random 이 호출자 없이 단독으로 집계된 경우 0', !Object.keys(lives.byId).some(k => /^(script\.js:(rnd|getRandomItemByWeight)|core\/relations\.js:weightedPick):random#1$/.test(k)));
+ }
+@@ -315,7 +315,7 @@
+     const stackOf = (...frames) => ['Error', '    at recordedRandom (/x/test_runner.js:1:1)'].concat(frames).join('\n');
+     const good = R.makeClassifier({ sites, dropFrames: 1, locate: locate(asm) });
+     const shared = byId('script.js:getRandomItemByWeight:random#1'), callNY = byId('script.js:nextYear:call-getRandomItemByWeight#1'), r5 = byId('script.js:nextYear:random#1');
+-    check('B 규칙: 직접 호출(1530, F1 876) → R5, 공유 함수(376, F1 122) ← nextYear(1544, F1 885) → R1', good(stackOf(frameOf(r5))).cls === 'R5' && good(stackOf(frameOf(shared), frameOf(callNY))).cls === 'R1');
++    check('B 규칙: 직접 호출(1543, F1 876) → R5, 공유 함수(389, F1 122) ← nextYear(1557, F1 885) → R1', good(stackOf(frameOf(r5))).cls === 'R5' && good(stackOf(frameOf(shared), frameOf(callNY))).cls === 'R1');
+     check('VM-10 합성: 호출자 프레임이 변환되지 않으면 분류도 UNKNOWN(다음 프레임으로 추정하지 않음)', good(stackOf(frameOf(shared), '    at y (other.js:1:1)', frameOf(callNY))).cls === 'UNKNOWN' && good(stackOf(frameOf(shared), 'garbage line')).cls === 'UNKNOWN' && good(stackOf(frameOf(shared))).cls === 'UNKNOWN');
+     check('B 규칙: 지점이 아닌 위치·맨 위가 호출 지점인 경우·기록기 프레임뿐인 경우 → UNKNOWN', good(stackOf('    at z (' + VMF + ':1:1)')).cls === 'UNKNOWN' && good(stackOf(frameOf(callNY))).cls === 'UNKNOWN' && good(stackOf()).cls === 'UNKNOWN');
+     const order = [0, 1, 2, 4, 3, 5, 6, 7, 8];   // sourceFiles 순서를 바꾼 가짜 표(core/growth.js 와 core/relations.js 를 맞바꿈 → growth 의 조립 위치가 달라짐)
+--- r3/tests/n2_array_realm_browser_test.js
++++ r4/tests/n2_array_realm_browser_test.js
+@@ -35,6 +35,12 @@
+     out.ctorProxy = withCtor(new Proxy(Array, {})) === null;
+     out.ownCtor = L((() => { const a = [1]; a.constructor = Object; return a; })()) === null;
+     out.holesEtc = L([1, , 3]) === null && L(Object.freeze([1])) === null && L((() => { const a = [1]; Object.defineProperty(a, '0', { get() { return 1; }, enumerable: true, configurable: true }); return a; })()) === null;
++    // 판정 범위(QA r3 필수 2): constructor 가 바뀐 realm 의 배열만 거부하고, 정상인 다른 realm 의 배열은 지원한다
++    const f2 = document.createElement('iframe'); document.body.appendChild(f2); const W2 = f2.contentWindow;
++    const keep = W2.Array.prototype.constructor; W2.Array.prototype.constructor = W2.eval('(function Array() {})');
++    out.scopeChanged = L(W2.eval('[1]')) === null;
++    out.scopeOthers = JSON.stringify(L([2])) === '[2]' && JSON.stringify(L(W.eval('[3]'))) === '[3]';
++    W2.Array.prototype.constructor = keep;
+     out.nativeSrc = Function.prototype.toString.call(Array) + ' || ' + Function.prototype.toString.call(W.Array);
+     return out;
+   });
+@@ -49,6 +55,8 @@
+     ['RB-2B-5c 생성자 교체: Proxy(Array) → 거부', r.ctorProxy],
+     ['RB-2B-5d 인스턴스 own constructor → 거부', r.ownCtor],
+     ['RB-2B-6 빈 칸·동결·접근자 원소 → 거부', r.holesEtc],
++    ['RB-2B-7a constructor 가 바뀐 realm(iframe)의 배열 → 거부(fail-closed)', r.scopeChanged],
++    ['RB-2B-7b 같은 상황에서 정상인 다른 realm(페이지·다른 iframe)의 배열 → 지원(정책)', r.scopeOthers],
+     ['페이지 오류 0', errors.length === 0]];
+   let bad = 0; for (const [id, ok] of checks) { if (!ok) bad++; console.log((ok ? 'PASS ' : 'FAIL ') + id); }
+   console.log('INFO 원생 Array 소스 문자열: ' + r.nativeSrc);

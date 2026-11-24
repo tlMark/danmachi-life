@@ -1,0 +1,58 @@
+PASS LK-11a 81개 · 전부 ok
+PASS LK-11b null 조건 0
+PASS LK-11c 사건 id 전역 유일(진단 키 EVENTS:id 와 1:1)
+PASS LK-11d 스냅숏 구조·값 동일(배열·객체는 새 객체, 객체는 null 프로토타입)
+PASS LK-11e 같은 realm: 실제 데이터의 배열·객체 프로토타입이 리터럴 기준 기본 프로토타입
+PASS LK-11f 판정 15957회 비교, 불일치 0
+PASS LK-11g undefined
+PASS LK-11h null → 형식 위반, 원본 match(null) 은 예외(의도적 불일치)
+PASS LK-8a getter 최상위
+PASS LK-8a getter 배열 원소
+PASS LK-8a getter min 값
+PASS LK-8a Symbol 최상위
+PASS LK-8a Symbol 배열
+PASS LK-8a 상속 키(사용자 프로토타입)
+PASS LK-8a 상속 min
+PASS LK-8a 비열거 최상위
+PASS LK-8a 배열 구멍
+PASS LK-8a 배열 추가 키
+PASS LK-8a 배열 안 객체
+PASS LK-8a 배열 안 배열
+PASS LK-8a 객체 안 객체
+PASS LK-8a 객체 안 배열
+PASS LK-8a null 조건
+PASS LK-8a 배열 조건
+PASS LK-8a 원시 조건
+PASS LK-8a 값 undefined
+PASS LK-8a 값 함수
+PASS LK-8a 사용자 프로토타입 배열
+PASS LK-8a Proxy trap 예외
+PASS LK-8a Proxy 배열 trap 예외
+PASS LK-8b
+PASS LK-8c 정상 배열
+PASS LK-8d 빈 배열 통과·스냅숏도 빈 새 배열
+PASS LK-8e 접근자 인덱스 거부
+PASS LK-8f 표시 0 · getter 0 · 진단 1(여러 해)
+PASS LK-8g 진단은 S·연표에 없음
+PASS LK-8h 새 생애에서 다시 1회
+PASS LK-8i
+PASS LK-12a 원본을 바꿔도 표시됨(⑫ 가 원본을 다시 읽지 않음)
+PASS LK-12b
+PASS LK-12c 해마다 다른 후보 레코드·다른 스냅숏 객체
+PASS LK-12d ⑩ 이후 상태 변화(직업)는 ⑫ 에서 반영 → 재검사 실패
+PASS LK-12e 스냅숏은 S·사건 데이터에 저장되지 않음
+PASS LK-S8a 게임 코드에 EVENTS 수정(대입·push·splice) 없음
+PASS LUCK-16 eventCondSnapshot 호출은 nextYear ⑩ 의 EVENTS 조건 1곳뿐
+PASS LUCK-19a showEvent 호출은 nextYear 의 후보 경로 1곳뿐
+PASS LUCK-19b 순서: ⑩ 후보 추첨 → ⑫ 스냅숏 재검사 → showEvent
+PASS LUCK-19c ⑫ 재검사는 원본 e.cond 를 읽지 않음
+PASS LUCK-20a 다른 realm null 프로토타입 최상위 거부
+PASS LUCK-20b 다른 realm null 프로토타입 min 값 거부
+PASS LUCK-20c 같은 realm null 프로토타입 최상위 거부(realm 구별 불가 입력)
+PASS LUCK-20d 같은 realm null 프로토타입 max 값 거부
+PASS LUCK-20e 대조: 같은 내용의 리터럴은 통과
+PASS LUCK-20f 스냅숏 출력(null 프로토타입)을 다시 넣으면 거부(입력·출력 구분)
+PASS LUCK-20g 검사 중 S·난수 불변
+PASS LUCK-20h
+RESULT: PASS 56/56 (eventcond_test)
+exit=0

@@ -1,0 +1,14 @@
+ENV  chromium=153.0.8010.12 node=v22.23.4 load=inline (file:// 배포 경로 검증 아님)
+PASS RB-2B-1 현재 realm 일반 배열 → 지원
+PASS RB-2B-2 다른 realm(iframe) 일반 배열 → 지원
+PASS RB-2B-3 사용자 정의 하위 클래스(두 realm) → 거부
+PASS RB-2B-4 프로토타입 교체·null → 거부
+PASS RB-2B-5a 생성자 교체: 이름만 Array 인 함수 → 거부
+PASS RB-2B-5b 생성자 교체: bind 된 Array → 거부
+PASS RB-2B-5c 생성자 교체: Proxy(Array) → 거부
+PASS RB-2B-5d 인스턴스 own constructor → 거부
+PASS RB-2B-6 빈 칸·동결·접근자 원소 → 거부
+PASS 페이지 오류 0
+INFO 원생 Array 소스 문자열: function Array() { [native code] } || function Array() { [native code] }
+RESULT: PASS 10/10 (n2_array_realm_browser_test, inline)
+exit=0

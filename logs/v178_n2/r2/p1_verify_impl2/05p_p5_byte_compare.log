@@ -1,0 +1,9 @@
+seed 20261104
+  이번 실행  37dd1ff6bd6baa9b0f183bd1c21cc79e84924de79febfca8ac576fd1f9479433  logs/02_tr_20261104.log
+  P5 기준    37dd1ff6bd6baa9b0f183bd1c21cc79e84924de79febfca8ac576fd1f9479433  (저장소) logs/baseline_main_3859123/tr_20261104.log
+  cmp: 바이트 단위 동일
+seed 777
+  이번 실행  ab1ef5eb2d2e2ef67195d276fbc74adddbf2930e8084f4dfb9bad4bbb08fbe8a  logs/03_tr_777.log
+  P5 기준    ab1ef5eb2d2e2ef67195d276fbc74adddbf2930e8084f4dfb9bad4bbb08fbe8a  (저장소) logs/baseline_main_3859123/tr_777.log
+  cmp: 바이트 단위 동일
+exit=0

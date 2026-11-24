@@ -1,0 +1,7 @@
+tr 20261104 byte-identical
+tr 777 byte-identical
+digest10 exit=0
+strict exit=0
+SAME off/8675309 lifeDigest=539625444 rng=672621954 exit=0 completed=3000 inv=true exc=0 | P5 기준선(3859123) 539625444/672621954
+SAME off/20261104 lifeDigest=1760645408 rng=1362911839 exit=0 completed=3000 inv=true exc=0 | P5 기준선(3859123) 1760645408/1362911839
+STRICT: PASS — 동일 10/10, 문제 0건

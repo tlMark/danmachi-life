@@ -1,5 +1,13 @@
 # 검토 반영 내역
 
+## v1.7.8-n2 - 2026-11-24 (F1D4A N2 2-ii 팔나 연결 + RB-1 (가) 원자 롤백, **관문 비활성 — 결과 불변**)
+
+- 승인: 사용자 결정 2026-11-23(RB-1a~RB-1g 권장안 전부, N2 세부 결정, N2 구현 착수). 설계 정본 `docs/f1d4a/REVIEW_v27.md`·`DECISION_LOG_v19.md`. ChatGPT 1차 r4·r4v·r4v2 통과, Codex 2차(r4) 조건부 통과.
+- `script.js`: RB-1 (가) 확장 롤백(descriptor 기준 스냅숏·예외 시점 관찰·묶음별 격리·`rollback`/`input` 보고·S 밖 실패 기록), `canConvertExcelia`, N2-2 관문, `N2_GATES { growth: false, dungeon: false }`, `statusResumeAge` null, N2-3c, `patronAbsence`(A1~A7, 사유 목록 비어 있음), A3 S1~S5(`leaveFamilia` 미연결, Q5).
+- 테스트: 신규 `n2_rollback_test`(191)·`n2_link_test`(72)·`n2_array_realm_browser_test`(12 ×2)·`n2_browser_rollback_test`(23 ×2). 의도적 시험 변경 6건(RB-T3, PF-9d, GG-2e, GG-2 fixture, T7, rng_sites 표).
+- 결과: 관문 꺼짐에서 두 시드 P5 기준선 바이트 동일, lifeDigest·rng 10/10, 48k 32/32 SHA 동일. 기준선 미갱신. 관문 켬(측정 사본) 결과·일괄 변환 측정은 보고서 §4.
+- 미완료·미실행: Codex 독립 재현, Windows file://, 관문 켬 Chromium·48k. 상세 `DEV_REPORT_v1.7.8-n2.md`, 로그 `logs/v178_n2/`.
+
 ## v1.7.8-2bb-js1-f1 - 2026-11-10 (T1-F/F-1: join_hard 거절·차단 후속 선택·서포터 전직, **결과 변경**)
 
 - 승인: 결정 `DECISION_T1F_F1_r9.md`, 설계 r1~r7·`F1D4A_DECISIONS_after_r7.md`, ChatGPT r7 최종 QA(N1-6·N1-6b 승인, 구현 착수 지시), 사용자 결정 P2·O2·A안·N6-5·N6-6·N1-6c·N2-4·N6-3·Q-P·N3-1.

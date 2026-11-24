@@ -1,0 +1,309 @@
+--- r2/script.js
++++ r3/script.js
+@@ -75,7 +75,8 @@
+ // 스냅숏은 S 를 바꾸지 않고 난수를 쓰지 않는다. 결과 보고는 S 밖(lastRollbackReport·followupDiagLog)에만 남긴다.
+ const RBX_VALUE_FIELDS = ['familia', 'familiaAt', 'falnaAt', 'statusResumeAge', 'nextMembershipId', 'falnaState', 'falnaHolder',
+     'conversionPending', 'residence', 'partnerId', 'patronAbsence', 'deepestFloor'];   // 값·참조(불변 교체 계약) 복원
+-const RBX_ARRAYS = { familiaHistory: 'own', falnaHistory: 'ref', falnaTransitions: 'ref', aspirationHistory: 'own',
++// falnaHistory·falnaTransitions 는 push 만 하지만(RBT-1 계약) 원소 속성까지 되돌린다(QA RB-2C: 10종을 같은 L2·L3 계약으로 맞춤)
++const RBX_ARRAYS = { familiaHistory: 'own', falnaHistory: 'own', falnaTransitions: 'own', aspirationHistory: 'own',
+     residenceHistory: 'own', locationHistory: 'own', items: 'prim', itemsConsumed: 'prim', relations: 'own+', levelHistory: 'own' };
+ let lastRollbackReport = null;       // 최근 롤백 결과(S 밖, lifeDigest 비입력). startLife 에서 null
+ let lastRollbackFailure = null;      // 부분 복원 기록(S 밖). { gen, at, bundles }. startLife 에서 null(RB-1f)
+@@ -191,6 +192,30 @@
+     try { const log = typeof document !== 'undefined' && $('log'); x.logEl = log || null; x.logLast = log ? log.lastChild : null; } catch (e) { x.logEl = null; }   // DEV-18 과 같은 기준점 방식
+     return x;
+ }
++// QA RB-2A: 예외 처리 진입 직후(어떤 복원보다 먼저) application.history·blocked 를 관찰한다. descriptor 만 읽고 getter 를 부르지 않는다.
++// 결과는 x.obs 에 두며 복원 단계는 이 값을 바꾸지 않는다. 관찰할 수 없으면(접근자·지원하지 않는 배열) null 로 둔다.
++function observeRollbackState(x) {
++    if (!x || !x.application) return;
++    const r = x.application, obs = { application: null, history: null, blocked: null };
++    let curA;
++    try { const dA = Object.getOwnPropertyDescriptor(S, 'application'); curA = dA && 'value' in dA ? dA.value : undefined; obs.application = { replaced: dA && !('value' in dA) ? null : (r.has ? curA !== r.ref : !!dA) }; } catch (e) { obs.application = { replaced: null }; }
++    for (const k of ['history', 'blocked']) {
++        const h = r[k] || { has: false }; let o = { replaced: null, changed: null };
++        try {
++            const d = curA && typeof curA === 'object' ? Object.getOwnPropertyDescriptor(curA, k) : undefined;
++            if (!d || 'value' in d) {
++                const cur = d ? d.value : undefined;
++                o.replaced = h.has ? cur !== h.ref : !!d;
++                if (h.has && h.isArray && h.list) {
++                    if (Array.isArray(cur)) { const l = rbxArrayList(cur); o.changed = l ? (l.length !== h.list.length || h.list.some((e, i) => !Object.is(l[i], e))) : null; }
++                    else o.changed = true;                        // 배열이 사라졌거나 배열이 아닌 값으로 바뀜
++                } else if (!h.has) o.changed = !!d;               // 원래 없던 배열이 생김
++            }
++        } catch (e) { o = { replaced: null, changed: null }; }
++        obs[k] = o;
++    }
++    x.obs = obs;
++}
+ // 롤백 실패 기록(S 밖). chooseFollowup 의 'recordFailure' 단계에서만 부른다.
+ function writeRollbackFailureRecord(report) { lastRollbackFailure = { gen: lifeGen, at: S ? S.age : null, report }; }
+ // 묶음별로 격리해 되돌린다(FI-1). 결과: { rollback: 'ok'|'partial(failed)'|'partial(unverified)', input: 'normal'|'damaged(...)', bundles }
+@@ -224,23 +249,28 @@
+         if (S.application !== r.ref) return { status: 'failed' };
+         if (!r.isObj) return { status: 'ok' };
+         if (!r.own) { damaged.push('input_damaged(schema):application'); return { status: 'unverified' }; }   // 접근자·비표준 descriptor: 복원 근거 없음
+-        for (const k of ['history', 'blocked']) {                // 복원 전 상태 기록: 배열 참조가 교체됐는지(보고용, getter 호출 없음)
+-            try { const d = Object.getOwnPropertyDescriptor(r.ref, k); r[k].preReplaced = r[k].has ? !(d && 'value' in d && d.value === r[k].ref) : !!d; } catch (e) { r[k].preReplaced = null; }
+-        }
+         let st; try { st = rbxOwnRestore(r.ref, r.own); } catch (e) { st = 'failed'; }
+         return { status: st };
+     });
+     for (const k of ['history', 'blocked']) run('application.' + k, () => {
+         const top = bundles.application, r = x.application, h = r && r[k];
+-        if (!r || !r.has || !r.isObj || !h || !h.has) return { status: top && top.status === 'ok' ? 'ok' : 'unverified' };   // 원래 없던 배열은 최상위 복원이 지운다
++        const ob0 = (x.obs && x.obs[k]) || { replaced: null, changed: null };
++        if (!r || !r.has || !r.isObj || !h || !h.has) {                    // 원래 없던 배열은 최상위 복원이 지운다
++            let gone = null; try { gone = !(r && r.isObj && Object.getOwnPropertyDescriptor(r.ref, k)); } catch (e) { gone = null; }
++            return { status: top && top.status === 'ok' ? 'ok' : 'unverified', replaced: ob0.replaced, changed: ob0.changed, refRestored: gone };
++        }
+         if (!top || top.status !== 'ok') return { status: top && top.status === 'failed' ? 'unverified' : 'unverified' };
+         const d = Object.getOwnPropertyDescriptor(r.ref, k), cur = d && d.value;
+-        const replaced = h.preReplaced, refRestored = cur === h.ref;   // replaced: 예외 시점에 배열이 교체돼 있었는지 / refRestored: 최상위 복원 뒤 원래 참조인지
+-        if (!refRestored) return { status: 'failed', replaced, refRestored };
+-        if (!h.isArray) return { status: 'ok', replaced, refRestored };
+-        if (h.unsupported) { damaged.push('input_damaged(schema):application.' + k); return { status: 'unverified', replaced, refRestored }; }
+-        const before = rbxArrayList(cur), changed = !before || before.length !== h.list.length || h.list.some((e, i) => !Object.is(before[i], e));
+-        return { status: rbxArrayRefill(cur, h.list), replaced, refRestored, changed };
++        // 보고값 세 가지는 뜻이 다르다(QA RB-2A). replaced·changed 는 '예외 시점' 관찰값(복원 전, observeRollbackState)이고 복원 작업이 바꾸지 않는다.
++        //   replaced    : 예외 시점에 application[k] 가 스냅숏 때와 다른 배열(또는 없음)이었는지. 관찰 못 하면 null
++        //   changed     : 예외 시점 application[k] 의 내용이 스냅숏 내용과 달랐는지. 어느 쪽이든 지원하지 않는 배열이면 null
++        //   refRestored : 복원 뒤 application[k] 가 스냅숏 때의 배열 참조인지
++        const ob = (x.obs && x.obs[k]) || { replaced: null, changed: null };
++        const replaced = ob.replaced, changed = ob.changed, refRestored = cur === h.ref;
++        if (!refRestored) return { status: 'failed', replaced, changed, refRestored };
++        if (!h.isArray) return { status: 'ok', replaced, changed, refRestored };
++        if (h.unsupported) { damaged.push('input_damaged(schema):application.' + k); return { status: 'unverified', replaced, changed, refRestored }; }
++        return { status: rbxArrayRefill(cur, h.list), replaced, changed, refRestored };
+     });
+     run('syncBaseline', () => {                               // RB-1a: 최상위 얕은 복사본으로 교체
+         const r = x.syncBaseline;
+@@ -1711,6 +1741,7 @@
+         const cleanupErrors = [];
+         const step = (name, fn) => { try { fn(); } catch (e) { try { cleanupErrors.push({ step: name, message: String(e && e.message) }); } catch (_) {} } };
+         step('clearTimers', clearAutoTimers);                       // X0b
++        step('observe', () => observeRollbackState(rb.ext));        // X1 직전(QA RB-2A): 예외 시점 관찰(복원 전, getter 호출 없음)
+         step('rollback', () => restoreRollbackSnapshot(rb));        // X1
+         let rbx = null;
+         step('rollbackExt', () => { rbx = restoreRollbackSnapshotExt(rb.ext); });   // X1(확장, F1D4A N2-1 RB-1 (가)): 묶음별 격리·결과 보고
+--- r2/tests/n2_rollback_test.js
++++ r3/tests/n2_rollback_test.js
+@@ -7,8 +7,8 @@
+ const { check, test, finish } = makeReporter();
+ const EXC = ['pendingFollowup', 'currentEventId'];   // 이 두 필드는 chooseFollowup 의 finally 가 정리한다(RB-1d·기존 계약)
+ 
+-function setup() {
+-  const T = makeCtx(); T.G('startLife()');
++function setup(patch) {
++  const T = makeCtx(patch ? { patch } : {}); T.G('startLife()');
+   T.G(`document.getElementById('choices').innerHTML = ''; S.currentEventId = null; globalThis.__hook = null;
+     FOLLOWUP_KINDS.t_kind = { prompt: '시험', options: () => [{ id: 'go', label: '간다' }, { id: 'stay', label: '머문다', stay: true }],
+       resolve: (S, id) => { if (globalThis.__hook) globalThis.__hook(S); throw new Error('boom'); } };
+@@ -248,4 +248,107 @@
+   const d = T.G("followupDiagLog.filter(x => x.event === 'followup_resolve_exception')").pop();
+   check('RB-1C ok: cleanupErrors 없음·failureRecorded null', !r.err.followupCleanupErrors && d.failureRecorded === null);
+ });
++// ── QA 1차 재검수(RB-2A·2B·2C) 보완 시험 ──
++// RB-2A: replaced·changed 는 예외 시점 관찰값(복원 전), refRestored 는 복원 뒤 값
++const appBundles = r => [r.report.bundles['application.history'], r.report.bundles['application.blocked']];
++test('RB-2A-1 제자리 변경: replaced false·changed true·refRestored true', () => {
++  const T = setup(); const r = runCase(T, "S => { S.application.history.push({ route: 'x' }); }", appPrep);
++  const [h, b] = appBundles(r);
++  check('RB-2A-1 history', h.replaced === false && h.changed === true && h.refRestored === true && h.status === 'ok', h);
++  check('RB-2A-1 blocked 무변경: replaced false·changed false', b.replaced === false && b.changed === false && b.status === 'ok', b);
++});
++test('RB-2A-2 같은 내용의 새 배열로 교체: replaced true·changed false', () => {
++  const T = setup(); const r = runCase(T, "S => { S.application.history = S.application.history.slice(); }", appPrep);
++  const [h] = appBundles(r);
++  check('RB-2A-2', h.replaced === true && h.changed === false && h.refRestored === true && h.status === 'ok', h);
++});
++test('RB-2A-3 원래 없던 blocked 생성: replaced true·changed true', () => {
++  const T = setup(); const r = runCase(T, "S => { S.application.blocked = [{ r: 1 }]; }", (T, s) => { s.application = T.G('GameCore.Recruit.newApplicationState()'); });
++  const [, b] = appBundles(r);
++  check('RB-2A-3', b.replaced === true && b.changed === true && b.status === 'ok' && !('blocked' in r.s.application), b);
++});
++test('RB-2A-4 예외 시점 배열이 지원하지 않는 형태: changed null, getter 호출 0', () => {
++  const T = setup();
++  const r = runCase(T, "S => { Object.defineProperty(S.application.history, '0', { get() { globalThis.__gx++; return 1; }, enumerable: true, configurable: true }); }", appPrep, T => T.G('globalThis.__gx = 0'));
++  const [h] = appBundles(r);
++  check('RB-2A-4 changed null·replaced false', h.changed === null && h.replaced === false, h);
++  check('RB-2A-4 관찰·복원 중 getter 호출 0', T.G('globalThis.__gx') === 0, T.G('globalThis.__gx'));
++});
++test('RB-2A-5 예외 시점 application.history 가 접근자: replaced·changed null, getter 호출 0', () => {
++  const T = setup();
++  const r = runCase(T, "S => { const a = S.application.history; Object.defineProperty(S.application, 'history', { get() { globalThis.__gy++; return a; }, enumerable: true, configurable: true }); }", appPrep, T => T.G('globalThis.__gy = 0'));
++  const [h] = appBundles(r);
++  check('RB-2A-5 replaced null·changed null', h.replaced === null && h.changed === null, h);
++  check('RB-2A-5 getter 호출 0·복원 뒤 원래 참조(데이터 속성)', T.G('globalThis.__gy') === 0 && h.refRestored === true, { calls: T.G('globalThis.__gy'), h });
++});
++test('RB-2A-6 복원 작업이 관찰값을 바꾸지 않음', () => {
++  const T = setup();
++  T.G("{ const o = restoreRollbackSnapshotExt; restoreRollbackSnapshotExt = function (x) { globalThis.__obsBefore = JSON.stringify(x && x.obs); const r = o.apply(this, arguments); globalThis.__obsAfter = JSON.stringify(x && x.obs); return r; }; }");
++  const r = runCase(T, "S => { S.application.history = []; S.application.blocked.push({ r: 2 }); }", appPrep);
++  check('RB-2A-6 관찰값 = 복원 전후 동일·보고값과 일치', T.G('globalThis.__obsBefore') === T.G('globalThis.__obsAfter')
++    && JSON.parse(T.G('globalThis.__obsAfter')).history.replaced === appBundles(r)[0].replaced && JSON.parse(T.G('globalThis.__obsAfter')).blocked.changed === appBundles(r)[1].changed);
++});
++// RB-2B: 원생 Array 판별(Node vm — 게임 realm, 시험 host realm, 세 번째 realm)
++test('RB-2B 원생 Array 판별 [Node]', () => {
++  const vm = require('vm'); const T = setup(); const L = a => T.G('rbxArrayList')(a);
++  const third = vm.runInNewContext('[5, 6]');
++  check('RB-2B-1 현재 realm 일반 배열 → 지원', JSON.stringify(T.G('rbxArrayList([1, 2])')) === '[1,2]');
++  check('RB-2B-2 다른 realm(시험 host·세 번째 vm) 일반 배열 → 지원', JSON.stringify(L([3, 4])) === '[3,4]' && JSON.stringify(L(third)) === '[5,6]');
++  check('RB-2B-3 사용자 정의 하위 클래스 → 거부', T.G('(() => { class Sub extends Array {} return rbxArrayList(Sub.from([1])); })()') === null && L((() => { class Sub2 extends Array {} return Sub2.from([1]); })()) === null);
++  check('RB-2B-4 프로토타입 교체(Object.create(Array.prototype)) → 거부', T.G('(() => { const a = [1]; Object.setPrototypeOf(a, Object.create(Array.prototype)); return rbxArrayList(a); })()') === null);
++  check('RB-2B-4b 프로토타입 null → 거부', T.G('(() => { const a = [1]; Object.setPrototypeOf(a, null); return rbxArrayList(a); })()') === null);
++  check('RB-2B-5a 생성자 교체: 이름만 Array 인 함수 → 거부', T.G('(() => { const p = Object.create(Array.prototype); const F = function Array() {}; F.prototype = p; p.constructor = F; const a = [1]; Object.setPrototypeOf(a, p); return rbxArrayList(a); })()') === null);
++  check('RB-2B-5b 생성자 교체: bind 된 Array → 거부', T.G('(() => { const p = Object.create(Array.prototype); p.constructor = Array.bind(null); const a = [1]; Object.setPrototypeOf(a, p); return rbxArrayList(a); })()') === null);
++  check('RB-2B-5c 생성자 교체: Proxy(Array) → 거부', T.G('(() => { const p = Object.create(Array.prototype); const P = new Proxy(Array, {}); p.constructor = P; const a = [1]; Object.setPrototypeOf(a, p); return rbxArrayList(a); })()') === null);
++  check('RB-2B-5d 인스턴스 own constructor 추가 → 거부', T.G('(() => { const a = [1]; a.constructor = Object; return rbxArrayList(a); })()') === null);
++  check('RB-2B-6 빈 칸·접근자 원소·length 고정 → 거부', T.G('rbxArrayList([1, , 3])') === null && T.G("(() => { const a = [1]; Object.defineProperty(a, '0', { get() { return 1; }, enumerable: true, configurable: true }); return rbxArrayList(a); })()") === null && T.G('rbxArrayList(Object.freeze([1]))') === null);
++  const T2 = setup(); T2.G('Array.prototype.constructor = function Array() {}');
++  check('RB-2B-7 전역 Array.prototype.constructor 가 바뀐 환경 → 모든 배열 거부(fail-closed)', T2.G('rbxArrayList([1])') === null);
++});
++// RB-2C: S 배열 10종의 L1·L2·L3 책임
++const KEYS10 = ['items', 'itemsConsumed', 'relations', 'familiaHistory', 'falnaHistory', 'falnaTransitions', 'aspirationHistory', 'residenceHistory', 'locationHistory', 'levelHistory'];
++const BASE_L1 = ['items', 'itemsConsumed', 'relations', 'levelHistory'];
++const ensureArr = (s, k) => { if (!Array.isArray(s[k])) s[k] = []; if (!s[k].length) s[k].push(k === 'items' || k === 'itemsConsumed' ? 'x_item' : { id: 900, tag: k }); };
++test('RB-2C-1 10종 각각: 원소 추가·삭제·원소 속성 변경 뒤 예외 → 참조·내용 복원, 묶음 ok', () => {
++  for (const k of KEYS10) {
++    const T = setup(); let ref;
++    const prim = k === 'items' || k === 'itemsConsumed';
++    const hook = prim ? `S => { S.${k}.push('zz'); S.${k}.shift(); }` : `S => { S.${k}[0].tag2 = 1; S.${k}.push({ id: 901 }); }`;
++    const r = runCase(T, hook, (T, s) => { ensureArr(s, k); ref = s[k]; });
++    check('RB-2C-1 ' + k + ' S 전체 = 스냅숏·원래 참조', snap(r.s, EXC) === r.pre && r.s[k] === ref);
++    check('RB-2C-1 ' + k + ' 묶음 array:' + k + ' ok', r.report.bundles['array:' + k].status === 'ok', r.report.bundles['array:' + k]);
++  }
++});
++test('RB-2C-2 확장 전담 L1(6종): 필드 삭제·교체 뒤 예외 → 확장이 되돌림, 기존 복원은 이 필드를 다루지 않음', () => {
++  const src = require('fs').readFileSync(require('path').join(__dirname, '..', 'script.js'), 'utf8');
++  const fnSrc = name => { const i = src.indexOf('function ' + name + '('); let d = 0; const j = src.indexOf('{', i); for (let q = j; q < src.length; q++) { if (src[q] === '{') d++; else if (src[q] === '}' && --d === 0) return src.slice(i, q + 1); } return ''; };
++  const base = fnSrc('takeRollbackSnapshot') + fnSrc('restoreRollbackSnapshot');
++  for (const k of KEYS10.filter(k => !BASE_L1.includes(k))) {
++    check('RB-2C-2 ' + k + ' 기존 스냅숏·복원에 없음', !new RegExp('\\b' + k + '\\b').test(base));
++    for (const [how, hook] of [['삭제', `S => { delete S.${k}; }`], ['교체', `S => { S.${k} = []; }`]]) {
++      const T = setup(); let ref; const r = runCase(T, hook, (T, s) => { ensureArr(s, k); ref = s[k]; });
++      check('RB-2C-2 ' + k + ' ' + how + ' → 원래 참조', r.s[k] === ref && r.report.bundles['array:' + k].V1 === 'ok');
++    }
++  }
++});
++test('RB-2C-3 기존 전담 L1(4종): 기존 복원을 빼는 변이에서 확장이 L1 을 고치지 않고 V1 failed 로 보고(중복 없음)', () => {
++  const MUT = {
++    items: ['script.js', "const ROLLBACK_CONTAINER_FIELDS = ['items', 'itemUses', 'itemsConsumed', 'relations'];", "const ROLLBACK_CONTAINER_FIELDS = ['itemUses', 'itemsConsumed', 'relations'];"],
++    itemsConsumed: ['script.js', "const ROLLBACK_CONTAINER_FIELDS = ['items', 'itemUses', 'itemsConsumed', 'relations'];", "const ROLLBACK_CONTAINER_FIELDS = ['items', 'itemUses', 'relations'];"],
++    relations: ['script.js', "const ROLLBACK_CONTAINER_FIELDS = ['items', 'itemUses', 'itemsConsumed', 'relations'];", "const ROLLBACK_CONTAINER_FIELDS = ['items', 'itemUses', 'itemsConsumed'];"],
++    levelHistory: ['script.js', "    if (!lh.has) delete S.levelHistory;\n    else if (S.levelHistory !== lh.ref) S.levelHistory = lh.ref;", "    void lh;"] };
++  for (const k of BASE_L1) {
++    { const T = setup(); let ref; const r = runCase(T, `S => { S.${k} = []; }`, (T, s) => { ensureArr(s, k); ref = s[k]; });
++      check('RB-2C-3 ' + k + ' 원본: 기존 복원이 원래 참조로 되돌림·V1 ok', r.s[k] === ref && r.report.bundles['array:' + k].V1 === 'ok'); }
++    { const T = setup([MUT[k]]); let ref; const r = runCase(T, `S => { S.${k} = []; }`, (T, s) => { ensureArr(s, k); ref = s[k]; });
++      check('RB-2C-3 ' + k + ' 변이: 확장이 L1 을 고치지 않음(참조 그대로 다름)·V1 failed·전체 partial(failed)', r.s[k] !== ref && r.report.bundles['array:' + k].V1 === 'failed' && r.report.rollback === 'partial(failed)', r.report.bundles['array:' + k]); }
++  }
++});
++test('RB-2C-4 10종 각각: 스냅숏 때 지원하지 않는 배열(접근자 원소) → 내용 복원 안 함·unverified', () => {
++  for (const k of KEYS10) {
++    const T = setup();
++    const r = runCase(T, `S => { S.bond += 1; }`, (T, s) => { ensureArr(s, k); Object.defineProperty(s[k], '0', { get() { return 'g'; }, enumerable: true, configurable: true }); });
++    check('RB-2C-4 ' + k + ' unverified·schema', r.report.bundles['array:' + k].status === 'unverified' && new RegExp('schema\\):' + k).test(r.report.input), r.report.bundles['array:' + k]);
++  }
++});
+ finish('n2_rollback_test');
+--- r2/tests/rng_sites_test.js
++++ r3/tests/rng_sites_test.js
+@@ -104,13 +104,13 @@
+ // cec18a9 반려 보완(DEV-17~21·LUCK-20: 정지 안내 중복 방지·화면 복원·팔나 확인·주석): 다시 줄 번호만 이동(분류·개수 불변).
+ //   cec18a9 줄 → 이번 줄: 129→132, 934→958, 1041→1065, 1196→1222, 1283→1309, 1315→1341 / 호출 457→460, 1003~1005→1027~1029, 1043→1067, 1210→1236
+ // F1D4A N2(RB-1 원자 롤백 확장·N2 팔나 연결 함수·관문 추가): 다시 줄 번호만 이동(분류·개수 불변, 새 난수 지점 없음).
+-//   406a03b 줄 → 이번 줄: 132→346, 958→1234, 1065→1343, 1222→1500, 1309→1587, 1341→1619 / 호출 460→728, 1027~1029→1304~1306, 1067→1345, 1236→1514
+-const EXPECT_DIRECT = { 'script.js': { 6: '(wrapper)', 346: '(shared)', 1234: 'R4', 1343: 'R4', 1500: 'R5', 1587: 'R2', 1619: 'R3' }, 'core/growth.js': { 102: 'R4' },
++//   406a03b 줄 → 이번 줄: 132→376, 958→1264, 1065→1373, 1222→1530, 1309→1617, 1341→1649 / 호출 460→758, 1027~1029→1334~1336, 1067→1375, 1236→1544
++const EXPECT_DIRECT = { 'script.js': { 6: '(wrapper)', 376: '(shared)', 1264: 'R4', 1373: 'R4', 1530: 'R5', 1617: 'R2', 1649: 'R3' }, 'core/growth.js': { 102: 'R4' },
+     'core/relations.js': { 89: '(shared)', 113: 'R4', 150: 'R4', 153: 'R4', 174: 'R4', 186: 'R4', 187: 'R4', 196: 'R4', 207: 'R4', 253: 'R4', 257: 'R4', 271: 'R4' } };
+-const EXPECT_CALL = { 'script.js': { 728: 'R4', 1234: 'R4', 1304: 'R4', 1305: 'R4', 1306: 'R4', 1345: 'R4', 1514: 'R1' }, 'core/relations.js': { 115: 'R4', 154: 'R4', 194: 'R4' } };
++const EXPECT_CALL = { 'script.js': { 758: 'R4', 1264: 'R4', 1334: 'R4', 1335: 'R4', 1336: 'R4', 1375: 'R4', 1544: 'R1' }, 'core/relations.js': { 115: 'R4', 154: 'R4', 194: 'R4' } };
+ const asTable = kind => { const o = {}; for (const s of src.filter(x => x.kind === kind)) { (o[s.file] = o[s.file] || {})[s.line] = s.cls; } return o; };
+ check('지점 표: Math.random 표현 20곳의 (파일, 줄, 분류)가 설계 §4.1.1 표와 같음', eq(asTable('direct'), EXPECT_DIRECT), JSON.stringify(asTable('direct')));
+-check('지점 표: 공유·래퍼 함수 호출 10곳의 (파일, 줄, 분류)가 설계 표와 같음(R1 은 nextYear 1514 한 곳 — F1 885)', eq(asTable('call'), EXPECT_CALL), JSON.stringify(asTable('call')));
++check('지점 표: 공유·래퍼 함수 호출 10곳의 (파일, 줄, 분류)가 설계 표와 같음(R1 은 nextYear 1544 한 곳 — F1 885)', eq(asTable('call'), EXPECT_CALL), JSON.stringify(asTable('call')));
+ {   // 독립 정적 검색: 주석을 뺀 줄에서 Math.random 을 센다
+     let n = 0; texts.forEach(t => t.split('\n').forEach(l => { const code = l.replace(/\/\/.*$/, ''); n += (code.match(/Math\.random/g) || []).length; }));
+     check('지점 표: 항목 수 = 독립 정적 검색 결과 수(Math.random 20)', n === 20 && src.filter(s => s.kind === 'direct').length === 20, 'grep=' + n);
+@@ -302,7 +302,7 @@
+     check('VM-6 생애 구간에 R1·R3·R4·R5·HARNESS 가 모두 관측됨(주 루프는 자동 진행을 끄므로 R2 는 0)', ['R1', 'R3', 'R4', 'R5', 'HARNESS'].every(c => lives.byCls[c] > 0) && !lives.byCls.R2, JSON.stringify(lives.byCls));
+     check('VM-6 단위 시험 구간(자동 진행 단위 시험 포함)에 R2 가 관측됨', J.tally.unit.byCls.R2 > 0);
+     const r1 = 'script.js:getRandomItemByWeight:random#1<-script.js:nextYear:call-getRandomItemByWeight#1';
+-    check('VM-10 공유 함수 호출: R1 은 (getRandomItemByWeight 346, nextYear 1514 — F1 122·885) 쌍 하나로만 집계', lives.byId[r1] === lives.byCls.R1);
++    check('VM-10 공유 함수 호출: R1 은 (getRandomItemByWeight 376, nextYear 1544 — F1 122·885) 쌍 하나로만 집계', lives.byId[r1] === lives.byCls.R1);
+     check('VM-10 래퍼·공유 함수를 거친 호출은 호출자 지점과 쌍으로 기록(rnd ← rollFamiliaBody, weightedPick ← 관계 함수)', Object.keys(lives.byId).some(k => k.startsWith('script.js:rnd:random#1<-script.js:rollFamiliaBody:call-rnd#1')) && Object.keys(lives.byId).some(k => k.startsWith('core/relations.js:weightedPick:random#1<-core/relations.js:')));
+     check('VM-10 공유·래퍼 함수의 Math.random 이 호출자 없이 단독으로 집계된 경우 0', !Object.keys(lives.byId).some(k => /^(script\.js:(rnd|getRandomItemByWeight)|core\/relations\.js:weightedPick):random#1$/.test(k)));
+ }
+@@ -315,7 +315,7 @@
+     const stackOf = (...frames) => ['Error', '    at recordedRandom (/x/test_runner.js:1:1)'].concat(frames).join('\n');
+     const good = R.makeClassifier({ sites, dropFrames: 1, locate: locate(asm) });
+     const shared = byId('script.js:getRandomItemByWeight:random#1'), callNY = byId('script.js:nextYear:call-getRandomItemByWeight#1'), r5 = byId('script.js:nextYear:random#1');
+-    check('B 규칙: 직접 호출(1500, F1 876) → R5, 공유 함수(346, F1 122) ← nextYear(1514, F1 885) → R1', good(stackOf(frameOf(r5))).cls === 'R5' && good(stackOf(frameOf(shared), frameOf(callNY))).cls === 'R1');
++    check('B 규칙: 직접 호출(1530, F1 876) → R5, 공유 함수(376, F1 122) ← nextYear(1544, F1 885) → R1', good(stackOf(frameOf(r5))).cls === 'R5' && good(stackOf(frameOf(shared), frameOf(callNY))).cls === 'R1');
+     check('VM-10 합성: 호출자 프레임이 변환되지 않으면 분류도 UNKNOWN(다음 프레임으로 추정하지 않음)', good(stackOf(frameOf(shared), '    at y (other.js:1:1)', frameOf(callNY))).cls === 'UNKNOWN' && good(stackOf(frameOf(shared), 'garbage line')).cls === 'UNKNOWN' && good(stackOf(frameOf(shared))).cls === 'UNKNOWN');
+     check('B 규칙: 지점이 아닌 위치·맨 위가 호출 지점인 경우·기록기 프레임뿐인 경우 → UNKNOWN', good(stackOf('    at z (' + VMF + ':1:1)')).cls === 'UNKNOWN' && good(stackOf(frameOf(callNY))).cls === 'UNKNOWN' && good(stackOf()).cls === 'UNKNOWN');
+     const order = [0, 1, 2, 4, 3, 5, 6, 7, 8];   // sourceFiles 순서를 바꾼 가짜 표(core/growth.js 와 core/relations.js 를 맞바꿈 → growth 의 조립 위치가 달라짐)
+--- r2/tests/n2_array_realm_browser_test.js(없음)
++++ r3/tests/n2_array_realm_browser_test.js
+@@ -0,0 +1,57 @@
++// F1D4A N2 QA RB-2B — 원생 Array 판별(rbxArrayList)의 실제 Chromium 검증. 게임 코드는 바꾸지 않고 페이지에서 함수만 호출한다.
++// 사용: node tests/n2_array_realm_browser_test.js            (file:// 로 index.html 을 연다)
++//       BROWSER_LOAD=inline node tests/n2_array_realm_browser_test.js   (HTML·CSS·JS 한 문서 주입 — file:// 배포 경로 검증이 아님)
++// 다른 realm 은 같은 출처의 iframe(about:blank)으로 만든다. 실패 1건 이상이면 종료 코드 1.
++'use strict';
++const fs = require('fs'), path = require('path');
++const { chromium } = require('playwright');
++const root = path.join(__dirname, '..');
++const LOAD = process.env.BROWSER_LOAD === 'inline' ? 'inline' : 'file';
++function inlineHtml() {
++  let html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
++  html = html.replace(/<link rel="stylesheet" href="([^"]+)">/g, (m, href) => '<style>' + fs.readFileSync(path.join(root, href), 'utf8') + '</style>');
++  html = html.replace(/<script src="([^"]+)"><\/script>/g, (m, src) => '<script>' + fs.readFileSync(path.join(root, src), 'utf8') + '\n</script>');
++  return html;
++}
++(async () => {
++  const browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {});
++  const page = await browser.newPage(); const errors = [];
++  page.on('pageerror', e => errors.push(String(e)));
++  if (LOAD === 'inline') await page.setContent(inlineHtml(), { waitUntil: 'load' }); else await page.goto('file://' + root + '/index.html');
++  console.log(`ENV  chromium=${browser.version()} node=${process.version} load=${LOAD === 'inline' ? 'inline (file:// 배포 경로 검증 아님)' : 'file://'}`);
++  const r = await page.evaluate(() => {
++    const L = a => rbxArrayList(a);
++    const f = document.createElement('iframe'); document.body.appendChild(f); const W = f.contentWindow;
++    const other = new W.Array(3, 4); const other2 = W.eval('[5, 6]');
++    const out = {};
++    out.cur = JSON.stringify(L([1, 2]));
++    out.other = JSON.stringify(L(other)) + '|' + JSON.stringify(L(other2));
++    out.sub = L((() => { class Sub extends Array {} return Sub.from([1]); })()) === null && L(W.eval('(() => { class S2 extends Array {} return S2.from([1]); })()')) === null;
++    out.proto = L((() => { const a = [1]; Object.setPrototypeOf(a, Object.create(Array.prototype)); return a; })()) === null
++      && L((() => { const a = [1]; Object.setPrototypeOf(a, null); return a; })()) === null;
++    const withCtor = C => { const p = Object.create(Array.prototype); p.constructor = C; if (typeof C === 'function') { try { C.prototype = p; } catch (e) {} } const a = [1]; Object.setPrototypeOf(a, p); return L(a); };
++    out.ctorFake = withCtor(function Array() {}) === null;
++    out.ctorBound = withCtor(Array.bind(null)) === null;
++    out.ctorProxy = withCtor(new Proxy(Array, {})) === null;
++    out.ownCtor = L((() => { const a = [1]; a.constructor = Object; return a; })()) === null;
++    out.holesEtc = L([1, , 3]) === null && L(Object.freeze([1])) === null && L((() => { const a = [1]; Object.defineProperty(a, '0', { get() { return 1; }, enumerable: true, configurable: true }); return a; })()) === null;
++    out.nativeSrc = Function.prototype.toString.call(Array) + ' || ' + Function.prototype.toString.call(W.Array);
++    return out;
++  });
++  await browser.close();
++  const checks = [
++    ['RB-2B-1 현재 realm 일반 배열 → 지원', r.cur === '[1,2]'],
++    ['RB-2B-2 다른 realm(iframe) 일반 배열 → 지원', r.other === '[3,4]|[5,6]'],
++    ['RB-2B-3 사용자 정의 하위 클래스(두 realm) → 거부', r.sub],
++    ['RB-2B-4 프로토타입 교체·null → 거부', r.proto],
++    ['RB-2B-5a 생성자 교체: 이름만 Array 인 함수 → 거부', r.ctorFake],
++    ['RB-2B-5b 생성자 교체: bind 된 Array → 거부', r.ctorBound],
++    ['RB-2B-5c 생성자 교체: Proxy(Array) → 거부', r.ctorProxy],
++    ['RB-2B-5d 인스턴스 own constructor → 거부', r.ownCtor],
++    ['RB-2B-6 빈 칸·동결·접근자 원소 → 거부', r.holesEtc],
++    ['페이지 오류 0', errors.length === 0]];
++  let bad = 0; for (const [id, ok] of checks) { if (!ok) bad++; console.log((ok ? 'PASS ' : 'FAIL ') + id); }
++  console.log('INFO 원생 Array 소스 문자열: ' + r.nativeSrc);
++  console.log(`RESULT: ${bad ? 'FAIL' : 'PASS'} ${checks.length - bad}/${checks.length} (n2_array_realm_browser_test, ${LOAD})`);
++  process.exit(bad ? 1 : 0);
++})().catch(e => { console.log('FAIL 실행 오류: ' + (e && e.stack || e)); process.exit(1); });

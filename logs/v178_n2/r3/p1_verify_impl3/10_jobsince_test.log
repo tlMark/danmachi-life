@@ -1,0 +1,42 @@
+jobsince_test target=/tmp/claude-0/-home-user-danmachi-life/d5ced5fa-2e51-537b-b440-6ffb6d38a3d3/scratchpad/n2/impl3_git
+PASS JS-1 seed 1 — {"job":"child","jobSince":0}
+PASS JS-1 seed 777 — {"job":"child","jobSince":0}
+PASS JS-1 seed 20261104 — {"job":"child","jobSince":0}
+PASS JS-1 seed 314159 — {"job":"child","jobSince":0}
+PASS JS-1b 새 생애 시작 시 0 으로 초기화(이전 생애 값 미승계) — {"prev":30,"now":0}
+PASS JS-2 — {"job":"merchant","jobSince":17}
+PASS JS-3 — {"jobSince":17}
+PASS JS-4 — {"jobSince":24}
+PASS JS-5a clearFlags 경로(490) — {"job":"retired","jobSince":31}
+PASS JS-5b dropFamilia 경로(491) — {"job":"retired","jobSince":29}
+PASS JS-5c fx.job retired 경로(463) — {"job":"retired","jobSince":40}
+PASS JS-6a merchant 10년 근속 시점 자격식 true
+PASS JS-6b retired 6년: 근속 = 6(retired 기간만, 이전 10년 미합산) — {"jobSince":20}
+PASS JS-6c retired 는 자격식 false
+PASS JS-6d child 18년(출생부터): 자격식 false
+PASS JS-6e supporter 10년: 자격식 false(전직 대상과 같음)
+PASS JS-6f 4년 false / 5년 경계 true
+PASS JS-7a child → guild: job guild_staff, jobSince = 16, employer.since = 16 — {"job":"guild_staff","jobSince":16,"employer":{"id":"guild","label":"길드","kind":"administration","since":16}}
+PASS JS-7b merchant → hostess 고용: 직업 불변, jobSince 불변(12), employer.since = 19 — {"job":"merchant","jobSince":12,"employer":{"id":"hostess","label":"풍요의 여주인","kind":"tavern","since":19}}
+PASS JS-7c 고용처만 변경(guild → hostess, 직업 guild_staff 유지): jobSince 16 유지, employer.since 22 — {"job":"guild_staff","jobSince":16,"employer":{"id":"hostess","label":"풍요의 여주인","kind":"tavern","since":22}}
+PASS JS-7d setJob 은 S.employer 를 건드리지 않음
+PASS JS-8 fx.job(463) — {"job":"merchant","jobSince":23,"since0":0}
+PASS JS-8 supporter 플래그·child(464) — {"job":"supporter","jobSince":23,"since0":0}
+PASS JS-8 supporter 플래그·기존 직업(464 미진입) — {"job":"farmer","jobSince":14,"since0":14}
+PASS JS-8 soldier 플래그(465) — {"job":"soldier","jobSince":23,"since0":0}
+PASS JS-8 soldier 플래그·이미 soldier(465 미진입) — {"job":"soldier","jobSince":14,"since0":14}
+PASS JS-8 clearFlags·모험자(490) — {"job":"retired","jobSince":23,"since0":14}
+PASS JS-8 clearFlags·비모험자(490 미진입) — {"job":"healer","jobSince":14,"since0":14}
+PASS JS-8 dropFamilia·모험자(491) — {"job":"retired","jobSince":23,"since0":14}
+PASS JS-8 dropFamilia·상인(491 미진입) — {"job":"merchant","jobSince":14,"since0":14}
+PASS JS-8 joinOrganization·child(523) — {"job":"guild_staff","jobSince":23,"since0":0}
+PASS JS-8 joinOrganization·기존 직업(523 미진입) — {"job":"farmer","jobSince":14,"since0":14}
+PASS JS-8 rollFamilia·child·hephaestus(546) — {"job":"blacksmith","jobSince":23,"since0":0}
+PASS JS-8 rollFamilia·기존 직업(546 미진입) — {"job":"farmer","jobSince":14,"since0":14}
+PASS JS-9a S.job 대입 1곳(setJob) — {"jobAssign":1}
+PASS JS-9b jobSince 쓰기 = setJob 안 1곳 + 출생 리터럴 — {"sinceWrites":1,"initHas":true}
+PASS JS-9c core·data·events 에 S.job/jobSince 직접 대입 없음
+PASS JS-10a setJob 난수 호출 0 — {"d":0}
+PASS JS-10b jobSince 값이 달라도 나머지 상태 동일(결합 없음)
+결과: 39/39 통과, 실패 0
+exit=0

@@ -1,0 +1,11 @@
+--- /home/user/danmachi-life/script.js	2026-11-23 06:47:37.620942310 +0000
++++ /tmp/claude-0/-home-user-danmachi-life/d5ced5fa-2e51-537b-b440-6ffb6d38a3d3/scratchpad/n2/w_dungeon/script.js	2026-11-23 06:51:37.697428612 +0000
+@@ -502,7 +502,7 @@
+ const accumulatesExcelia = (s = S) => canUseFalna(s);
+ const accumulatesPotential = (s = S) => s.falnaState === 'none';
+ // ── F1D4A N2(2-ii, 사용자 결정 2026-11-23, REVIEW v27 §4.2v): 결과가 바뀌는 두 관문은 활성화 승인 전까지 끈다. 시험·48k 비교에서만 켠다. ──
+-const N2_GATES = { growth: false, dungeon: false };   // growth: N2-1 (나) 변환·레벨업 관문, dungeon: N2-2 (나) 던전 관문
++const N2_GATES = { growth: false, dungeon: true };   // growth: N2-1 (나) 변환·레벨업 관문, dungeon: N2-2 (나) 던전 관문
+ const PATRON_ABSENCE_REASONS = Object.freeze([]);     // N2-6 A6 허용 사유. 값은 미결정(부재 사건 설계 때 사용자 결정) — 비어 있으면 부재가 시작되지 않는다
+ // N2-2 (나): 개인 기준 active + 현재 소속의 member(연합 원정 해석 N2-2a: 같은 파밀리아일 필요 없음, 원정 상태는 만들지 않는다)
+ const canEnterDungeon2ii = (s = S) => deriveFalnaState(s) === 'active' && !!s.familia && (openMembershipOf(s) || {}).role === 'member';

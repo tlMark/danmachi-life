@@ -1,0 +1,11 @@
+seed 20261104
+  이번 실행  37dd1ff6bd6baa9b0f183bd1c21cc79e84924de79febfca8ac576fd1f9479433  logs/02_tr_20261104.log
+  F1 기록    417a845e24bacd0e1e0fcbffdb5c497f2980a949820ac0d184892af2e4bccf3c  (저장소) logs/v178_f1/tr_20261104.log
+/tmp/claude-0/-home-user-danmachi-life/d5ced5fa-2e51-537b-b440-6ffb6d38a3d3/scratchpad/n2/verify_impl2/logs/02_tr_20261104.log logs/v178_f1/tr_20261104.log differ: char 178, line 8
+  cmp: 다름
+seed 777
+  이번 실행  ab1ef5eb2d2e2ef67195d276fbc74adddbf2930e8084f4dfb9bad4bbb08fbe8a  logs/03_tr_777.log
+  F1 기록    79f97b44c7294cc80409ba5fa35a51bcd70d89ee58bdc939873c1ffc5ef3ef03  (저장소) logs/v178_f1/tr_777.log
+/tmp/claude-0/-home-user-danmachi-life/d5ced5fa-2e51-537b-b440-6ffb6d38a3d3/scratchpad/n2/verify_impl2/logs/03_tr_777.log logs/v178_f1/tr_777.log differ: char 173, line 8
+  cmp: 다름
+exit=1

@@ -1,0 +1,12 @@
+DIFF physical/777 lifeDigest=430191659 rng=3314134927 exit=0 completed=3000 inv=true exc=0 | main f63c851 기준 700755793/2536622879 | lifeDigest 다름, rngCallDigest 다름
+DIFF physical/314159 lifeDigest=1484344622 rng=1334679209 exit=0 completed=3000 inv=true exc=0 | main f63c851 기준 580793479/1681899046 | lifeDigest 다름, rngCallDigest 다름
+DIFF physical/8675309 lifeDigest=2880848976 rng=3996896140 exit=0 completed=3000 inv=true exc=0 | main f63c851 기준 4174289339/537174645 | lifeDigest 다름, rngCallDigest 다름
+DIFF physical/20261104 lifeDigest=1964566925 rng=2704280371 exit=0 completed=3000 inv=true exc=0 | main f63c851 기준 2011600754/3442994669 | lifeDigest 다름, rngCallDigest 다름
+DIFF calendar/20261104 lifeDigest=30574113 rng=1333600010 exit=0 completed=3000 inv=true exc=0 | main f63c851 기준 3906167677/2842706456 | lifeDigest 다름, rngCallDigest 다름
+DIFF newborn_parent_familia/20261104 lifeDigest=101863108 rng=2302586475 exit=0 completed=3000 inv=true exc=0 | main f63c851 기준 3921028397/2761592960 | lifeDigest 다름, rngCallDigest 다름
+DIFF off/777 lifeDigest=367906829 rng=320772031 exit=0 completed=3000 inv=true exc=0 | main f63c851 기준 1497348129/3513368291 | lifeDigest 다름, rngCallDigest 다름
+DIFF off/314159 lifeDigest=4222887760 rng=31413377 exit=0 completed=3000 inv=true exc=0 | main f63c851 기준 1853931143/235074911 | lifeDigest 다름, rngCallDigest 다름
+DIFF off/8675309 lifeDigest=539625444 rng=672621954 exit=0 completed=3000 inv=true exc=0 | main f63c851 기준 2240004538/2348498049 | lifeDigest 다름, rngCallDigest 다름
+DIFF off/20261104 lifeDigest=1760645408 rng=1362911839 exit=0 completed=3000 inv=true exc=0 | main f63c851 기준 1968197688/3719801903 | lifeDigest 다름, rngCallDigest 다름
+STRICT: FAIL — 동일 0/10, 문제 10건
+exit=1

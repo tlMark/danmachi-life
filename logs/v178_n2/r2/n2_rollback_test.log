@@ -1,0 +1,110 @@
+PASS RBT-5a 예외 전파·정지
+PASS RBT-5a S 전체 = 스냅숏(EXC 제외)
+PASS RBT-5a 롤백 보고 ok·input normal
+PASS RBT-5a lastRollbackFailure 없음(정상 복원)
+PASS RBT-5a syncDepth 0
+PASS RBT-5a familiaHistory 참조 유지
+PASS RBT-5b 예외 전파·정지
+PASS RBT-5b S 전체 = 스냅숏(EXC 제외)
+PASS RBT-5b 롤백 보고 ok·input normal
+PASS RBT-5b lastRollbackFailure 없음(정상 복원)
+PASS RBT-5b syncDepth 0
+PASS RBT-5b 기존 소속 항목 정체성·leftAt 원복
+PASS RBT-5c 예외 전파·정지
+PASS RBT-5c S 전체 = 스냅숏(EXC 제외)
+PASS RBT-5c 롤백 보고 ok·input normal
+PASS RBT-5c lastRollbackFailure 없음(정상 복원)
+PASS RBT-5c syncDepth 0
+PASS RBT-5c falnaTransitions 참조·길이 원복
+PASS RBT-5d 예외 전파·정지
+PASS RBT-5d S 전체 = 스냅숏(EXC 제외)
+PASS RBT-5d 롤백 보고 ok·input normal
+PASS RBT-5d lastRollbackFailure 없음(정상 복원)
+PASS RBT-5d syncDepth 0
+PASS RBT-5d 팔나 플래그·falnaState 원복
+PASS RBT-5e 예외 전파·정지
+PASS RBT-5e S 전체 = 스냅숏(EXC 제외)
+PASS RBT-5e 롤백 보고 ok·input normal
+PASS RBT-5e lastRollbackFailure 없음(정상 복원)
+PASS RBT-5e syncDepth 0
+PASS RBT-5e levelHistory 참조 유지
+PASS RBT-10b 예외 전파·정지
+PASS RBT-10b S 전체 = 스냅숏(EXC 제외)
+PASS RBT-10b 롤백 보고 ok·input normal
+PASS RBT-10b lastRollbackFailure 없음(정상 복원)
+PASS RBT-10b syncDepth 0
+PASS RBT-10b 객체 정체성 유지·attemptSeq·blocked 키 없음
+PASS RBT-10c-1·2 예외 전파·정지
+PASS RBT-10c-1·2 S 전체 = 스냅숏(EXC 제외)
+PASS RBT-10c-1·2 롤백 보고 ok·input normal
+PASS RBT-10c-1·2 lastRollbackFailure 없음(정상 복원)
+PASS RBT-10c-1·2 syncDepth 0
+PASS RBT-10c items 원래 배열 참조
+PASS RBT-10c-3 S 전체 = 스냅숏
+PASS RBT-10c-3 NaN·문자열 원래 값, 추가 키 없음
+PASS RBT-10c-3 보고 ok
+PASS RBT-10c-5 예외 전파·정지
+PASS RBT-10c-5 S 전체 = 스냅숏(EXC 제외)
+PASS RBT-10c-5 롤백 보고 ok·input normal
+PASS RBT-10c-5 lastRollbackFailure 없음(정상 복원)
+PASS RBT-10c-5 syncDepth 0
+PASS RBT-10c-5 relations 배열 참조 유지
+PASS RBT-10c-12 예외 전파·정지
+PASS RBT-10c-12 S 전체 = 스냅숏(EXC 제외)
+PASS RBT-10c-12 롤백 보고 ok·input normal
+PASS RBT-10c-12 lastRollbackFailure 없음(정상 복원)
+PASS RBT-10c-12 syncDepth 0
+PASS RBT-10c-12 familia 원래 참조·추가 키 없음
+PASS RBT-10a 기준값 = 스냅숏 시점(null)
+PASS RBT-10c-13-1 확장 스냅숏·복원의 getter 호출 0
+PASS RBT-10c-13-1 보고 partial(unverified)·input damaged(schema)
+PASS RBT-10c-13-1 lastRollbackFailure 기록(gen 일치)
+PASS RBT-10c-13-4 보고 partial(failed)
+PASS RBT-10c-13-3 예외 전파·정지
+PASS RBT-10c-13-3 S 전체 = 스냅숏(EXC 제외)
+PASS RBT-10c-13-3 롤백 보고 ok·input normal
+PASS RBT-10c-13-3 lastRollbackFailure 없음(정상 복원)
+PASS RBT-10c-13-3 syncDepth 0
+PASS RBT-10c-11 S 전체 = 스냅숏
+PASS RBT-10c-11 rollback ok, input damaged(dup)
+PASS RBT-10c-11 partner_link ok
+PASS RBT-14a 이전 생애에 기록 있음
+PASS RBT-14a 새 생애: lastRollbackFailure null·rollbackFailureUnrecorded false·progressHalted false
+PASS RBT-13 스냅숏 뒤 노드 = 정지 안내 1건
+PASS RBT-13 logHistory 원복(S 전체 = 스냅숏)
+PASS RB-1A-1 보고 partial(unverified)·schema:application
+PASS RB-1A-1 history·blocked 는 선행 미검증이라 unverified
+PASS RB-1A-1 확장 스냅숏·복원의 application getter 호출 0
+PASS RB-1A-2a non-enumerable 키 → partial(unverified)
+PASS RB-1A-2b 예외 뒤 non-configurable 속성 → application failed·전체 partial(failed)
+PASS RB-1A-2c 예외 뒤 접근자(configurable) → 저장본 데이터 속성으로 복원 예외 전파·정지
+PASS RB-1A-2c 예외 뒤 접근자(configurable) → 저장본 데이터 속성으로 복원 S 전체 = 스냅숏(EXC 제외)
+PASS RB-1A-2c 예외 뒤 접근자(configurable) → 저장본 데이터 속성으로 복원 롤백 보고 ok·input normal
+PASS RB-1A-2c 예외 뒤 접근자(configurable) → 저장본 데이터 속성으로 복원 lastRollbackFailure 없음(정상 복원)
+PASS RB-1A-2c 예외 뒤 접근자(configurable) → 저장본 데이터 속성으로 복원 syncDepth 0
+PASS RB-1A-2c attemptSeq 데이터 속성·값 2
+PASS RB-1B-1 예외 전파·정지
+PASS RB-1B-1 S 전체 = 스냅숏(EXC 제외)
+PASS RB-1B-1 롤백 보고 ok·input normal
+PASS RB-1B-1 lastRollbackFailure 없음(정상 복원)
+PASS RB-1B-1 syncDepth 0
+PASS RB-1B-1 history 원래 참조·내용, blocked 원래 참조·내용
+PASS RB-1B-1 보고: history 교체 감지(replaced)·원래 참조 복원, blocked 원소 변경 감지(changed)
+PASS RB-1B-2 application.history failed·전체 partial(failed)·실패 기록
+PASS RB-1B-2 정지·원래 예외
+PASS RB-1B-3 application.history unverified·schema 표시
+PASS RB-1B-3 확장 스냅숏·복원 getter 호출 0
+PASS RB-1B-4 예외 전파·정지
+PASS RB-1B-4 S 전체 = 스냅숏(EXC 제외)
+PASS RB-1B-4 롤백 보고 ok·input normal
+PASS RB-1B-4 lastRollbackFailure 없음(정상 복원)
+PASS RB-1B-4 syncDepth 0
+PASS RB-1B-4 blocked 키 없음
+PASS RB-1C 롤백 결과 partial(failed)(기록 실패와 별개)
+PASS RB-1C 기록 실패: lastRollbackFailure null·rollbackFailureUnrecorded true
+PASS RB-1C cleanupErrors 에 recordFailure 1건·원래 예외 같은 객체 재전파·정지
+PASS RB-1C 진단: failureRecorded false(성공으로 오인하지 않음)
+PASS RB-1C 새 생애: rollbackFailureUnrecorded false·lastRollbackFailure null·정지 해제
+PASS RB-1C ok: cleanupErrors 없음·failureRecorded null
+RESULT: PASS 108/108 (n2_rollback_test)
+exit=0

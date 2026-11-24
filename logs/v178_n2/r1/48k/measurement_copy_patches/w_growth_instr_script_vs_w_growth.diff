@@ -1,0 +1,26 @@
+--- /tmp/claude-0/-home-user-danmachi-life/d5ced5fa-2e51-537b-b440-6ffb6d38a3d3/scratchpad/n2/w_growth/script.js	2026-11-23 06:51:37.696550564 +0000
++++ /tmp/claude-0/-home-user-danmachi-life/d5ced5fa-2e51-537b-b440-6ffb6d38a3d3/scratchpad/n2/w_growth_instr/script.js	2026-11-23 07:03:01.234111776 +0000
+@@ -903,7 +903,23 @@
+     return `가족·관계: ${parts.join(' · ')}`;
+ }
+ 
++// [측정 전용 계측 — 시험 사본에만 있음, 게임 코드 아님] N2-1e 일괄 변환 측정
++globalThis.__n2bulk = { blockedCalls: 0, convCalls: 0, bulk: { n: 0, ex: 0, gain: 0, lvUp: 0 }, normal: { n: 0, ex: 0, gain: 0, lvUp: 0 }, livesWithBlock: 0 };
++let __n2blocked = false, __n2lifeGen = -1, __n2lifeBlocked = false;
+ function convertExp() {
++    if (__n2lifeGen !== lifeGen) { __n2lifeGen = lifeGen; __n2blocked = false; __n2lifeBlocked = false; }
++    if (!hasFalna() || haltedEntry('convertExp')) return __convertExpOrig();
++    if (N2_GATES.growth && !canConvertExcelia(S)) { __n2bulk.blockedCalls++; __n2blocked = true; if (!__n2lifeBlocked) { __n2lifeBlocked = true; __n2bulk.livesWithBlock++; } return __convertExpOrig(); }
++    const ex = Number(S.excelia) || 0, a0 = Object.values(S.abil).reduce((x, y) => x + y, 0), lv0 = S.level;
++    const r = __convertExpOrig();
++    const lvUp = S.level - lv0, a1 = Object.values(S.abil).reduce((x, y) => x + y, 0);
++    const g = lvUp > 0 ? null : a1 - a0;   // 레벨업이 일어나면 능력치가 초기화되므로 증가분을 따로 셀 수 없다(제외)
++    const B = __n2blocked && ex > 0 ? __n2bulk.bulk : __n2bulk.normal; __n2bulk.convCalls++;
++    if (ex > 0) { B.n++; B.ex += ex; if (g != null) { B.gain += g; B.exMeasured = (B.exMeasured || 0) + ex; } }
++    B.lvUp += lvUp; if (ex > 0) __n2blocked = false;
++    return r;
++}
++function __convertExpOrig() {
+     if (haltedEntry('convertExp')) return;   // H3 정지 가드
+     if (!hasFalna()) return false;
+     if (N2_GATES.growth && !canConvertExcelia(S)) return false;   // N2-1 (나): 적립은 그대로, 변환·레벨업만 관문(활성화 승인 전 꺼짐)

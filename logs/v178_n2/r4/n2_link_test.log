@@ -1,0 +1,74 @@
+PASS N2-G0 N2_GATES.growth === false·dungeon === false
+PASS N2-G0 PATRON_ABSENCE_REASONS 빈 목록(값 미결정)
+PASS N2-G0 startLife: statusResumeAge·patronAbsence = null
+PASS G-2 꺼짐: unbound 도 현행대로 변환(결과 불변)
+PASS G-2 꺼짐: 적립(addExperience)은 유지
+PASS G-2 켬: unbound 변환 0·엑세리아 유지
+PASS G-2 켬: 적립(addExperience)은 유지
+PASS G-2b active 정상 → 참
+PASS G-2b unbound → 거짓
+PASS CV-6a 정상 부재 중 → 변환 안 함(진단 없음)
+PASS CV-6b holder 불일치 부재 → 변환 안 함 + absence_holder_mismatch
+PASS CV-6c 필드 없음(undefined) → fail-closed
+PASS CV-1 첫 호출: 새 소속(≠loki)·active·holder 일치·resume null
+PASS CV-1 첫 호출 전 엑세리아 600 → 직후 0(변환됨)
+PASS CV-3 즉시 재수여 뒤 statusResumeAge null(유예 없음)
+PASS CV-4 첫 convertExp(962 안쪽) 시점 resume null·새 소속
+PASS CV-4 끝난 뒤 statusResumeAge null
+PASS CV-2 추가분 변환
+PASS CV-5a 첫 호출 레벨업 없음, 둘째 변환량 0·레벨업 없음
+PASS CV-5b 첫 호출 1레벨 상승(능력치 초기화), 둘째 레벨업 없음
+PASS CV-5c 능력치 조건 선충족·feat 만 증가: 둘째 직전 엑세리아 0, 둘째 레벨업 1회(정상 후속)
+PASS CV-5d feat 조건 선충족·능력치만 변경: 둘째 직전 엑세리아 0, 둘째 레벨업 1회(정상 후속)
+PASS CV-7 convertExcelia 소스 동일
+PASS CV-7 addExperience 소스 동일
+PASS CV-7 carryPotential 소스 동일
+PASS CV-7 tryLevelUp 소스 동일
+PASS N2-3c 재수여 경로에서 이월 1회·잠재력 0
+PASS EX-1a 다른 파밀리아(hestia) member active → 참
+PASS EX-1b 판정이 S 를 바꾸지 않음
+PASS EX-1c protected 소속 → 거짓
+PASS EX-1d unbound → 거짓(관문 켬)
+PASS EX-1e 관문 꺼짐: unbound 도 현행(2-i)대로 참
+PASS A1 시작: 불변 객체·세 키
+PASS A1 중복 시작 거부 + 진단
+PASS A4 귀환: null
+PASS A5 중복 종료: 아무것도 하지 않음(진단 없음)
+PASS A1 기본: 시작 거부·patronAbsence null 유지
+PASS AB-2 S1 rebind: 종료 1회(전이 전 소속 loki 에서)
+PASS AB-2 S1 rebind: patronAbsence null
+PASS AB-2 S1 rebind: 첫 convertExp 시점 부재 없음
+PASS AB-2 S2+S3 재수여(P2'): 종료 1회(전이 전 소속 loki 에서)
+PASS AB-2 S2+S3 재수여(P2'): patronAbsence null
+PASS AB-2 S2+S3 재수여(P2'): 첫 convertExp 시점 부재 없음
+PASS AB-2 S2 봉인: 종료 1회(전이 전 소속 loki 에서)
+PASS AB-2 S2 봉인: patronAbsence null
+PASS AB-2 S4 dropFamilia: 종료 1회(전이 전 소속 loki 에서)
+PASS AB-2 S4 dropFamilia: patronAbsence null
+PASS AB-2 S5 leaveFamilia(직접 호출, 게임 흐름 미연결): 종료 1회(전이 전 소속 loki 에서)
+PASS AB-2 S5 leaveFamilia(직접 호출, 게임 흐름 미연결): patronAbsence null
+PASS AB-3 모드 가드 거부 → 부재 보존·진단 0
+PASS AB-3s5 무소속 leaveFamilia → false·부재 보존
+PASS AB-5b 596 거부(conversionPending 없음) → 부재 보존
+PASS AB-3s5 정지 상태 → 부재 보존
+PASS AB-4 전이 밖: 보존
+PASS AB-4 전이 때 종료 + absence_end_mismatch 정확히 1건
+PASS AB-5a P2'' 통과 → 종료 + 진단 1건
+PASS AB-10 호출 S2·S3 두 번, 실제 종료는 S2 한 번
+PASS AB-7 patronAbsence 와 소속 전이 키 공존 0건
+PASS AB-9 MODS.familias·organizations fx 에 소속 전이 키 0건
+PASS AB-7 현재 데이터에 fx.patronAbsence 0건(부재 사건 미설계)
+PASS AB-8 호출 위치 정확히 S1~S5 각 1회
+PASS AB-8 S1 rollFamiliaBody: 가드·목적지 검증 뒤, 첫 S.familia 대입 전
+PASS AB-8 S2 sealByGodReturn: 443 검사 뒤, closeMembership·S.familia 전
+PASS AB-8 S3 completeConversion: 596·598 거부 뒤, S.familia 대입 전
+PASS AB-8 S5 leaveFamilia: 무소속·거부 반환 뒤, closeMembership 전
+PASS AB-8 S4 dropFamilia 블록 안, closeMembership 전·applyEffects 공통 위치에 다른 A3 없음
+PASS AB-8 Q5: leaveFamilia 는 게임 코드에서 호출되지 않음
+PASS AB-6 예외 전파·patronAbsence 원래 참조
+PASS AB-6 진단 배열은 롤백하지 않음(S 밖)
+PASS S1 정상(추첨): 결과·S·난수 호출 수 동일
+PASS S1 강제 후보: 결과·S·난수 호출 수 동일
+PASS S1 무효 후보(예외): 결과·S·난수 호출 수 동일
+RESULT: PASS 72/72 (n2_link_test)
+exit=0

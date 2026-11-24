@@ -1,0 +1,231 @@
+PASS FD-1s-01 정상(D=15, min.hp 16) → 통과
+PASS FD-1s-02 피해 없음(D=0, min.hp 1) → 통과
+PASS FD-1s-03 ok 회복(+5)·fail −15 → D=15 통과
+PASS FD-1s-04 두 갈래 중 최댓값(D=20, min.hp 21) → 통과
+PASS FD-1s-05 fail.hp 숫자 문자열 "-50" → 실패(fail:hp_not_finite_number)
+PASS FD-1s-06 fail.hp NaN → 실패(fail:hp_not_finite_number)
+PASS FD-1s-07 fail.hp Infinity → 실패(fail:hp_not_finite_number)
+PASS FD-1s-08 fail.hp -Infinity → 실패(fail:hp_not_finite_number)
+PASS FD-1s-09 fail.hp null → 실패(fail:hp_not_finite_number)
+PASS FD-1s-10 fail.hp 키 있음·값 undefined → 실패(fail:hp_not_finite_number)
+PASS FD-1s-11 fail.hp 객체 → 실패(fail:hp_not_finite_number)
+PASS FD-1s-12 fail.hp 배열 → 실패(fail:hp_not_finite_number)
+PASS FD-1s-13 ok.hp 문자열 → 실패(ok:hp_not_finite_number)
+PASS FD-1s-14 D 비정수(−7.5) → 실패(D_not_nonneg_integer)
+PASS FD-1s-15 D+1 비안전 정수 → 실패(D_plus_1_not_safe_integer)
+PASS FD-1s-16 min.hp ≠ D+1(15) → 실패(min_hp_not_D_plus_1)
+PASS FD-1s-17 min.hp 문자열 "16" → 실패(min_hp_not_finite_number)
+PASS FD-1s-18 min.hp NaN → 실패(min_hp_not_finite_number)
+PASS FD-1s-19 min.hp Infinity → 실패(min_hp_not_finite_number)
+PASS FD-1s-20 cond 없음 → 실패(min_hp_not_finite_number)
+PASS FD-1s-21 min 없음 → 실패(min_hp_not_finite_number)
+PASS FD-1s-22 fail 에 die → 실패(fail:die_present)
+PASS FD-1s-23 ok 에 die(false 값이라도 키 존재) → 실패(ok:die_present)
+PASS FD-1s-24 ok 에 getItem → 실패(ok:getItem_present)
+PASS FD-1s-25 chance 없음 → 실패(no_chance_branches)
+PASS FD-1r-01 city_disaster 선택지는 기존 2개 그대로([2] 임의 추가 없음, U10·W4 미결)
+PASS FD-3s ritual 선택지 수 = 원본 + 1
+PASS FD-3s ritual 팔나판 cond = {flags:['falna']} · 비팔나판 cond = {noFlags:['falna']}(그 밖의 키 없음)
+PASS FD-3s ritual 라벨 같음
+PASS FD-3s ritual 확률(p·stat·per) 같음
+PASS FD-3s ritual 실패 갈래 같음
+PASS FD-3s ritual 성공 문구 같음
+PASS FD-3s ritual 팔나판 ok.fx = 원본 그대로
+PASS FD-3s ritual 비팔나판 ok.fx = 원본 − feat
+PASS FD-3s ritual 조건 형식 검사 통과(choiceCondValid)
+PASS FD-3s ritual falna=false → 정확히 하나만 참(팔나판=false)
+PASS FD-3s ritual falna=true → 정확히 하나만 참(팔나판=true)
+PASS FD-3s soldier_patrol 선택지 수 = 원본 + 1
+PASS FD-3s soldier_patrol 팔나판 cond = {flags:['falna']} · 비팔나판 cond = {noFlags:['falna']}(그 밖의 키 없음)
+PASS FD-3s soldier_patrol 라벨 같음
+PASS FD-3s soldier_patrol 확률(p·stat·per) 같음
+PASS FD-3s soldier_patrol 실패 갈래 같음
+PASS FD-3s soldier_patrol 성공 문구 같음
+PASS FD-3s soldier_patrol 팔나판 ok.fx = 원본 그대로
+PASS FD-3s soldier_patrol 비팔나판 ok.fx = 원본 − feat
+PASS FD-3s soldier_patrol 조건 형식 검사 통과(choiceCondValid)
+PASS FD-3s soldier_patrol falna=false → 정확히 하나만 참(팔나판=false)
+PASS FD-3s soldier_patrol falna=true → 정확히 하나만 참(팔나판=true)
+PASS FD-3s city_disaster 선택지에 복제 조건 없음(보류 [2] 미추가)
+PASS FD-3d none/ritual 합성 상태의 deriveFalnaState = none
+PASS FD-3d none/ritual 복제본 중 정확히 1개 표시
+PASS FD-3d none/ritual 보이는 쪽 = 비팔나판(hasFalna=false, §4.4 표: 비팔나판)
+PASS FD-3d none/ritual 보이는 라벨 배열 = 원본
+PASS FD-3d none/ritual showEvent 버튼 = 원본 라벨·순서
+PASS FD-3d none/ritual 숨은 복제본 [0] 직접 호출 → hidden_choice_rejected, 상태·난수 불변
+PASS FD-3d none/soldier_patrol 합성 상태의 deriveFalnaState = none
+PASS FD-3d none/soldier_patrol 복제본 중 정확히 1개 표시
+PASS FD-3d none/soldier_patrol 보이는 쪽 = 비팔나판(hasFalna=false, §4.4 표: 비팔나판)
+PASS FD-3d none/soldier_patrol 보이는 라벨 배열 = 원본
+PASS FD-3d none/soldier_patrol showEvent 버튼 = 원본 라벨·순서
+PASS FD-3d none/soldier_patrol 숨은 복제본 [1] 직접 호출 → hidden_choice_rejected, 상태·난수 불변
+PASS FD-3d active/ritual 합성 상태의 deriveFalnaState = active
+PASS FD-3d active/ritual 복제본 중 정확히 1개 표시
+PASS FD-3d active/ritual 보이는 쪽 = 팔나판(hasFalna=true, §4.4 표: 팔나판)
+PASS FD-3d active/ritual 보이는 라벨 배열 = 원본
+PASS FD-3d active/ritual showEvent 버튼 = 원본 라벨·순서
+PASS FD-3d active/ritual 숨은 복제본 [1] 직접 호출 → hidden_choice_rejected, 상태·난수 불변
+PASS FD-3d active/soldier_patrol 합성 상태의 deriveFalnaState = active
+PASS FD-3d active/soldier_patrol 복제본 중 정확히 1개 표시
+PASS FD-3d active/soldier_patrol 보이는 쪽 = 팔나판(hasFalna=true, §4.4 표: 팔나판)
+PASS FD-3d active/soldier_patrol 보이는 라벨 배열 = 원본
+PASS FD-3d active/soldier_patrol showEvent 버튼 = 원본 라벨·순서
+PASS FD-3d active/soldier_patrol 숨은 복제본 [2] 직접 호출 → hidden_choice_rejected, 상태·난수 불변
+PASS FD-3d unbound/ritual 합성 상태의 deriveFalnaState = unbound
+PASS FD-3d unbound/ritual 복제본 중 정확히 1개 표시
+PASS FD-3d unbound/ritual 보이는 쪽 = 팔나판(hasFalna=true, §4.4 표: 팔나판)
+PASS FD-3d unbound/ritual 보이는 라벨 배열 = 원본
+PASS FD-3d unbound/ritual showEvent 버튼 = 원본 라벨·순서
+PASS FD-3d unbound/ritual 숨은 복제본 [1] 직접 호출 → hidden_choice_rejected, 상태·난수 불변
+PASS FD-3d unbound/soldier_patrol 합성 상태의 deriveFalnaState = unbound
+PASS FD-3d unbound/soldier_patrol 복제본 중 정확히 1개 표시
+PASS FD-3d unbound/soldier_patrol 보이는 쪽 = 팔나판(hasFalna=true, §4.4 표: 팔나판)
+PASS FD-3d unbound/soldier_patrol 보이는 라벨 배열 = 원본
+PASS FD-3d unbound/soldier_patrol showEvent 버튼 = 원본 라벨·순서
+PASS FD-3d unbound/soldier_patrol 숨은 복제본 [2] 직접 호출 → hidden_choice_rejected, 상태·난수 불변
+PASS FD-3d sealed/ritual 합성 상태의 deriveFalnaState = sealed
+PASS FD-3d sealed/ritual 복제본 중 정확히 1개 표시
+PASS FD-3d sealed/ritual 보이는 쪽 = 비팔나판(hasFalna=false, §4.4 표: 비팔나판)
+PASS FD-3d sealed/ritual 보이는 라벨 배열 = 원본
+PASS FD-3d sealed/ritual showEvent 버튼 = 원본 라벨·순서
+PASS FD-3d sealed/ritual 숨은 복제본 [0] 직접 호출 → hidden_choice_rejected, 상태·난수 불변
+PASS FD-3d sealed/soldier_patrol 합성 상태의 deriveFalnaState = sealed
+PASS FD-3d sealed/soldier_patrol 복제본 중 정확히 1개 표시
+PASS FD-3d sealed/soldier_patrol 보이는 쪽 = 비팔나판(hasFalna=false, §4.4 표: 비팔나판)
+PASS FD-3d sealed/soldier_patrol 보이는 라벨 배열 = 원본
+PASS FD-3d sealed/soldier_patrol showEvent 버튼 = 원본 라벨·순서
+PASS FD-3d sealed/soldier_patrol 숨은 복제본 [1] 직접 호출 → hidden_choice_rejected, 상태·난수 불변
+PASS FD-3h none/ritual showEvent 뒤 currentEventId = 'ritual'
+PASS FD-3h none/ritual 숨은 복제본 = [0](팔나판) · 화면에 없음
+PASS FD-3h none/ritual hidden_choice_rejected 증가량 = 정확히 1
+PASS FD-3h none/ritual 새 진단 1건 = { hidden_choice_rejected, eventId 'ritual', reason cond_unmet }
+PASS FD-3h none/ritual S 전체 직렬화 동일(currentEventId 포함, 제외 필드 없음)
+PASS FD-3h none/ritual currentEventId 그대로 'ritual'
+PASS FD-3h none/ritual RNG 호출 수 동일
+PASS FD-3h none/ritual 호출 동안 확률 판정·효과 적용·로그·힘 소모품 호출 증가 0
+PASS FD-3h none/ritual DOM(선택지 버튼·로그 등) 불변
+PASS FD-3h none/ritual 반환값 undefined(조기 반환)
+PASS FD-3h none/soldier_patrol showEvent 뒤 currentEventId = 'soldier_patrol'
+PASS FD-3h none/soldier_patrol 숨은 복제본 = [1](팔나판) · 화면에 없음
+PASS FD-3h none/soldier_patrol hidden_choice_rejected 증가량 = 정확히 1
+PASS FD-3h none/soldier_patrol 새 진단 1건 = { hidden_choice_rejected, eventId 'soldier_patrol', reason cond_unmet }
+PASS FD-3h none/soldier_patrol S 전체 직렬화 동일(currentEventId 포함, 제외 필드 없음)
+PASS FD-3h none/soldier_patrol currentEventId 그대로 'soldier_patrol'
+PASS FD-3h none/soldier_patrol RNG 호출 수 동일
+PASS FD-3h none/soldier_patrol 호출 동안 확률 판정·효과 적용·로그·힘 소모품 호출 증가 0
+PASS FD-3h none/soldier_patrol DOM(선택지 버튼·로그 등) 불변
+PASS FD-3h none/soldier_patrol 반환값 undefined(조기 반환)
+PASS FD-3h active/ritual showEvent 뒤 currentEventId = 'ritual'
+PASS FD-3h active/ritual 숨은 복제본 = [1](비팔나판) · 화면에 없음
+PASS FD-3h active/ritual hidden_choice_rejected 증가량 = 정확히 1
+PASS FD-3h active/ritual 새 진단 1건 = { hidden_choice_rejected, eventId 'ritual', reason cond_unmet }
+PASS FD-3h active/ritual S 전체 직렬화 동일(currentEventId 포함, 제외 필드 없음)
+PASS FD-3h active/ritual currentEventId 그대로 'ritual'
+PASS FD-3h active/ritual RNG 호출 수 동일
+PASS FD-3h active/ritual 호출 동안 확률 판정·효과 적용·로그·힘 소모품 호출 증가 0
+PASS FD-3h active/ritual DOM(선택지 버튼·로그 등) 불변
+PASS FD-3h active/ritual 반환값 undefined(조기 반환)
+PASS FD-3h active/soldier_patrol showEvent 뒤 currentEventId = 'soldier_patrol'
+PASS FD-3h active/soldier_patrol 숨은 복제본 = [2](비팔나판) · 화면에 없음
+PASS FD-3h active/soldier_patrol hidden_choice_rejected 증가량 = 정확히 1
+PASS FD-3h active/soldier_patrol 새 진단 1건 = { hidden_choice_rejected, eventId 'soldier_patrol', reason cond_unmet }
+PASS FD-3h active/soldier_patrol S 전체 직렬화 동일(currentEventId 포함, 제외 필드 없음)
+PASS FD-3h active/soldier_patrol currentEventId 그대로 'soldier_patrol'
+PASS FD-3h active/soldier_patrol RNG 호출 수 동일
+PASS FD-3h active/soldier_patrol 호출 동안 확률 판정·효과 적용·로그·힘 소모품 호출 증가 0
+PASS FD-3h active/soldier_patrol DOM(선택지 버튼·로그 등) 불변
+PASS FD-3h active/soldier_patrol 반환값 undefined(조기 반환)
+PASS FD-3h unbound/ritual showEvent 뒤 currentEventId = 'ritual'
+PASS FD-3h unbound/ritual 숨은 복제본 = [1](비팔나판) · 화면에 없음
+PASS FD-3h unbound/ritual hidden_choice_rejected 증가량 = 정확히 1
+PASS FD-3h unbound/ritual 새 진단 1건 = { hidden_choice_rejected, eventId 'ritual', reason cond_unmet }
+PASS FD-3h unbound/ritual S 전체 직렬화 동일(currentEventId 포함, 제외 필드 없음)
+PASS FD-3h unbound/ritual currentEventId 그대로 'ritual'
+PASS FD-3h unbound/ritual RNG 호출 수 동일
+PASS FD-3h unbound/ritual 호출 동안 확률 판정·효과 적용·로그·힘 소모품 호출 증가 0
+PASS FD-3h unbound/ritual DOM(선택지 버튼·로그 등) 불변
+PASS FD-3h unbound/ritual 반환값 undefined(조기 반환)
+PASS FD-3h unbound/soldier_patrol showEvent 뒤 currentEventId = 'soldier_patrol'
+PASS FD-3h unbound/soldier_patrol 숨은 복제본 = [2](비팔나판) · 화면에 없음
+PASS FD-3h unbound/soldier_patrol hidden_choice_rejected 증가량 = 정확히 1
+PASS FD-3h unbound/soldier_patrol 새 진단 1건 = { hidden_choice_rejected, eventId 'soldier_patrol', reason cond_unmet }
+PASS FD-3h unbound/soldier_patrol S 전체 직렬화 동일(currentEventId 포함, 제외 필드 없음)
+PASS FD-3h unbound/soldier_patrol currentEventId 그대로 'soldier_patrol'
+PASS FD-3h unbound/soldier_patrol RNG 호출 수 동일
+PASS FD-3h unbound/soldier_patrol 호출 동안 확률 판정·효과 적용·로그·힘 소모품 호출 증가 0
+PASS FD-3h unbound/soldier_patrol DOM(선택지 버튼·로그 등) 불변
+PASS FD-3h unbound/soldier_patrol 반환값 undefined(조기 반환)
+PASS FD-3h sealed/ritual showEvent 뒤 currentEventId = 'ritual'
+PASS FD-3h sealed/ritual 숨은 복제본 = [0](팔나판) · 화면에 없음
+PASS FD-3h sealed/ritual hidden_choice_rejected 증가량 = 정확히 1
+PASS FD-3h sealed/ritual 새 진단 1건 = { hidden_choice_rejected, eventId 'ritual', reason cond_unmet }
+PASS FD-3h sealed/ritual S 전체 직렬화 동일(currentEventId 포함, 제외 필드 없음)
+PASS FD-3h sealed/ritual currentEventId 그대로 'ritual'
+PASS FD-3h sealed/ritual RNG 호출 수 동일
+PASS FD-3h sealed/ritual 호출 동안 확률 판정·효과 적용·로그·힘 소모품 호출 증가 0
+PASS FD-3h sealed/ritual DOM(선택지 버튼·로그 등) 불변
+PASS FD-3h sealed/ritual 반환값 undefined(조기 반환)
+PASS FD-3h sealed/soldier_patrol showEvent 뒤 currentEventId = 'soldier_patrol'
+PASS FD-3h sealed/soldier_patrol 숨은 복제본 = [1](팔나판) · 화면에 없음
+PASS FD-3h sealed/soldier_patrol hidden_choice_rejected 증가량 = 정확히 1
+PASS FD-3h sealed/soldier_patrol 새 진단 1건 = { hidden_choice_rejected, eventId 'soldier_patrol', reason cond_unmet }
+PASS FD-3h sealed/soldier_patrol S 전체 직렬화 동일(currentEventId 포함, 제외 필드 없음)
+PASS FD-3h sealed/soldier_patrol currentEventId 그대로 'soldier_patrol'
+PASS FD-3h sealed/soldier_patrol RNG 호출 수 동일
+PASS FD-3h sealed/soldier_patrol 호출 동안 확률 판정·효과 적용·로그·힘 소모품 호출 증가 0
+PASS FD-3h sealed/soldier_patrol DOM(선택지 버튼·로그 등) 불변
+PASS FD-3h sealed/soldier_patrol 반환값 undefined(조기 반환)
+PASS FD-3h 대조 none/ritual 보이는 [1] 수락: 확률 판정 ≥1·적용 ≥1·RNG 증가·S 변화·거부 진단 0
+PASS FD-3h 대조 none/soldier_patrol 보이는 [2] 수락: 확률 판정 ≥1·적용 ≥1·RNG 증가·S 변화·거부 진단 0
+PASS FD-3h 대조 active/ritual 보이는 [0] 수락: 확률 판정 ≥1·적용 ≥1·RNG 증가·S 변화·거부 진단 0
+PASS FD-3h 대조 active/soldier_patrol 보이는 [1] 수락: 확률 판정 ≥1·적용 ≥1·RNG 증가·S 변화·거부 진단 0
+PASS FD-3h 대조 unbound/ritual 보이는 [0] 수락: 확률 판정 ≥1·적용 ≥1·RNG 증가·S 변화·거부 진단 0
+PASS FD-3h 대조 unbound/soldier_patrol 보이는 [1] 수락: 확률 판정 ≥1·적용 ≥1·RNG 증가·S 변화·거부 진단 0
+PASS FD-3h 대조 sealed/ritual 보이는 [1] 수락: 확률 판정 ≥1·적용 ≥1·RNG 증가·S 변화·거부 진단 0
+PASS FD-3h 대조 sealed/soldier_patrol 보이는 [2] 수락: 확률 판정 ≥1·적용 ≥1·RNG 증가·S 변화·거부 진단 0
+PASS FD-5 none/ritual 같은 결과 21/21
+PASS FD-5 none/ritual feat 차이 = 의도(팔나 0 / 비팔나 성공 시 1) 21/21
+PASS FD-5 none/soldier_patrol 같은 결과 21/21
+PASS FD-5 none/soldier_patrol feat 차이 = 의도(팔나 0 / 비팔나 성공 시 1) 21/21
+PASS FD-5 active/ritual 같은 결과 21/21
+PASS FD-5 active/ritual feat 차이 = 의도(팔나 0 / 비팔나 성공 시 1) 21/21
+PASS FD-5 active/soldier_patrol 같은 결과 21/21
+PASS FD-5 active/soldier_patrol feat 차이 = 의도(팔나 0 / 비팔나 성공 시 1) 21/21
+PASS FD-5 unbound/ritual 같은 결과 21/21
+PASS FD-5 unbound/ritual feat 차이 = 의도(팔나 0 / 비팔나 성공 시 1) 21/21
+PASS FD-5 unbound/soldier_patrol 같은 결과 21/21
+PASS FD-5 unbound/soldier_patrol feat 차이 = 의도(팔나 0 / 비팔나 성공 시 1) 21/21
+PASS FD-5 sealed/ritual 같은 결과 21/21
+PASS FD-5 sealed/ritual feat 차이 = 의도(팔나 0 / 비팔나 성공 시 1) 21/21
+PASS FD-5 sealed/soldier_patrol 같은 결과 21/21
+PASS FD-5 sealed/soldier_patrol feat 차이 = 의도(팔나 0 / 비팔나 성공 시 1) 21/21
+PASS FD-6a 현재 위업 지급 표 = 승인안(16갈래)
+PASS FD-6b 전→후 제거 7갈래 = DF-1·DF-2[0]·DF-3·DF-5
+PASS FD-6c 증가·값 변경 0건(새 feat 지급 없음)
+PASS FD-6d lost_child[0] feat 외 효과 그대로·feat 키 없음·라벨 그대로·cond 없음
+PASS FD-6d mentor[0] feat 외 효과 그대로·feat 키 없음·라벨 그대로·cond 없음
+PASS FD-6d community_role[0] feat 외 효과 그대로·feat 키 없음·라벨 그대로·cond 없음
+PASS FD-6d city_disaster[0] feat 외 효과 그대로·feat 키 없음·라벨 그대로·cond 없음
+PASS FD-6d find_grimoire[0] feat 외 효과 그대로·feat 키 없음·라벨 그대로·cond 없음
+PASS FD-6d daedalus_orb[1] feat 외 효과 그대로·feat 키 없음·라벨 그대로·cond 없음
+PASS FD-6d encounter_goliath[1] feat 외 효과 그대로·feat 키 없음·라벨 그대로·cond 없음
+PASS FD-6e grimoire 아이템 정의 그대로(data.js 무변경)
+PASS FD-6f 보류 DF-K1 daedalus_orb[0] ok feat 4 그대로
+PASS FD-6g 보류 DF-4 legend_clash[1] 효과 그대로
+PASS DF lost_child[0] feat 3→3(불변), 나머지 효과 적용
+PASS DF mentor[0] feat 3→3(불변), 나머지 효과 적용
+PASS DF community_role[0] feat 3→3(불변), 나머지 효과 적용
+PASS DF city_disaster[0] feat 3→3(불변), 나머지 효과 적용
+PASS DF daedalus_orb[1] feat 3→3(불변), 나머지 효과 적용
+PASS DF encounter_goliath[1] feat 3→3(불변), 나머지 효과 적용
+PASS DF find_grimoire[0] feat 3→3(불변), 나머지 효과 적용
+PASS DF find_grimoire[0] magic_user 플래그·grimoire 소비 기록 유지
+RESULT: PASS 222/222 (feat_p5_test)
+BLOCKED FD-1r-02 city_disaster[2]·[3] 형식(fx.hp 숫자형·유한) — 대상 선택지가 EVENTS 에 없음(U10·W4 보류). 검사기는 FD-1s 로 준비됨
+BLOCKED FD-1r-03 city_disaster[2]·[3] D·D+1 유한 정수 — 같은 이유
+BLOCKED FD-1r-04 city_disaster[2]·[3] cond.min.hp 숫자형·유한·= D+1 — 같은 이유
+BLOCKED FD-1r-05 city_disaster[2]·[3] die·getItem 없음 — 같은 이유
+BLOCKED FD-1r-06 팔나판·비팔나판 두 복제본의 D·min.hp 동일 — 같은 이유
+BLOCKED FD-3 city_disaster [2]·[3] 복제 쌍 — [2] 가 보류(U10·W4)라 복제 대상이 없음
+BLOCKED: 6 (통과로 세지 않음)
+exit=0

@@ -1,0 +1,10 @@
+--- /tmp/claude-0/-home-user-danmachi-life/d5ced5fa-2e51-537b-b440-6ffb6d38a3d3/scratchpad/n2/w_growth/test_runner.js	2026-11-23 07:04:28.259914356 +0000
++++ /tmp/claude-0/-home-user-danmachi-life/d5ced5fa-2e51-537b-b440-6ffb6d38a3d3/scratchpad/n2/w_growth_instr/test_runner.js	2026-11-23 07:04:28.282718258 +0000
+@@ -1327,6 +1327,7 @@
+     '\nfamiliaJoinJobOverwrites:', results.familiaJoinJobOverwrites,
+     '\neventGateViolations:', results.eventGateViolations, JSON.stringify(results.eventGateViolationSamples),
+     '\ninvariantFailures:', JSON.stringify(Object.entries(results.invariantFailures.reduce((m, x) => (m[x] = (m[x] || 0) + 1, m), {})).slice(0, 8)),
++    '\nn2bulk:', JSON.stringify(context.__n2bulk),
+     '\nlifeDigest:', results.lifeDigest,
+     '\nv177:', JSON.stringify(results.v177),
+     '\nv178:', JSON.stringify(results.v178),

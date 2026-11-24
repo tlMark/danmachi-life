@@ -1,0 +1,21 @@
+--- /home/user/danmachi-life/test_runner.js	2026-11-19 09:18:32.490929680 +0000
++++ /tmp/claude-0/-home-user-danmachi-life/d5ced5fa-2e51-537b-b440-6ffb6d38a3d3/scratchpad/n2/w_growth/test_runner.js	2026-11-23 07:04:28.259914356 +0000
+@@ -230,6 +230,8 @@
+             familia: null, job: 'adventurer', eventCounts: {}, lastEventPhase: {}, recentEvents: [],
+             milestones: [], logHistory: [], cause: ''
+         };
++        // [N2 관문 켬 측정 사본 전용] N2-1 (나)에서는 무소속(unbound) 합성 상태가 레벨업하지 않는다. 이 단위 시험의 의도(위업만으로 레벨업 재확인)를 유지하려고 정상 active 단원으로 맞춘다.
++        S.familia = gachaData.familias.find(f => f.id === 'loki'); S.patronAbsence = null;
+         apply({ feat: 1 });
+         results.levelUpFeatOnlyUnitTest = S.level === 2 && S.feat === 0;
+         assert(results.levelUpFeatOnlyUnitTest, 'feat-only level-up recheck failed');
+@@ -897,7 +899,8 @@
+     //   ③ 직업 보존: makeJobState('supporter') → rollFamilia(20세)  ④ 아이템: fresh() 후 S.flags.push('falna') → choose → apply(4세)
+     // ①~③ 는 fixture 가 나이를 고정(30·20·20)하므로 나이까지, ④ 는 fresh() 의 시드별 생애에 따라 나이가 달라 종류·범위만 비교한다.
+     const EXPECTED_UNIT_PHASE_LOG = ['stored_state_mismatch:apply:30', 'stored_state_mismatch:rollFamilia:20', 'stored_state_mismatch:rollFamilia:20', 'stored_state_mismatch:apply:*'];
+-    V8.unitPhaseLog = HAS_2I ? syncInvariantLog.map((x, i) => x.kind + ':' + x.scopeKind + ':' + (i === 3 ? '*' : x.at)) : [];
++    // [N2 관문 켬 측정 사본 전용] 사전 단위 단계의 합성 상태에는 patronAbsence 가 없어 absenceOK 가 fail-closed 진단(absence_*)을 남긴다. 실제 생애는 startLife 가 null 로 둔다. 기대 목록 대조에서만 뺀다.
++    V8.unitPhaseLog = HAS_2I ? syncInvariantLog.filter(x => !/^absence_/.test(x.kind)).map((x, i) => x.kind + ':' + x.scopeKind + ':' + (i === 3 ? '*' : x.at)) : [];
+     V8.unitPhaseLogRaw = HAS_2I ? syncInvariantLog.map(x => x.kind + ':' + x.scopeKind + ':' + x.at) : [];
+     V8.unitPhaseLogAsExpected = !HAS_2I || JSON.stringify(V8.unitPhaseLog) === JSON.stringify(EXPECTED_UNIT_PHASE_LOG);
+     let chronologicalTotal = 0;

@@ -1,0 +1,6 @@
+tr 20261104 byte-identical
+tr 777 byte-identical
+digest10 exit=0
+strict exit=0
+STRICT: PASS — 동일 10/10, 문제 0건
+script.js: OK
