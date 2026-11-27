@@ -1,0 +1,1 @@
+(ast_check.js 는 r1→r2 사이에 바뀌지 않았다: git diff 3408822 57776a9 -- measure/ast_check.js 결과 0바이트)
