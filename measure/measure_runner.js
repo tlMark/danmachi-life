@@ -31,16 +31,30 @@ const ORIGINAL_SHA = Object.freeze({
     'script.js': 'bdfb603b9b2467b39ff6f222e8f5915a7b332e081b2964869bf835a48ea446b1' });
 const MEASURE_SCRIPT_SHA = process.env.SIM_MEAS_SHA_UNDEFINED === '1' ? undefined : 'f5ab42d6fed93e5223545522f48b11ece37decc9db51dce8e0baa93bee26f56c';   // 측정 사본 script.js 의 SHA-256(시험 25n16 만 미정으로 둔다)
 const MEASURE_SHA = Object.freeze(Object.assign({}, ORIGINAL_SHA, { 'script.js': MEASURE_SCRIPT_SHA }));
+// D-1 (나)(사용자 승인 2026-11-27): 깨끗한 Node 의 newListener·removeListener 리스너 이름 기준. 같은 실행 파일, 사전 적재 인자 없음(execArgv 미전달), NODE_OPTIONS 제거.
+function cleanHookReference() {
+    try {
+        const env = Object.assign({}, process.env); delete env.NODE_OPTIONS;
+        const r = require('child_process').spawnSync(process.execPath, ['-e', "process.stdout.write(JSON.stringify({ n: process.listeners('newListener').map(f => f.name), r: process.listeners('removeListener').map(f => f.name) }))"], { env, encoding: 'utf8', timeout: 30000 });
+        if (r.status !== 0) return null;
+        const o = JSON.parse(r.stdout);
+        const ok = a => Array.isArray(a) && a.every(x => typeof x === 'string');
+        return (o && ok(o.n) && ok(o.r)) ? Object.freeze({ n: Object.freeze(o.n.slice()), r: Object.freeze(o.r.slice()) }) : null;
+    } catch (_) { return null; }
+}
 let MEAS_STATE = null, MEAS_REASON = null, MEAS = null;
+let HOOK_REF = null;
 if (typeof MEASURE_SCRIPT_SHA !== 'string' || !HEX64.test(MEASURE_SCRIPT_SHA)) {
     MEAS_STATE = 'unavailable'; MEAS_REASON = 'measure_sha_undefined';    // 모듈을 require 하지 않는다(코드 미실행)
+} else if ((HOOK_REF = cleanHookReference()) === null) {
+    MEAS_STATE = 'inactive_unknown'; MEAS_REASON = 'hook_reference_failed';   // 기준을 얻지 못하면 모듈을 불러오지 않고 거부
 } else {
     let loaded = false;
     try { MEAS = require(MEASURE_MODULE_PATH); loaded = true; }
     catch (_) { MEAS_STATE = 'inactive_unknown'; MEAS_REASON = 'module_load_failed'; }
     if (loaded) {
         try {
-            const r = MEAS.init();                                           // 러너의 유일한 init 호출 위치(⑭)
+            const r = MEAS.init(HOOK_REF);                                   // 러너의 유일한 init 호출 위치(⑭)
             const s = (r !== null && typeof r === 'object') ? r.state : undefined;
             MEAS_STATE = (s === 'active' || s === 'inactive_clean' || s === 'inactive_residual' || s === 'inactive_unknown') ? s : 'inactive_unknown';
             MEAS_REASON = (r !== null && typeof r === 'object' && typeof r.reason === 'string') ? r.reason : (MEAS_STATE === s ? null : 'bad_init_result');

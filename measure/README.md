@@ -34,9 +34,18 @@ SIM_MEAS_REPORT=<보고 경로> node measure/measure_runner.js   # 계측 실행
 
 | # | 설계 | 구현 | 근거 |
 |---|---|---|---|
-| D1 | C5a: `process` 의 `newListener`·`removeListener` 리스너 수가 0 | init 시점 기준선과 두 리스너 목록이 같다(개수·함수 동일성) | Node v22.23.4 는 시작할 때 두 이벤트에 내장 리스너를 2개씩 등록한다(`startListeningIfSignal` 등). 설계 원안대로면 정상 실행도 항상 `invalid:hook_present` 가 된다. **동등하지 않음(r1):** init 이전에 선점된 외부 리스너는 검출하지 못한다(초기화 이전 환경을 신뢰). 사용자 결정 대기 |
+| D1 | C5a: `process` 의 `newListener`·`removeListener` 리스너 수가 0 | init 시점 기준선과 두 리스너 목록이 같다(개수·함수 동일성) | Node v22.23.4 는 시작할 때 두 이벤트에 내장 리스너를 2개씩 등록한다(`startListeningIfSignal` 등). 설계 원안대로면 정상 실행도 항상 `invalid:hook_present` 가 된다. **동등하지 않음(r1):** init 이전에 선점된 외부 리스너는 검출하지 못한다(초기화 이전 환경을 신뢰). **r2: 사용자 결정 D-1 = (가)+(나)(2026-11-27).** (가) 아래 "가정" 절에 명시. (나) 러너가 깨끗한 자식 프로세스(같은 실행 파일, NODE_OPTIONS·사전 적재 인자 제거)에서 얻은 리스너 이름 목록과 init 시점 목록을 대조해, 다르면 `inactive_unknown(hook_baseline_mismatch)`(기준을 못 얻으면 `hook_reference_failed`)로 거부. 같은 개수·이름으로 위장한 선점은 여전히 잡지 못함(LIMIT C5a-disguise) |
 | D2 | T14 `PROC.on('exit', M)` | `RD_apply(WRAPPERS.on, PROC, ['exit', M])` | v49 R5: process 속성 직접 읽기를 없앤다. C5b(사슬 가림 없음)·C5c(EE.on === WRAPPERS.on)가 참이면 `PROC.on` 이 가리키는 함수와 같다 |
 | D3 | `captureReadApis`·`restoreOne` 보조 함수 | init 안에 직접 둔다(보조 함수 없음). `sameFns` 보조 함수를 새로 둔다 | R4: 호출 지점을 줄이고 표에 모두 등록 |
 | D4 | C5a 용 `RD_count` 호출 | 쓰지 않음. `RD_count` 는 C5f(읽기 API 무결성) 비교에만 쓴다 | D1 |
 | D5 | 25n11 "동결된 EE" | `EE.on` 만 쓰기 불가로 만든다(스트림 내장 모듈을 먼저 적재) | Node 는 `EventEmitter.prototype` 전체를 동결하면 내부 스트림 초기화에서 스스로 멈춘다(시험 작성 중 확인). 측정 모듈이 지나는 경로(첫 대입 실패 → 복원 쓰기 없음)는 같다 |
-| D6 | 허용 사이트 T1~T19 | T1~T19 의 뜻은 유지하고 v49 표에 없던 위치를 T20~T138 로 등록 | R1·R3·R4·R7·R8 |
+| D6 | 허용 사이트 T1~T19 | T1~T19 의 뜻은 유지하고 v49 표에 없던 위치를 T20~T138 로 등록. r2 에서 D-1 (나) 위치를 T139~T146 으로 추가 | R1·R3·R4·R7·R8, D-1 |
+
+## 가정(D-1 (가), 사용자 결정 2026-11-27)
+
+- **가정 E**: 내장 객체(`Reflect`·`Object`·`Symbol`·배열 메서드, Node 내장 모듈 `fs`·`events`)는 원래 구현이다(설계 유지).
+- **가정 P(init 이전 환경)**: 측정 모듈의 init 보다 먼저 실행된 코드는 `process` 의 `newListener`·`removeListener` 리스너를 **깨끗한 Node 와 개수·이름이 같은 형태로 위장해** 바꾸지 않았다.
+  - (나) 대조는 위장 없는 선점(리스너 추가, 다른 이름으로 교체, `-r`·`NODE_OPTIONS` 사전 적재)을 잡는다.
+  - 같은 개수·같은 이름의 대리 함수로 바꿔치기한 경우는 잡지 못한다(실행 확인: LIMIT C5a-disguise).
+  - 따라서 측정 보고의 `valid` 는 이 가정 아래에서만 성립한다.
+- 기준 자식 프로세스는 러너가 띄운다. 러너 자체와 Node 실행 파일은 신뢰 대상이다(측정 사본의 전제).

@@ -97,26 +97,30 @@ for (const [id, edit, why] of [
 }
 
 // ── 모듈 단위(같은 프로세스): G1 재호출 · 다른 인스턴스 · G4 · C5·C1~C4 고장 · 항등식 ──
+// D-1 (나): 단위 하네스도 러너와 같은 방법으로 깨끗한 Node 의 리스너 이름 기준을 만들어 init(ref) 에 넘긴다.
+const REF = (() => { const env = { ...process.env }; delete env.NODE_OPTIONS;
+  const r = spawnSync(process.execPath, ['-e', "process.stdout.write(JSON.stringify({ n: process.listeners('newListener').map(f => f.name), r: process.listeners('removeListener').map(f => f.name) }))"], { env, encoding: 'utf8' });
+  return JSON.parse(r.stdout); })();
 function child(id, code, pre = []) {
   const f = W('unit_' + id + '.js', code); const report = path.join(WORK, 'urep_' + id + '.json'); try { fs.unlinkSync(report); } catch (_) {}
-  const r = spawnSync(process.execPath, [].concat(...pre.map(p => ['-r', p]), [f]), { env: { ...process.env, MOD: path.join(MDIR, 'measure_module.js'), REP: report }, encoding: 'utf8', timeout: 120000 });
+  const r = spawnSync(process.execPath, [].concat(...pre.map(p => ['-r', p]), [f]), { env: { ...process.env, MOD: path.join(MDIR, 'measure_module.js'), REP: report, REF: JSON.stringify(REF) }, encoding: 'utf8', timeout: 120000 });
   let rep = null; try { rep = JSON.parse(fs.readFileSync(report, 'utf8')); } catch (_) {}
   let res = null; try { res = JSON.parse((r.stdout || '').trim().split('\n').pop()); } catch (_) {}
   return { code: r.status, rep, res, stderr: r.stderr };
 }
-{ const r = child('25n17', "const M = require(process.env.MOD); const a = M.init(), b = M.init(); const EE = require('events').EventEmitter.prototype; console.log(JSON.stringify({ a, b, still: typeof EE.on === 'function' && EE.on.name === '' }));");
+{ const r = child('25n17', "const M = require(process.env.MOD); const a = M.init(JSON.parse(process.env.REF)), b = M.init(JSON.parse(process.env.REF)); const EE = require('events').EventEmitter.prototype; console.log(JSON.stringify({ a, b, still: typeof EE.on === 'function' && EE.on.name === '' }));");
   rec('25n17 같은 인스턴스 두 번째 init → reinit_rejected · 첫 호출 active 유지', r.res && r.res.a.state === 'active' && r.res.b.state === 'inactive_unknown' && r.res.b.reason === 'reinit_rejected', r.res); }
-{ const r = child('25n18', "const M = require(process.env.MOD); const a = M.init(), b = M.init(); console.log(JSON.stringify({ a, b }));", [PRE.ee_on_accessor]);
+{ const r = child('25n18', "const M = require(process.env.MOD); const a = M.init(JSON.parse(process.env.REF)), b = M.init(JSON.parse(process.env.REF)); console.log(JSON.stringify({ a, b }));", [PRE.ee_on_accessor]);
   rec('25n18 첫 호출 1단계 실패(clean) 뒤 두 번째 → reinit_rejected', r.res && r.res.a.state === 'inactive_clean' && r.res.b.reason === 'reinit_rejected', r.res); }
-{ const r = child('25n19', "const p = process.env.MOD; const M1 = require(p); const a = M1.init(); delete require.cache[require.resolve(p)]; const M2 = require(p); const b = M2.init(); console.log(JSON.stringify({ a, b, diff: M1 !== M2 }));");
+{ const r = child('25n19', "const p = process.env.MOD; const M1 = require(p); const a = M1.init(JSON.parse(process.env.REF)); delete require.cache[require.resolve(p)]; const M2 = require(p); const b = M2.init(JSON.parse(process.env.REF)); console.log(JSON.stringify({ a, b, diff: M1 !== M2 }));");
   rec('25n19 require 캐시 제거 → 두 번째 인스턴스 init → other_instance_likely', r.res && r.res.a.state === 'active' && r.res.diff && r.res.b.state === 'inactive_unknown' && r.res.b.reason === 'other_instance_likely', r.res); }
 { const mut = W('mod_g4.js', fs.readFileSync(path.join(MDIR, 'measure_module.js'), 'utf8').replace('let WATCH_ON = false;', 'let WATCH_ON = true;'));
-  const r = child('G4', `const M = require(${JSON.stringify(mut)}); console.log(JSON.stringify(M.init()));`);
+  const r = child('G4', `const M = require(${JSON.stringify(mut)}); console.log(JSON.stringify(M.init(JSON.parse(process.env.REF))));`);
   rec('G4 WATCH_ON 초기값 변이(합성 사본) → watch_on_unexpected · 설치 없음', r.res && r.res.state === 'inactive_unknown' && r.res.reason === 'watch_on_unexpected', r.res); }
 { const mut = W('mod_g0.js', fs.readFileSync(path.join(MDIR, 'measure_module.js'), 'utf8').replace('        RD_apply = Reflect.apply;', '        RD_apply = null;'));
-  const r = child('G0', `const M = require(${JSON.stringify(mut)}); console.log(JSON.stringify(M.init()));`);
+  const r = child('G0', `const M = require(${JSON.stringify(mut)}); console.log(JSON.stringify(M.init(JSON.parse(process.env.REF))));`);
   rec('G0 참조 확보 실패(합성 사본) → inactive_unknown(ref_capture_failed)', r.res && r.res.state === 'inactive_unknown' && r.res.reason === 'ref_capture_failed', r.res); }
-const HARN = (tamper, after = '') => `const M = require(process.env.MOD); const st = M.init(); const EE = require('events').EventEmitter.prototype;
+const HARN = (tamper, after = '') => `const M = require(process.env.MOD); const st = M.init(JSON.parse(process.env.REF)); const EE = require('events').EventEmitter.prototype;
   let body = c => { c.outcome = 'F'; }; const end = M.wrapEndLife(c => body(c)); end(); end();
   ${tamper}
   M.finishMeasurement(process.env.REP); ${after} console.log(JSON.stringify(st));`;
@@ -146,15 +150,28 @@ const PRE_HOOK = {
   newL: W('pre_hook_new.js', "process.on('newListener', function preHook() {});\n"),
   rmL: W('pre_hook_rm.js', "process.on('removeListener', function preHookRm() {});\n"),
 };
-const HARN_PRE = `const M = require(process.env.MOD); const st = M.init(); const end = M.wrapEndLife(c => { c.outcome = 'F'; }); end();
+const HARN_PRE = `const M = require(process.env.MOD); const st = M.init(JSON.parse(process.env.REF)); const end = M.wrapEndLife(c => { c.outcome = 'F'; }); end();
   const counts = { n: process.listenerCount('newListener'), r: process.listenerCount('removeListener') }; M.finishMeasurement(process.env.REP); console.log(JSON.stringify({ st, counts }));`;
+// r2(D-1 (나) 구현 뒤): init 이전 선점은 깨끗한 Node 기준과 이름 목록이 달라져 init 이 inactive_unknown(hook_baseline_mismatch) 을 낸다. 설치 0.
 for (const [id, pre] of [['C5a-pre-newListener', PRE_HOOK.newL], ['C5a-pre-removeListener', PRE_HOOK.rmL]]) {
-  const r = child('lim_' + id, HARN_PRE, [pre]);
-  limRec(id + ': init 이전 외부 리스너 선점 → 현재 구현은 기준선에 포함해 검출하지 못함(보고 valid)', r.res && r.res.st.state === 'active' && r.rep && r.rep.verdict === 'valid',
-    { state: r.res && r.res.st.state, verdict: r.rep && r.rep.verdict, countsAtFinish: r.res && r.res.counts, cleanNode: cleanCounts });
+  const r = child('pre_' + id, HARN_PRE, [pre]);
+  rec(id + ': init 이전 외부 리스너 선점 → init 이 hook_baseline_mismatch(inactive_unknown) · 설치 없음', r.res && r.res.st.state === 'inactive_unknown' && r.res.st.reason === 'hook_baseline_mismatch' && r.rep === null,
+    { st: r.res && r.res.st, countsAtFinish: r.res && r.res.counts, ref: REF });
 }
-{ const r = runRunner('lim_runner_pre', { pre: [PRE_HOOK.newL] });   // 러너 경로에서도 같은지
-  limRec('C5a-pre-runner: 러너 실행 전 사전 적재 리스너 → active · 보고 valid(미검출)', r.state === 'active' && r.code === 0 && r.rep && r.rep.verdict === 'valid', { state: r.state, verdict: r.rep && r.rep.verdict }); }
+{ const r = runRunner('pre_runner', { pre: [PRE_HOOK.newL] });
+  rec('C5a-pre-runner: -r 사전 적재 선점 → hook_baseline_mismatch · vm 생성 전 거부', r.state === 'inactive_unknown' && r.reason === 'hook_baseline_mismatch' && refused(r), { state: r.state, reason: r.reason, code: r.code }); }
+{ const r = runRunner('pre_nodeopts', { env: { NODE_OPTIONS: '--require ' + PRE_HOOK.newL } });   // 러너의 기준 자식 프로세스는 NODE_OPTIONS 를 지운다
+  rec('C5a-pre-NODE_OPTIONS: NODE_OPTIONS 사전 적재 선점 → 기준 자식에는 없음 → hook_baseline_mismatch · 거부', r.state === 'inactive_unknown' && r.reason === 'hook_baseline_mismatch' && refused(r), { state: r.state, reason: r.reason, code: r.code }); }
+for (const [id, refExpr, why] of [['ref-undefined', 'undefined', '기준 미전달'], ['ref-null', 'null', 'null'], ['ref-short', JSON.stringify({ n: [''], r: REF.r }), '이름 수 다름'], ['ref-name', JSON.stringify({ n: REF.n.map((x, i) => i === 0 ? 'other' : x), r: REF.r }), '이름 다름'], ['ref-shape', JSON.stringify({ n: 'x', r: REF.r }), '형식 다름']]) {
+  const r = child('ref_' + id, `const M = require(process.env.MOD); console.log(JSON.stringify(M.init(${refExpr})));`);
+  rec('C5a-' + id + ': init 기준 ' + why + ' → hook_baseline_mismatch', r.res && r.res.state === 'inactive_unknown' && r.res.reason === 'hook_baseline_mismatch', r.res);
+}
+{ let runner; try { runner = copyMeasure('reffail', editRunner("function cleanHookReference() {\n    try {", "function cleanHookReference() {\n    return null;   // 합성: 기준 확보 실패\n    try {")); } catch (e) { rec('C5a-ref-fail 사본', false, e.message); }
+  if (runner) { const r = runRunner('reffail', { runner }); rec('C5a-ref-fail: 러너가 깨끗한 기준을 얻지 못함(합성 사본) → hook_reference_failed · 모듈 미적재 · 거부', r.state === 'inactive_unknown' && r.reason === 'hook_reference_failed' && refused(r), { state: r.state, reason: r.reason }); } }
+// 남는 한계(D-1 (가) 가정): 같은 개수·같은 이름으로 위장한 선점은 잡지 못한다
+const PRE_DISGUISE = W('pre_hook_disguise.js', "{ const ls = process.listeners('newListener'); const first = ls[0]; process.removeListener('newListener', first); process.prependListener('newListener', function () { return first.apply(this, arguments); }); }\n");
+{ const r = child('lim_disguise', HARN_PRE, [PRE_DISGUISE]);
+  limRec('C5a-disguise: 내장 익명 리스너를 같은 이름(익명)의 대리 함수로 바꿔치기 → 개수·이름 같음 → 미검출(보고 valid)', r.res && r.res.st.state === 'active' && r.rep && r.rep.verdict === 'valid', { st: r.res && r.res.st, verdict: r.rep && r.rep.verdict }); }
 { const r = child('lim_post', HARN_PRE.replace('const end =', "process.on('newListener', function postHook() {}); const end ="));   // 대조: init 뒤 추가는 검출
   rec('C5a-post 대조: init 이후 추가된 리스너는 검출(invalid:hook_present)', r.rep && r.rep.verdict === 'invalid:hook_present', { verdict: r.rep && r.rep.verdict }); }
 // 설계 원안(개수 0) 재현: 합성 사본에서 C5a 를 "두 이벤트 리스너 수 0" 으로 되돌렸을 때의 판정
@@ -164,7 +181,8 @@ for (const [id, pre] of [['C5a-pre-newListener', PRE_HOOK.newL], ['C5a-pre-remov
   else { const mod0 = W('mod_design0.js', src.replace(from, "    const hookFree = RD_apply(RD_listeners, PROC, ['newListener']).length === 0 && RD_apply(RD_listeners, PROC, ['removeListener']).length === 0;   // 설계 원안(합성 사본)"));
     const a = child('lim_design0_clean', HARN_PRE.replace('process.env.MOD', JSON.stringify(mod0)));
     const b = child('lim_design0_pre', HARN_PRE.replace('process.env.MOD', JSON.stringify(mod0)), [PRE_HOOK.newL]);
-    limRec('C5a-design0: 설계 원안(개수 0)은 외부 선점이 없어도 Node 내장 리스너 때문에 항상 invalid:hook_present(측정 불가) · 선점이 있어도 같은 판정', a.rep && a.rep.verdict === 'invalid:hook_present' && b.rep && b.rep.verdict === 'invalid:hook_present', { clean: a.rep && a.rep.verdict, withPreHook: b.rep && b.rep.verdict }); } }
+    // r2: 선점이 있는 경우는 이제 D-1 (나) 대조가 init 에서 먼저 거부한다(보고 없음). 원안 관측은 깨끗한 경우의 판정만 기록한다.
+    limRec('C5a-design0: 설계 원안(개수 0)은 외부 선점이 없어도 Node 내장 리스너 때문에 항상 invalid:hook_present(측정 불가). 선점이 있으면 (나) 대조가 init 에서 먼저 거부', a.rep && a.rep.verdict === 'invalid:hook_present' && b.res && b.res.st.reason === 'hook_baseline_mismatch' && b.rep === null, { clean: a.rep && a.rep.verdict, withPreHook: b.res && b.res.st }); } }
 console.log(out.join('\n'));
 if (lim.length) console.log(lim.join('\n'));
 console.log(`RESULT: ${failed ? 'FAIL' : 'PASS'} ${out.length - failed}/${out.length} (meas_fault_test, work=${WORK}) · LIMIT ${lim.length}건(미검출 관측, PASS 집계 제외)`);
