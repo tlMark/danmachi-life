@@ -74,7 +74,8 @@ function restoreRollbackSnapshot(rb) {
 // 후속 선택 resolve 안의 소속·팔나 전이와 컨테이너 변경을 스냅숏 시점으로 되돌린다. 정상 생애에서는 실행되지 않는다(예외 경로 전용).
 // 스냅숏은 S 를 바꾸지 않고 난수를 쓰지 않는다. 결과 보고는 S 밖(lastRollbackReport·followupDiagLog)에만 남긴다.
 const RBX_VALUE_FIELDS = ['familia', 'familiaAt', 'falnaAt', 'statusResumeAge', 'nextMembershipId', 'falnaState', 'falnaHolder',
-    'conversionPending', 'residence', 'partnerId', 'patronAbsence', 'deepestFloor'];   // 값·참조(불변 교체 계약) 복원
+    'conversionPending', 'residence', 'partnerId', 'patronAbsence', 'deepestFloor'];
+RBX_VALUE_FIELDS.push('pendingRelocationOffer', 'dungeonAccess');   // F1D4A P4: 새 최상위 필드(값·참조 복원)   // 값·참조(불변 교체 계약) 복원
 // falnaHistory·falnaTransitions 는 push 만 하지만(RBT-1 계약) 원소 속성까지 되돌린다(QA RB-2C: 10종을 같은 L2·L3 계약으로 맞춤)
 const RBX_ARRAYS = { familiaHistory: 'own', falnaHistory: 'own', falnaTransitions: 'own', aspirationHistory: 'own',
     residenceHistory: 'own', locationHistory: 'own', items: 'prim', itemsConsumed: 'prim', relations: 'own+', levelHistory: 'own' };
@@ -452,6 +453,8 @@ function match(c = {}, event) {
     if (c.falnaState && !c.falnaState.includes(S.falnaState)) return false;          // 2-i: 기록 상태(설계 §2.3.2)
     if (c.familiaRole && !c.familiaRole.includes(currentFamiliaRole())) return false;  // 2-i: 열린 소속 역할
     if (c.canEnterDungeon === true && !canEnterDungeon(S)) return false;             // 2-i 정의 = canUseFalna
+    // F1D4A P4(F-A, D-WORLD §3.5): 키 존재로 검사하고 값은 정확히 true 만 인정한다('true'·1·false·null 등은 거짓). event 가 없으면 비밀 분기만 거짓.
+    if (Object.prototype.hasOwnProperty.call(c, 'dungeonReach')) { if (c.dungeonReach !== true) return false; if (!dungeonReach(event)) return false; }
     if (c.min) for (const k in c.min) if (S[k] < c.min[k]) return false;
     if (c.max) for (const k in c.max) if (S[k] > c.max[k]) return false;
     return true;
@@ -460,6 +463,85 @@ function match(c = {}, event) {
 const MATCH_KEYS = ['job', 'age', 'cage', 'notRace', 'familia', 'familiaIn', 'residenceIn', 'locationIn', 'employerIn', 'hasEmployer', 'origin', 'race', 'hasFamilia',
     'hasPartner', 'noItem', 'relative', 'noRelative', 'flags', 'noFlags', 'falnaState', 'familiaRole', 'canEnterDungeon', 'min', 'max'];
 MATCH_KEYS.push('atSiteOf', 'inRecruitAreaOf');   // P3: 조직 시설·모집 지역 키(D-INSTITUTION §2). dungeonReach 는 P4
+MATCH_KEYS.push('dungeonReach');                   // P4(F-A): 사건 조건 전용. 선택지 조건 허용 목록(CHOICE_COND_KEYS)에는 넣지 않는다
+// ── F1D4A P4(F-A): 던전 접근 묶음 조건(D-WORLD §3.5, D-REGION §8.0.1 — 사용자 결정 게임 규칙). 판정 전용: S 쓰기 0·난수 0. ──
+// dungeonReach(e) = reachO1() || reachSecret(e). O1 = 현재 위치(S.location)만 본다(거주지·출생지 무관, 비밀 경로 상태를 읽지 않음).
+// 비밀 분기는 유효한 접근 객체(S.dungeonAccess)가 있을 때만 참이다. 접근 객체를 만드는 경로(메렌 비밀 통로 행동)는 미구현이므로 실제 생애에서는 항상 거짓.
+const IMPLEMENTED_ROUTES = Object.freeze(['melen_lake']);
+const SECRET_ACCESS_SCOPE = Object.freeze({ dive1: 61, routine: 21, purple_moth: 31 });   // 허용 사건 → 고정 최소 hp(SR-3, 사용자 승인)
+const DUNGEON_ACCESS_KEYS = Object.freeze(['via', 'routeId', 'grantedAge', 'cyclesLeft', 'scope', 'inUse']);
+const dungeonAccessDiagLog = [];   // S 밖 진단(lifeDigest 비입력). 오염 접근 객체를 고치거나 지우지 않고 판정만 거짓으로 한다
+function reachO1() { return !!(S.location && typeof S.location === 'object' && S.location.regionId === 'orario'); }
+function isPlainRecordForAccess(o) {
+    if (o === null || typeof o !== 'object' || Array.isArray(o)) return false;
+    const p = Object.getPrototypeOf(o);
+    return p === Object.prototype || p === null;
+}
+// own 데이터 속성 값 읽기(getter 를 부르지 않는다). 없거나 접근자면 { ok: false }.
+function ownDataValue(o, k) {
+    const d = Object.getOwnPropertyDescriptor(o, k);
+    if (!d || !Object.prototype.hasOwnProperty.call(d, 'value')) return { ok: false };
+    return { ok: true, value: d.value };
+}
+function ownKeysExactly(o, keys) {
+    const own = Reflect.ownKeys(o);
+    return own.length === keys.length && keys.every(k => own.includes(k));
+}
+// 실패 이유 문자열 또는 null(유효). 판정 중 예외는 'exception'.
+function dungeonAccessInvalidReason(a, e) {
+    try {
+        if (!isPlainRecordForAccess(a)) return 'not_plain_object';
+        if (!ownKeysExactly(a, DUNGEON_ACCESS_KEYS)) return 'outer_keys';
+        const v = {};
+        for (const k of DUNGEON_ACCESS_KEYS) { const r = ownDataValue(a, k); if (!r.ok) return 'outer_accessor'; v[k] = r.value; }
+        if (v.via !== 'secret_route') return 'via';
+        if (typeof v.routeId !== 'string' || !IMPLEMENTED_ROUTES.includes(v.routeId)) return 'route';
+        if (!Number.isInteger(v.cyclesLeft) || v.cyclesLeft < 1 || v.cyclesLeft > 2) return 'cycles';
+        if (!Number.isInteger(v.grantedAge) || v.grantedAge < 0 || !Number.isFinite(S.age) || v.grantedAge > S.age) return 'granted_age';
+        const sc = v.scope;
+        if (!Array.isArray(sc) || Object.getPrototypeOf(sc) !== Array.prototype) return 'scope_type';
+        const lenR = ownDataValue(sc, 'length');
+        if (!lenR.ok || !Number.isInteger(lenR.value) || lenR.value < 1 || lenR.value > 3) return 'scope_length';
+        const seen = [];
+        for (let i = 0; i < lenR.value; i++) {
+            const ir = ownDataValue(sc, String(i)); if (!ir.ok) return 'scope_item_accessor';
+            const it = ir.value;
+            if (!isPlainRecordForAccess(it) || !ownKeysExactly(it, ['eventId', 'minHp'])) return 'scope_item_shape';
+            const er = ownDataValue(it, 'eventId'), mr = ownDataValue(it, 'minHp');
+            if (!er.ok || !mr.ok) return 'scope_item_accessor';
+            if (typeof er.value !== 'string' || !Object.prototype.hasOwnProperty.call(SECRET_ACCESS_SCOPE, er.value)) return 'scope_event';
+            if (typeof mr.value !== 'number' || !Number.isFinite(mr.value) || mr.value !== SECRET_ACCESS_SCOPE[er.value]) return 'scope_min_hp';
+            if (seen.includes(er.value)) return 'scope_duplicate';
+            seen.push(er.value);
+        }
+        if (v.inUse !== null) {
+            if (typeof v.inUse !== 'string' || !seen.includes(v.inUse)) return 'in_use';
+            if (!e || v.inUse !== e.id) return 'in_use_other_event';
+        }
+        // 통로 물리 상태: S.world.routes[routeId].condition === 'open'. 세계 상태 모델(S.world)은 미구현(B3 (가))이므로 지금은 항상 여기서 거짓이 된다.
+        const w = S.world;
+        if (!isPlainRecordForAccess(w)) return 'world_missing';
+        const rr = ownDataValue(w, 'routes'); if (!rr.ok || !isPlainRecordForAccess(rr.value)) return 'world_routes';
+        const rt = ownDataValue(rr.value, v.routeId); if (!rt.ok || !isPlainRecordForAccess(rt.value)) return 'world_route';
+        const cd = ownDataValue(rt.value, 'condition'); if (!cd.ok || cd.value !== 'open') return 'route_not_open';
+        return null;
+    } catch (err) { return 'exception'; }
+}
+function validAccess(a, e) { return dungeonAccessInvalidReason(a, e) === null; }
+function reachSecret(e) {
+    try {
+        const a = S.dungeonAccess;
+        if (a === null || a === undefined) return false;   // 접근 상태 없음(정상): 진단 없음
+        if (!e || typeof e !== 'object' || typeof e.id !== 'string') return false;
+        const why = dungeonAccessInvalidReason(a, e);
+        if (why !== null) { dungeonAccessDiagLog.push({ kind: 'dungeon_access_invalid', reason: why, eventId: e.id, at: S.age }); return false; }
+        if (!Object.prototype.hasOwnProperty.call(SECRET_ACCESS_SCOPE, e.id)) return false;
+        const hits = a.scope.filter(it => it.eventId === e.id).length;
+        if (hits !== 1) return false;
+        return Number.isFinite(S.hp) && S.hp >= SECRET_ACCESS_SCOPE[e.id];   // 저장된 minHp 가 아니라 상수 사용
+    } catch (err) { return false; }
+}
+function dungeonReach(e) { return reachO1() || reachSecret(e); }
 // E-1.1 선택지 조건 허용 키(설계 목록 그대로). 관계 키(hasPartner·relative·noRelative)는 보조 함수가 S 를 정규화(쓰기)할 수 있어 제외.
 const CHOICE_COND_KEYS = ['job', 'age', 'cage', 'origin', 'race', 'notRace', 'flags', 'noFlags', 'falnaState', 'hasFamilia', 'familiaIn', 'familia', 'familiaRole',
     'canEnterDungeon', 'noItem', 'min', 'max', 'residenceIn', 'locationIn', 'employerIn', 'hasEmployer', 'atSiteOf', 'inRecruitAreaOf'];
@@ -830,6 +912,37 @@ function applyRecruit(spec) {
 }
 // F1-d4a 퇴직금 고정액(C31). **액수는 사용자 미결** — 숫자가 정해지기 전에는 null 로 두고 지급하지 않는다(임의 금액 금지).
 const SEVERANCE_AMOUNT = null;
+// ── F1D4A P4(F-A2, D-REGION §8.5.2~§8.5.4): 오라리오 소재 파밀리아 입단 성공 직후의 이주 선택. ──
+// 입단 성공 끝(rollFamiliaBody·completeConversion)에서 표시만 남기고(상태 효과 없음), chooseBody 의 후속 선택 단계에서 'relocate' 후속 선택으로 바꾼다.
+// 신생아 대조군(newborn_control)은 선택 문맥이 없으므로 표시를 만들지 않는다.
+function noteFamiliaJoined(famId, path) {
+    if (haltedEntry('noteFamiliaJoined')) return;   // 정지 가드
+    if (path === 'newborn_control') return false;
+    if (!Object.prototype.hasOwnProperty.call(FAMILIA_HOME, famId) || FAMILIA_HOME[famId] !== 'orario') return false;
+    const locO = !!(S.location && S.location.regionId === 'orario'), resO = !!(S.residence && S.residence.regionId === 'orario');
+    if (locO && resO) return false;   // 위치·거주지 둘 다 오라리오면 생략
+    S.pendingRelocationOffer = { familiaId: famId, path: String(path), at: S.age };
+    return true;
+}
+// 선택지 문구·프롬프트(B2 (가) 사용자 결정). 자동 진행은 이 종류만 무작위 1:1(B1 (가), R2-relocate). 수동 선택은 난수 0.
+FOLLOWUP_KINDS.relocate = {
+    prompt(S, p) {
+        const id = p && p.context ? p.context.familiaId : null;
+        const fam = gachaData.familias.find(f => f.id === id);
+        return `${fam ? fam.label : '파밀리아'}의 본거지는 오라리오에 있다. 거처를 옮길까?`;
+    },
+    options() { return [{ id: 'relocate', label: '오라리오로 이주한다' }, { id: 'stay', label: '지금 지역에 머문다', stay: true }]; },
+    resolve(S, optionId) {
+        if (optionId === 'relocate') {
+            // 필요한 쪽만 바꾼다(이미 오라리오인 쪽은 moveResidence·moveLocation 이 이력 무변화로 false). origin·직업·소속·팔나·고용처·가족·연애 불변.
+            const movedR = moveResidence('orario', 'relocation');
+            const movedL = moveLocation('orario', 'relocation');
+            if (movedR || movedL) say('오라리오로 거처를 옮겼다.', 'result');
+            return;
+        }
+        if (optionId !== 'stay') throw new Error('relocate: 알 수 없는 선택 ' + optionId);   // stay: 상태 불변
+    }
+};
 // ── F-1 후속 선택(일반 지원 거절·차단 뒤): 선택지 C25 + S-1. 자동 진행은 항상 stay(C21·C24). 선택지 노출은 C20(이미 서포터면 숨김). ──
 FOLLOWUP_KINDS.recruit_after_fail = {
     prompt: '앞으로 어떻게 지낼까?',
@@ -917,6 +1030,7 @@ function completeConversion(familiaId, reason) {
     pushFalnaTransition({ from, to: 'active', holderFrom: null, holderTo: fam.id, cause: from === 'sealed' ? 'regrant' : 'convert', reason: reason || null, eventId: S.currentEventId ?? null });
     S.falnaState = 'active'; S.falnaHolder = fam.id; S.conversionPending = null; S.statusResumeAge = null;   // N2-1b (가)·변경 이력 #2: 유예 없음(이전 S.age + 1)
     if (from === 'sealed') GameCore.Growth.carryPotential(S);   // N2-3c (나): 즉시 재수여에도 이월(봉인 기간 잠재력)
+    noteFamiliaJoined(fam.id, reason === 'god_returned' ? 'god_return_regrant' : String(reason || 'conversion'));   // F1D4A P4(F-A2): 입단 성공 끝(P3)
     return true;
 }
 
@@ -1280,6 +1394,7 @@ function rollFamiliaBody(forcedId, mode) {
     { const mem = S.familiaHistory[S.familiaHistory.length - 1]; if (mem) mem.role = (S.falnaAt != null || hasFalna()) ? 'member' : 'protected'; }
     apply(m.fx);
     checkFalna();
+    noteFamiliaJoined(S.familia.id, mode === undefined ? 'roll' : mode);   // F1D4A P4(F-A2): 입단 성공 끝(P1·P2). newborn_control 은 함수 안에서 제외
 }
 
 function checkFalna() {
@@ -1363,6 +1478,7 @@ function startLife() {
           // F1D4A P2(E-3): 출생 시 현재 위치 = 출생지. 거주지와 따로 만든다. 난수 0. lifeDigest 입력 아님.
           location: { regionId: origin.id, since: 0 }, locationHistory: [{ seq: 1, regionId: origin.id, from: 0, to: null, reason: 'birth', eventId: null }] };   // 2a: 비활성 데이터 모델(동작 연결 없음)
     S.statusResumeAge = null; S.patronAbsence = null;   // F1D4A N2: RA-1 형식(null 또는 안전한 정수), N2-6 (가) 부재 없음
+    S.pendingRelocationOffer = null; S.dungeonAccess = null;   // F1D4A P4: 이주 제안 표시 없음·던전 비밀 접근 상태 없음(D-WORLD WD-1)
     S.devAbilities = Object.freeze([]); S.devAbilityHistory = [];   // F1D4A D-DEVABIL: 새 생애는 이전 생애의 습득 상태를 승계하지 않는다
     eventCondMalformedSeen.clear();   // F1D4A D-LUCK 엔진 경계: 생애당 1회 진단 집합 초기화(S 밖)
     $('log').innerHTML = ''; $('choices').innerHTML = '';
@@ -1681,6 +1797,13 @@ function chooseBody(ch) {
         return endLife(); 
     }
     
+    // F1D4A P4(F-A2, D-REGION §8.5.3): 입단 성공 표시를 'relocate' 후속 선택으로 바꾼다. 사망 경로는 위에서 이미 반환했으므로 여기 오지 않는다.
+    //   다른 후속 선택이 이미 보류 중이면(중첩 금지) 진단 relocation_offer_conflict 를 남기고 제안을 버린다. 표시는 어느 쪽이든 지운다.
+    if (S.pendingRelocationOffer) {
+        const offer = S.pendingRelocationOffer; S.pendingRelocationOffer = null;
+        if (S.pendingFollowup) followupDiag('relocation_offer_conflict', { familiaId: offer.familiaId, path: offer.path });
+        else createFollowup('relocate', { familiaId: offer.familiaId, path: offer.path });
+    }
     // T1-F(C27): 사망·HP 0 판정을 지난 생존 경로에서만 후속 선택 화면을 띄운다. '다음 해로' 는 선택 처리 후에 만든다.
     if (S.pendingFollowup) {
         S.pendingFollowup.phase = 'awaiting_choice';
@@ -1725,8 +1848,9 @@ function renderFollowup() {
     const options = followupOptions(p);
     if (!kind || !options.length) return false;
     $('choices').innerHTML = '';
-    sayDomOnly(kind.prompt, 'event');
+    sayDomOnly(typeof kind.prompt === 'function' ? kind.prompt(S, p) : kind.prompt, 'event');
     let stayButton = null;
+    const relocateButtons = [];
     options.forEach(o => {
         const b = document.createElement('button');
         b.className = 'choice'; b.textContent = o.label;
@@ -1734,7 +1858,14 @@ function renderFollowup() {
         b.onclick = () => chooseFollowup(o.id);
         $('choices').appendChild(b);
         if (o.stay && !stayButton) stayButton = b;
+        relocateButtons.push(b);
     });
+    // F1D4A P4(F-A2-b, B1 (가)): 'relocate' 는 머묾 고정 처리보다 먼저 분기한다. 자동 진행이면 R2-relocate 콜백 하나만 예약하고 끝낸다(머묾 타이머 0).
+    //   콜백 안에서 버튼 수 기준 1:1 무작위 선택(Math.random 1회). 수동 진행은 난수 0.
+    if (p.kind === 'relocate') {
+        if ($('auto').checked) scheduleAuto(() => { const b = relocateButtons[Math.floor(Math.random() * relocateButtons.length)]; if (b && b.isConnected) b.click(); }, 800);   // R2-relocate
+        return true;
+    }
     // 자동 진행(C21·C24): 무작위 클릭 대신 '지금 생활을 이어간다' 를 고정 선택한다(난수 호출 없음).
     if ($('auto').checked && stayButton) scheduleAuto(() => stayButton.isConnected && stayButton.click(), 800);
     return true;
@@ -1795,6 +1926,8 @@ function endLife() {
     { const p = S ? S.pendingFollowup : null;
       if (p && p.phase !== 'resolving_event') { followupDiag('endlife_blocked'); return; }
       if (p) { followupDiag('followup_discarded_on_death'); S.pendingFollowup = null; } }
+    // F1D4A P4(D-REGION §8.5.3 r3.13): 실제로 생애를 끝내는 경우에만 이주 제안 표시·던전 접근 상태를 정리한다(위 가드에 막히면 여기 오지 않음).
+    S.pendingRelocationOffer = null; S.dungeonAccess = null;
     // v1.7.8-2i(⑤): 예외로 남은 기준값 정리. 정상 진행에서는 항상 null.
     if (S.syncBaseline) { recoverFromBaseline(S.syncBaseline, null, 'recovered_at_life_end'); S.syncBaseline = null; }
     S.currentEventId = null;
