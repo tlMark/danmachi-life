@@ -101,3 +101,15 @@ RESULT: PASS sites=192 anchorKeys=192 anchorTotal=220 fails=0   exit=0
 | seal 의 store_failed·counter_type | 미실행(계수 객체를 바꿀 경로가 모듈 밖에 없음 — ⑫ 로 정적 확인만) |
 | 허용 사이트 `parts` 의 T 번호 배정 | 검사기는 길이와 첫 번호만 확인한다. 위치별 번호 배정의 의미 검토는 문서 검토 대상 |
 | 가정 E(내장 객체 원래 구현) | 검사 범위 밖(설계 유지) |
+
+## 8. r2 추가(2026-11-27, 사용자 결정 D-1 = (가)+(나))
+
+- 측정 러너가 깨끗한 자식 프로세스에서 리스너 이름 기준을 얻고, init(ref) 가 init 시점 목록과 대조한다. 다르면 `hook_baseline_mismatch`, 기준 확보에 실패하면 `hook_reference_failed` 로 거부한다.
+- 결과
+  - ⑫ PASS(200키·229위치)
+  - ⑫-neg 57/57
+  - 고장 주입 51/51 + LIMIT 2(위장 선점 미검출, 원안 측정 불가)
+  - 비간섭 3000×2 바이트 동일
+- 자세한 내용은 `QA_RESPONSE_P4_GAINV2_r2.md` 와 `logs/ga_inv2_impl1/r2/` 에 있다.
+- 가정 P(init 이전의 위장 선점 없음)는 `measure/README.md` "가정" 절에 있다.
+

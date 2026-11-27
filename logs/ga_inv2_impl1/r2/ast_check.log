@@ -1,0 +1,11 @@
+# env: node v22.23.4, 2026-11-27T14:44:10Z, module sha256 762098dc7d3282411a9f34371a50035b8dd23f4b4a55e2069183e3c98d8becdd
+checker: acorn 8.15.0 (sha256 fdb08546776ec6228b03e8d02b40d4ab3255bae5f401adba7ff5dad927ac5c9c) opts {"ecmaVersion":2022,"sourceType":"script","allowHashBang":false,"locations":true,"ranges":true}
+target: /home/user/danmachi-life/measure/measure_module.js sha256 762098dc7d3282411a9f34371a50035b8dd23f4b4a55e2069183e3c98d8becdd
+PARTS init|CallExpression|RD_gopd(EE,name) #1 L141 ctx=stage1 parts=T7 의미=T7 OK
+PARTS init|CallExpression|RD_gopd(EE,name) #2 L151 ctx=stage2 parts=T10 의미=T10 OK
+PARTS init|CallExpression|RD_gopd(EE,name) #3 L157 ctx=stage3 parts=T10 의미=T10 OK
+PARTS init|CallExpression|RD_gopd(EE,name) #4 L166 ctx=catch parts=T9 의미=T9 OK
+PARTS init|MemberExpression|EE[name] #1 L150 ctx=stage2 parts=T8 의미=T8 OK
+PARTS init|MemberExpression|EE[name] #2 L167 ctx=catch parts=T9 의미=T9 OK
+RESULT: PASS sites=200 anchorKeys=200 anchorTotal=229 fails=0
+exit=0
