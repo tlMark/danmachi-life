@@ -248,9 +248,16 @@ test('S1 rollFamiliaBody 후보 선검증: 406a03b 와 상태·난수·예외 �
     '강제 후보': T => T.G("rollFamilia('hestia', 'initial_join')"),
     '무효 후보(예외)': T => { try { T.G("rollFamiliaBody('no_such_familia')"); return 'none'; } catch (e) { return String(e.message); } } };
   const EXC = ['statusResumeAge', 'patronAbsence'];   // N2 가 새로 두는 두 필드(startLife 초기화)는 비교에서 뺀다
+  // F1D4A P4(의도적 시험 변경): P4 가 새로 두는 두 필드(pendingRelocationOffer·dungeonAccess)도 비교에서 빼고, 아래 S1-P4 로 따로 검사한다.
+  EXC.push('pendingRelocationOffer', 'dungeonAccess');
   for (const [name, go] of Object.entries(scen)) {
-    const out = [BASE, null].map(root => { const T = makeCtx({ seed: 7, root: root || undefined }); T.G('startLife()'); T.S().age = 16; const c0 = T.calls(); const r = go(T); return { r, s: snap(T.S(), EXC), calls: T.calls() - c0 }; });
+    let p4 = null;
+    const out = [BASE, null].map(root => { const T = makeCtx({ seed: 7, root: root || undefined }); T.G('startLife()'); T.S().age = 16; const c0 = T.calls(); const r = go(T); const S = T.S();
+      if (!root) p4 = { offer: S.pendingRelocationOffer, access: S.dungeonAccess, fam: S.familia && S.familia.id, home: S.familia ? T.G('FAMILIA_HOME')[S.familia.id] : null, loc: S.location.regionId, res: S.residence.regionId };
+      return { r, s: snap(S, EXC), calls: T.calls() - c0 }; });
     check('S1 ' + name + ': 결과·S·난수 호출 수 동일', out[0].r === out[1].r && out[0].s === out[1].s && out[0].calls === out[1].calls, { r: [out[0].r, out[1].r], calls: [out[0].calls, out[1].calls] });
+    const want = p4.home === 'orario' && !(p4.loc === 'orario' && p4.res === 'orario') && out[1].r !== 'unknown familia: no_such_familia';
+    check('S1-P4 ' + name + ': dungeonAccess null · 이주 제안은 §8.5.2 조건일 때만(난수 0)', p4.access === null && (want ? (p4.offer && p4.offer.familiaId === p4.fam && p4.offer.path === 'initial_join' && p4.offer.at === 16) : p4.offer === null), p4);
   }
 });
 finish('n2_link_test');

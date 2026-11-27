@@ -886,6 +886,10 @@ const integrationScript = `
     // T1-F/F-1 후속 선택 계측(읽기 전용). 러너는 후속 화면에서 항상 '지금 생활을 이어간다' 를 난수 없이 고른다(C21·C24).
     const HAS_F1 = typeof FOLLOWUP_KINDS !== 'undefined' && typeof followupDiagLog !== 'undefined';
     const F1 = results.f1Followup = { hasF1: HAS_F1, followups: 0, byReason: {}, byKind: {}, supporterOptionShown: 0, badPhase: 0, applicationChanged: 0, stayStateChanged: 0, rngDuringStay: 0, notCleaned: 0, jobChangedByFollowup: 0, nextButtonBad: 0, pendingLeftAtLifeEnd: 0, livesWithFollowup: 0, fallbackSpecs: 0, diagByEvent: {}, diagUnitPhase: HAS_F1 ? followupDiagLog.length : 0 };
+    // F1D4A P4(F-A2): 이주 선택 집계·검사(읽기 전용). 위반은 invariantFailures 'p4:*' 로 남는다.
+    const P4 = results.p4Relocate = { shown: 0, byChoice: {}, byPath: {}, byFamilia: {}, moved: { residence: 0, location: 0 }, livesRelocated: 0, badPhase: 0, notCleaned: 0, nextButtonBad: 0, offerLeftAtYear: 0, offerLeftAtLifeEnd: 0, conflictDiag: 0, accessDiag: 0, failures: {} };
+    const p4Fail = k => { P4.failures[k] = (P4.failures[k] || 0) + 1; results.invariantFailures.push('p4:' + k); };
+    const p4Snap = () => JSON.stringify([S.origin && S.origin.id, S.job, S.jobSince, S.familia ? S.familia.id : null, S.familiaHistory, S.falnaState, S.falnaHolder, S.falnaHistory, S.flags, S.employer, S.relations, S.partnerId, S.level, S.abil, S.valis, S.hp, S.items, S.application]);
     if (HAS_F1) F1.fallbackSpecs = EVENTS.filter(event => JSON.stringify(event.choices).indexOf('"fallback"') >= 0).length;
     const f1Strip = (key, value) => (key === 'pendingFollowup' || key === 'currentEventId') ? undefined : value;
     let lifeDigest = 2166136261;
@@ -935,7 +939,29 @@ const integrationScript = `
                     if (S.job !== f1Job) F1.jobChangedByFollowup += 1;                            // F1-T12
                     const f1After = ($('choices').kids || []).filter(button => typeof button.onclick === 'function');
                     if (f1After.length !== 1 || f1After[0].textContent !== '다음 해로') F1.nextButtonBad += 1;
+                } else if (pick.kind === 'followup_relocate') {
+                    const p4p = S.pendingFollowup, choice = pick.button.dataset.followup;
+                    P4.shown += 1; tally(P4.byChoice, choice); tally(P4.byPath, String(p4p.context && p4p.context.path)); tally(P4.byFamilia, String(p4p.context && p4p.context.familiaId));
+                    if (p4p.phase !== 'awaiting_choice') P4.badPhase += 1;
+                    const fam0 = p4p.context && p4p.context.familiaId;
+                    if (!(S.familia && S.familia.id === fam0) || FAMILIA_HOME[fam0] !== 'orario') p4Fail('offer_familia_mismatch');
+                    if (S.location.regionId === 'orario' && S.residence.regionId === 'orario') p4Fail('offer_both_orario');
+                    const r0 = S.residence, l0 = S.location, rh0 = S.residenceHistory.length, lh0 = S.locationHistory.length, snap0 = p4Snap();
+                    pick.button.onclick();
+                    if (p4Snap() !== snap0) p4Fail('non_location_state_changed');   // FA2-T7: origin·직업·소속·팔나·고용처·가족·연애 불변
+                    if (choice === 'stay') {
+                        if (S.residence !== r0 || S.location !== l0 || S.residenceHistory.length !== rh0 || S.locationHistory.length !== lh0) p4Fail('stay_changed_location');
+                    } else {
+                        if (S.residence.regionId !== 'orario' || S.location.regionId !== 'orario') p4Fail('relocate_not_orario');
+                        const dr = S.residenceHistory.length - rh0, dl = S.locationHistory.length - lh0;
+                        if (dr !== (r0.regionId === 'orario' ? 0 : 1) || dl !== (l0.regionId === 'orario' ? 0 : 1)) p4Fail('relocate_history_delta');
+                        P4.moved.residence += dr; P4.moved.location += dl; if (dr || dl) P4.livesRelocated += 1;
+                    }
+                    if (S.pendingFollowup !== null || S.currentEventId !== null || S.pendingRelocationOffer !== null) P4.notCleaned += 1;
+                    const p4After = ($('choices').kids || []).filter(button => typeof button.onclick === 'function');
+                    if (p4After.length !== 1 || p4After[0].textContent !== '다음 해로') P4.nextButtonBad += 1;
                 } else {
+                    if (S.pendingRelocationOffer != null) { P4.offerLeftAtYear += 1; p4Fail('offer_left_before_action'); }   // 표시는 같은 chooseBody 안에서 소비되어야 한다
                     pick.button.onclick();
                 }
                 actions += 1;
@@ -995,6 +1021,7 @@ const integrationScript = `
                 __lifeDump.push({ i: run, d: fnv(2166136261, JSON.stringify([S.age, +S.physicalAge.toFixed(3), S.level, S.job, S.familia ? S.familia.id : null, Math.round(S.hp * 1000), S.valis, S.bond, S.power, S.cause, currentLifeEvents.join(',')])), pf: persistenceFail, job: S.job, sup: S.flags.includes('supporter'), fam: !!(S.familiaHistory || []).length, falna: (S.falnaHistory || []).length > 0, ev: currentLifeEvents.slice() });
             }
             if (S.pendingFollowup) F1.pendingLeftAtLifeEnd += 1;
+            if (S.pendingRelocationOffer !== null || S.dungeonAccess !== null) { P4.offerLeftAtLifeEnd += 1; p4Fail('state_left_at_life_end'); }   // FA2-D2: 정상 종료 뒤 null
             if (HAS_RI) {   // R-i 생애 단위 검사(읽기 전용)
                 RI.lives += 1;
                 const H = S.residenceHistory, R = S.residence, O = S.origin && S.origin.id;
@@ -1007,7 +1034,7 @@ const integrationScript = `
                         if (h.seq !== i + 1) riFail('seq_gap');
                         if (i < H.length - 1) { if (h.to !== H[i + 1].from) riFail('interval_not_contiguous'); if (h.to == null || h.to < h.from) riFail('bad_interval_end'); if (h.regionId === H[i + 1].regionId) riFail('same_region_move'); }
                         else if (h.to !== null) riFail('last_interval_closed');
-                        if (i > 0) { RI.moves += 1; tally(RI.movesByReason, h.reason); if (h.reason !== 'fled' && !(h.reason === 'retirement' && h.eventId === 'retire')) riFail('unapproved_move_reason'); }   // F1D4A P3 F-B(의도적 시험 변경): retire[1] 메렌 이주(이유 retirement, 사건 retire)만 추가 승인
+                        if (i > 0) { RI.moves += 1; tally(RI.movesByReason, h.reason); if (h.reason !== 'fled' && !(h.reason === 'retirement' && h.eventId === 'retire') && !(h.reason === 'relocation' && h.regionId === 'orario')) riFail('unapproved_move_reason'); }   // F1D4A P3 F-B(의도적 시험 변경): retire[1] 메렌 이주(이유 retirement, 사건 retire)만 추가 승인
                     }
                     const last = H[H.length - 1];
                     if (R.regionId !== last.regionId || R.since !== last.from) riFail('residence_history_mismatch');
@@ -1175,6 +1202,8 @@ const integrationScript = `
     results.residenceRi = RI;
     if (HAS_F1) {
         followupDiagLog.slice(F1.diagUnitPhase).forEach(entry => tally(F1.diagByEvent, entry.event));
+        P4.conflictDiag = followupDiagLog.slice(F1.diagUnitPhase).filter(entry => entry.event === 'relocation_offer_conflict').length;
+        if (typeof dungeonAccessDiagLog !== 'undefined') P4.accessDiag = dungeonAccessDiagLog.length;
         ['badPhase', 'applicationChanged', 'stayStateChanged', 'rngDuringStay', 'notCleaned', 'jobChangedByFollowup', 'nextButtonBad', 'pendingLeftAtLifeEnd', 'fallbackSpecs'].forEach(key => { if (F1[key]) results.invariantFailures.push('f1:' + key + '=' + F1[key]); });
         Object.keys(F1.diagByEvent).forEach(event => results.invariantFailures.push('f1:diag:' + event + '=' + F1.diagByEvent[event]));
     }
@@ -1329,6 +1358,7 @@ console.log('==== DanMachi Life Simulation Test ====',
     '\nv178:', JSON.stringify(results.v178),
     '\nresidenceRi:', JSON.stringify(results.residenceRi),
     '\nf1Followup:', JSON.stringify(results.f1Followup),
+    '\np4Relocate:', JSON.stringify(results.p4Relocate),
     '\nv1aRngRestore:', results.v1aRngRestore,
     '\nhpInvariants:', JSON.stringify({ regenMode: process.env.SIM_HP_REGEN_MODE || 'physical', negativeHpWhileAlive: results.negativeHpWhileAlive, negativeHpAtDeath: results.negativeHpAtDeath, hpDeathsWithRescueLeft: results.hpDeathsWithRescueLeft, minHpSeenAlive: results.minHpSeenAlive }),
     '\ndungeonEventAudit:', JSON.stringify(results.dungeonEventAudit),

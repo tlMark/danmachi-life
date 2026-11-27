@@ -188,7 +188,8 @@
                 startLife: { random: G('R4', 1), 'call-getRandomItemByWeight': G('R4', 4) },
                 nextYear: { random: G('R5', 1), 'call-getRandomItemByWeight': G('R1', 1) },
                 showEvent: { random: G('R2', 1) },
-                chooseBody: { random: G('R3', 1) }
+                chooseBody: { random: G('R3', 1) },
+                renderFollowup: { random: G('R2-relocate', 1) }   // F1D4A P4(의도적 시험 변경, D-REGION §8.5.4): relocate 후속 선택 자동 진행 콜백 1곳
             },
             'core/growth.js': { rollAnnualExcelia: { random: G('R4', 1) } },
             'core/relations.js': {
@@ -201,7 +202,7 @@
                 advanceYear: { random: G('R4', 3) }
             }
         },
-        harness: { driverChoose: { random: G('HARNESS', 1) } }   // 하네스 영역: 공통 드라이버의 버튼 선택 한 곳
+        harness: { driverChoose: { random: G('HARNESS', 1) }, driverChooseRelocate: { random: G('HARNESS-relocate', 1) } }   // 하네스 영역: 공통 드라이버의 버튼 선택 한 곳 + P4 이주 분기 한 곳(의도적 시험 변경)
     };
     const own = (o, k) => !!o && typeof k === 'string' && Object.prototype.hasOwnProperty.call(o, k);
 

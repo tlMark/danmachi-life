@@ -119,7 +119,12 @@ test('F1-T11 T-1 거절 문구: 치환자·접미사 규칙', () => {
 
 test('합격 경로: 후속 선택 없음 [합성: 심사 결과 고정]', () => {
   const { T, s } = prep({ job: 'child', age: 15 }); forceOutcome(T, 'accepted'); knock(T);
-  check('합격 → 입단·보류 없음·다음 해 버튼', !!s.familia && s.pendingFollowup === null && s.followupSeq === 0 && T.buttons().length === 1 && T.buttons()[0].textContent === '다음 해로');
+  // F1D4A P4(의도적 시험 변경): 합격 뒤에도 recruit_after_fail 은 없다. 다만 오라리오 소재 파밀리아 입단이고 위치·거주지가 둘 다 오라리오가 아니면
+  //   P4 이주 후속 선택(relocate)이 뜬다(D-REGION §8.5.2). 원래 단언: 보류 없음 · followupSeq 0 · '다음 해로' 1개.
+  const home = s.familia ? T.G('FAMILIA_HOME')[s.familia.id] : null, needOffer = home === 'orario' && !(s.location.regionId === 'orario' && s.residence.regionId === 'orario');
+  check('합격 → 입단·recruit_after_fail 없음·(조건부) 이주 선택 또는 다음 해 버튼', !!s.familia && (needOffer
+    ? (s.pendingFollowup && s.pendingFollowup.kind === 'relocate' && s.followupSeq === 1 && T.buttons().map(b => b.dataset && b.dataset.followup).join(',') === 'relocate,stay')
+    : (s.pendingFollowup === null && s.followupSeq === 0 && T.buttons().length === 1 && T.buttons()[0].textContent === '다음 해로')), { fam: s.familia && s.familia.id, home, loc: s.location.regionId, res: s.residence.regionId, pf: s.pendingFollowup && s.pendingFollowup.kind });
 });
 
 test('F1-T14 공통 수명주기: 문맥 복원·차단·정리', () => {
@@ -132,7 +137,8 @@ test('F1-T14 공통 수명주기: 문맥 복원·차단·정리', () => {
   pick(T, 'stay'); const seen = T.G('globalThis.__seen');
   check('F1-T14c sourceEventId·route·reason·currentEventId 복원', seen.ev === 'join_hard' && seen.src === 'join_hard' && seen.ctx === '{"route":"persistence","reason":"cooldown"}' && seen.phase === 'resolving_choice', seen);
   check('F1-T14d 처리 후 정리·다음 해 버튼', s.pendingFollowup === null && s.currentEventId === null && T.buttons().length === 1);
-  check('F1-T14e 등록된 kind 는 recruit_after_fail 하나(U-2b-9 선택지 미추가)', JSON.stringify(T.G('Object.keys(FOLLOWUP_KINDS)')) === '["recruit_after_fail"]');
+  // F1D4A P4(의도적 시험 변경): P4 가 relocate 종류를 더한다. 원래 단언: ["recruit_after_fail"]. U-2b-9 선택지 미추가(recruit_after_fail 선택지 불변)는 그대로.
+  check('F1-T14e 등록된 kind 는 recruit_after_fail · relocate(P4) 둘(U-2b-9 선택지 미추가)', JSON.stringify(T.G('Object.keys(FOLLOWUP_KINDS)').slice().sort()) === '["recruit_after_fail","relocate"]');
 });
 
 finish('f1_joinhard_test');

@@ -21,10 +21,11 @@ if [ -L "$C" ] || { [ ! -e "$C" ] && ! mkdir -- "$C" 2>/dev/null; } || [ -L "$C"
 fi
 # 이번 실행에서 반드시 끝나야 하는 항목(아래 run 호출과 1:1). 여기 없는 이름으로는 run 할 수 없고, 여기 있는데 기록이 없으면 실패다.
 # 10_feat_p5_test = P5 D-FEAT 시험(FD-1·3·5·6). BLOCKED 항목은 통과로 세지 않고 로그에 따로 남는다.
+# 10_p4_test = F1D4A P4 시험(F-A dungeonReach · F-A2 이주 선택 · HS-1 · 규칙 D, D-REGION §8.5.5). 추가 항목이며 기존 항목은 바꾸지 않는다.
 # 05·06 = F1 역사적 기준(logs/v178_f1, 보존·불변) 대조. 05m·06m = 현재 main 기준선(logs/baseline_main_f63c851) 대조. 서로 섞지 않고 각각 판정한다.
 # 05p·06p = P5 기준선(logs/baseline_main_3859123) 대조. 05·06·05m·06m 은 재정의하지 않으며 05p·06p 는 별도 비교 대상으로 독립 판정한다.
 vr_expect 01_syntax 02_tr_20261104 03_tr_777 04_digest10_vs_F1 05_f1_byte_compare 05m_main_byte_compare 05p_p5_byte_compare 06_digest10_strict 06m_digest10_strict_main 06p_digest10_strict_p5 07_verify_run_selftest \
-    10_followup_pf_test 10_followup_halt_test 10_f1_joinhard_test 10_f1_transition_test 10_god_gone_2ba_test 10_residence_ri_test 10_sync_2i_test 10_jobsince_test 10_recruit_2bb_test 10_feat_p5_test \
+    10_followup_pf_test 10_followup_halt_test 10_f1_joinhard_test 10_f1_transition_test 10_god_gone_2ba_test 10_residence_ri_test 10_sync_2i_test 10_jobsince_test 10_recruit_2bb_test 10_feat_p5_test 10_p4_test \
     11_f1_mutation 12_jobsince_mutation 13_recruit_2bb_mutation 14_d3_wiring_mutation \
     20_browser_file 21_browser_inline 30_rng_sites_test 31_rng_timer_test 40_cmp_physical 41_cmp_off 42_cmp_cal_newborn
 syntax() { local bad=0; for f in *.js core/*.js tests/*.js tests/lib/*.js; do node --check "$f" || { echo "FAIL $f"; bad=1; }; done; return $bad; }
@@ -63,7 +64,7 @@ p5cmp() {   # P5 기준선(3859123) 로그와의 바이트 비교(증빙: 양쪽
     done
     return $bad
 }
-regress9() { local t; for t in followup_pf_test followup_halt_test f1_joinhard_test f1_transition_test god_gone_2ba_test residence_ri_test sync_2i_test jobsince_test recruit_2bb_test feat_p5_test; do run 10_$t node tests/$t.js; done; }
+regress9() { local t; for t in followup_pf_test followup_halt_test f1_joinhard_test f1_transition_test god_gone_2ba_test residence_ri_test sync_2i_test jobsince_test recruit_2bb_test feat_p5_test p4_test; do run 10_$t node tests/$t.js; done; }
 mut3() { run 12_jobsince_mutation node tests/jobsince_mutation.js; run 13_recruit_2bb_mutation node tests/recruit_2bb_mutation.js; run 14_d3_wiring_mutation node tests/d3_wiring_mutation.js; }
 rngtests() { run 30_rng_sites_test node tests/rng_sites_test.js; run 31_rng_timer_test node tests/rng_timer_test.js lives=20; }
 run 01_syntax syntax

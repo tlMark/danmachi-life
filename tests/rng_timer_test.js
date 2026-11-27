@@ -155,7 +155,8 @@ async function chromiumPage(browser, timerCapMs) {
                 ["            S.age = 35; S.physicalAge = 35; S.phase = 35;\n            const hero = EVENTS.find(e => e.id === 'hero_sacrifice');",
                  "            S.age = 35; S.physicalAge = 35; S.phase = 35;\n            if (S.location) S.location = { regionId: 'orario', since: S.location.since };   // F1D4A P3 F-E(의도적 시험 변경): F-D 로 hero_sacrifice 에 locationIn:['orario'] 이 붙어 고정 상태에 위치를 명시(레벨 관문 판정 의도 유지)\n            const hero = EVENTS.find(e => e.id === 'hero_sacrifice');"],
                 ["if (i > 0) { RI.moves += 1; tally(RI.movesByReason, h.reason); if (h.reason !== 'fled') riFail('unapproved_move_reason'); }",
-                 "if (i > 0) { RI.moves += 1; tally(RI.movesByReason, h.reason); if (h.reason !== 'fled' && !(h.reason === 'retirement' && h.eventId === 'retire')) riFail('unapproved_move_reason'); }   // F1D4A P3 F-B(의도적 시험 변경): retire[1] 메렌 이주(이유 retirement, 사건 retire)만 추가 승인"]];
+                 // F1D4A P4(의도적 시험 변경): 현재 러너의 이 줄은 P4 이주(이유 relocation, 목적지 orario)도 허용한다. 원래 치환 결과: P3 줄(retire 만 추가 허용)
+                 "if (i > 0) { RI.moves += 1; tally(RI.movesByReason, h.reason); if (h.reason !== 'fled' && !(h.reason === 'retirement' && h.eventId === 'retire') && !(h.reason === 'relocation' && h.regionId === 'orario')) riFail('unapproved_move_reason'); }   // F1D4A P3 F-B(의도적 시험 변경): retire[1] 메렌 이주(이유 retirement, 사건 retire)만 추가 승인"]];
             const p3compat = src => P3_COMPAT.reduce((acc, [from, to], i) => { if (acc.split(from).length !== 2) throw new Error('TM-2b P3 어댑터 #' + i + ': 치환 대상이 1곳이 아님'); return acc.replace(from, () => to); }, src);
             check('TM-2b P3 어댑터: 두 치환문이 현재 러너에 그대로 들어 있음(현재 러너와 같은 입력 상태) · F1 원본에는 각 1곳', P3_COMPAT.every(([from, to]) => cur.split(to).length === 2 && g.stdout.split(from).length === 2));
             const f1 = mk(p3compat(g.stdout)), now = mk(cur);
@@ -182,7 +183,9 @@ async function chromiumPage(browser, timerCapMs) {
             check('TM-2b 실행 유효성(변이 러너): 같은 조건 — 실행 실패·자료 누락은 변이 검출로 인정하지 않음', valid(mutant), JSON.stringify(why(mutant)));
             const allValid = valid(f1) && valid(now) && valid(mutant);
             check('TM-2b 사건별 귀속: 현재 러너의 rollCalls · rollModes · rollModeByEvent 가 F1 러너와 같음', allValid && J(parts(f1).rollCalls) === J(parts(now).rollCalls) && J(parts(f1).rollModes) === J(parts(now).rollModes) && J(parts(f1).rollModeByEvent) === J(parts(now).rollModeByEvent));
-            check('TM-2b 자동 진행 러너의 출력 전체(lifeDigest · 사건 집계 포함)가 F1 러너와 같음', allValid && f1.out === now.out && f1.lifeDigest === now.lifeDigest);
+            // F1D4A P4(의도적 시험 변경): 현재 러너는 P4 이주 선택 집계 줄(p4Relocate:)을 더 출력한다. F1 러너에는 그 집계가 없으므로 그 한 줄만 빼고 비교한다(원래 단언: f1.out === now.out).
+            const noP4 = o => o.split('\n').filter(l => !/^p4Relocate:/.test(l)).join('\n');
+            check('TM-2b 자동 진행 러너의 출력 전체(lifeDigest · 사건 집계 포함, p4Relocate 줄 제외)가 F1 러너와 같음', allValid && f1.out === noP4(now.out) && now.out.split('\n').filter(l => /^p4Relocate:/.test(l)).length === 1 && f1.lifeDigest === now.lifeDigest);
             check('TM-2b 변이 전제: 세 러너의 rollFamilia 호출 수 · lifeDigest · rollModes 가 같음(차이가 사건 귀속에서만 나야 함)', allValid && rolls(mutant) === rolls(f1) && rolls(now) === rolls(f1) && mutant.lifeDigest === f1.lifeDigest && J(parts(mutant).rollModes) === J(parts(f1).rollModes));
             check('TM-2b 변이: 활성 사건 스택을 쓰지 않으면 사건별 귀속(rollCalls 와 rollModeByEvent 둘 다)이 F1 과 달라짐 — 시험이 결함을 잡음', allValid && rolls(mutant) === rolls(f1) && mutant.lifeDigest === f1.lifeDigest && J(parts(mutant).rollModes) === J(parts(f1).rollModes) && J(parts(mutant).rollCalls) !== J(parts(f1).rollCalls) && J(parts(mutant).rollModeByEvent) !== J(parts(f1).rollModeByEvent));
             {   // 유효성 검사 자체의 변이: 자료가 빠지거나 형식이 틀린 결과는 유효하지 않다고 판정해야 한다

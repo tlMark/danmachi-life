@@ -170,8 +170,12 @@ test('DR-5 conscript[1] 도주 성공: 거주지·위치 둘 다 orario(이유 f
   withRandom(U, 0.999, () => U.G("choose(EVENTS.find(e => e.id === 'conscript').choices[1])"));
   check('DR5-d 도주 실패: 거주·위치 rakia 그대로, 이력 1구간', u.residence.regionId === 'rakia' && u.location.regionId === 'rakia' && u.residenceHistory.length === 1 && u.locationHistory.length === 1);
 });
-test('DR-2 B 보류 확인: conscript 사건 조건은 바뀌지 않음(origin rakia, 달력 17~28)', () => {
-  const T = makeCtx(); check('HOLD-1', JSON.stringify(E(T, 'conscript').cond) === '{"cage":[17,28],"origin":["rakia"]}');
+// F1D4A P4(의도적 시험 변경, 사용자 결정 2026-11-27 "규칙 D만 적용"): D-REGION §3.1 규칙 D(다른 지역 거주 라키아 출생자는 징집 대상 아님, 게임 고유)만 적용한다.
+//   원래 단언: cond === {"cage":[17,28],"origin":["rakia"]}. DR-2 A(아레스 병사 동원)·B(무소속 조건)·C(종속 파밀리아)는 여전히 보류(미구현).
+test('DR-2 규칙 D만 적용: conscript 사건 조건 = origin rakia + residenceIn rakia(달력 17~28). A·B·C 보류', () => {
+  const T = makeCtx(); check('HOLD-1', JSON.stringify(E(T, 'conscript').cond) === '{"cage":[17,28],"origin":["rakia"],"residenceIn":["rakia"]}');
+  for (const res of REGIONS) { const U = makeCtx(); placeAt(U, { origin: 'rakia', residence: res, location: res, age: 20 });
+    check('HOLD-1d 라키아 출생 · 거주 ' + res + ' → 징집 후보 ' + (res === 'rakia'), cond(U, 'conscript') === (res === 'rakia')); }
 });
 
 // ── F-B retire[1] ────────────────────────────────────────────────────────────────
@@ -204,7 +208,9 @@ test('F-D hero_sacrifice: 위치 orario 일 때만(게임 고유 규칙), 레벨
 // ── 보류 항목·다른 사건 불변 ───────────────────────────────────────────────────────
 test('보류 항목은 바뀌지 않음: tavern · lost_child · city_disaster · healer_shift · join_hard · 방문 사건 5종', () => {
   const T = makeCtx();
-  for (const id of ['tavern', 'lost_child', 'city_disaster', 'healer_shift', 'join_hard', 'buy_dual_potion', 'craft_drop_weapon', 'buy_pyonkichi', 'magic_sword_crozzo', 'buy_elemental_cloth']) {
+  // F1D4A P4(의도적 시험 변경): healer_shift 는 HS-1(D-REGION §8.0.1)로 locationIn:['orario'] 를 받으므로 보류 목록에서 빼고 아래 HS-1 단언으로 옮긴다.
+  check('HS-1 healer_shift 조건 = 기존 + locationIn orario 만', JSON.stringify(E(T, 'healer_shift').cond) === '{"age":[18,80],"job":["healer"],"locationIn":["orario"]}' && (E(T, 'healer_shift').choices || []).every(c => !c.cond));
+  for (const id of ['tavern', 'lost_child', 'city_disaster', 'join_hard', 'buy_dual_potion', 'craft_drop_weapon', 'buy_pyonkichi', 'magic_sword_crozzo', 'buy_elemental_cloth']) {
     const e = E(T, id); if (!e) { check('HOLD-2 ' + id + ' (데이터에 없음)', true); continue; }
     const keys = JSON.stringify([e.cond || {}].concat((e.choices || []).map(c => c.cond || null)));
     check('HOLD-2 ' + id + ' 에 지역·시설 조건 키 없음', !/locationIn|residenceIn|atSiteOf|inRecruitAreaOf|dungeonReach/.test(keys), keys);

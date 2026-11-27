@@ -138,6 +138,7 @@ test('EN-12 조건 키·값 정적 검사', () => {
     hasFamilia: v => typeof v === 'boolean', hasPartner: v => typeof v === 'boolean', hasEmployer: v => typeof v === 'boolean', canEnterDungeon: v => v === true };
   for (const k of ['notRace', 'familia', 'familiaIn', 'residenceIn', 'locationIn', 'employerIn', 'origin', 'race', 'noItem', 'relative', 'noRelative', 'flags', 'noFlags', 'falnaState', 'familiaRole']) SHAPE[k] = strArr;
   SHAPE.atSiteOf = SHAPE.inRecruitAreaOf = v => typeof v === 'string' && v.length > 0;   // F1D4A P3(의도적 시험 변경): 조직 id 문자열 키 추가(D-INSTITUTION §3)
+  SHAPE.dungeonReach = v => v === true;   // F1D4A P4(의도적 시험 변경): 값은 정확히 true(D-WORLD §3.5 r3.11, DR-T6)
   check('EN-12 형식 표가 MATCH_KEYS 전체를 덮음', MK.every(k => SHAPE[k]) && Object.keys(SHAPE).length === MK.length);
   const badKey = [], badVal = []; let nEv = 0, nCh = 0;
   for (const e of T.G('EVENTS')) {
@@ -147,7 +148,11 @@ test('EN-12 조건 키·값 정적 검사', () => {
   }
   check('EN-12a 모든 사건·선택지 조건 키가 match 판정 키(사건 ' + nEv + ', 선택지 ' + nCh + ')', badKey.length === 0, badKey);
   check('EN-12b 값 형식', badVal.length === 0, badVal);
-  check('EN-12c dungeonReach: P2 미구현 키 — 데이터 사용 0건(설계의 17건 부착은 P4)', T.G('EVENTS').every(e => !('dungeonReach' in (e.cond || {}))) && !MK.includes('dungeonReach'));
+  // F1D4A P4(의도적 시험 변경): P2 의 'dungeonReach 미사용' 단언을 P4 계약으로 바꾼다. 원래 단언: 데이터 사용 0건 && MATCH_KEYS 미포함.
+  { const DUN = Object.keys(T.G('EVENT_AREA')).filter(id => T.G('EVENT_AREA')[id][0] === 'dungeon');
+    check('EN-12c dungeonReach: P4 판정 키 — 던전 사건 17건에만 정확히 true, 선택지 조건 허용 목록 밖', MK.includes('dungeonReach') && DUN.length === 17
+      && T.G('EVENTS').every(e => DUN.includes(e.id) ? (e.cond && e.cond.dungeonReach === true) : !('dungeonReach' in (e.cond || {})))
+      && T.G('EVENTS').every(e => (e.choices || []).every(ch => !ch.cond || !('dungeonReach' in ch.cond))) && !T.G('CHOICE_COND_KEYS').includes('dungeonReach'), DUN.length); }
 });
 
 // ── E-1.2 nextYear ⑩·⑫ ─────────────────────────────────────────────────────────

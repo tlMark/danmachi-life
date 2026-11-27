@@ -105,19 +105,23 @@ const src = sites.filter(s => s.area === 'source');
 //   cec18a9 줄 → 이번 줄: 129→132, 934→958, 1041→1065, 1196→1222, 1283→1309, 1315→1341 / 호출 457→460, 1003~1005→1027~1029, 1043→1067, 1210→1236
 // F1D4A N2(RB-1 원자 롤백 확장·N2 팔나 연결 함수·관문 추가): 다시 줄 번호만 이동(분류·개수 불변, 새 난수 지점 없음).
 //   406a03b 줄 → 이번 줄: 132→389, 958→1277, 1065→1386, 1222→1543, 1309→1630, 1341→1662 / 호출 460→771, 1027~1029→1347~1349, 1067→1388, 1236→1557
-const EXPECT_DIRECT = { 'script.js': { 6: '(wrapper)', 389: '(shared)', 1277: 'R4', 1386: 'R4', 1543: 'R5', 1630: 'R2', 1662: 'R3' }, 'core/growth.js': { 102: 'R4' },
+// F1D4A P4(의도적 시험 변경, D-REGION §8.5.4): 새 지점 2곳 — 게임 renderFollowup 의 relocate 자동 진행 콜백(R2-relocate, script.js 1866)과
+//   하네스 driverChooseRelocate(HARNESS-relocate). 그 밖의 지점은 줄 번호만 이동(분류·개수 불변).
+//   819f8e8 줄 → 이번 줄: 389→390, 1277→1391, 1386→1502, 1543→1659, 1630→1746, 1662→1778 / 호출 771→853, 1347~1349→1462~1464, 1388→1504, 1557→1673
+//   원래 단언: script.js 직접 7곳, Math.random 20곳, 하네스 driverChoose 1곳, 지점 합계 31(게임 30 + 하네스 1).
+const EXPECT_DIRECT = { 'script.js': { 6: '(wrapper)', 390: '(shared)', 1391: 'R4', 1502: 'R4', 1659: 'R5', 1746: 'R2', 1778: 'R3', 1866: 'R2-relocate' }, 'core/growth.js': { 102: 'R4' },
     'core/relations.js': { 89: '(shared)', 113: 'R4', 150: 'R4', 153: 'R4', 174: 'R4', 186: 'R4', 187: 'R4', 196: 'R4', 207: 'R4', 253: 'R4', 257: 'R4', 271: 'R4' } };
-const EXPECT_CALL = { 'script.js': { 771: 'R4', 1277: 'R4', 1347: 'R4', 1348: 'R4', 1349: 'R4', 1388: 'R4', 1557: 'R1' }, 'core/relations.js': { 115: 'R4', 154: 'R4', 194: 'R4' } };
+const EXPECT_CALL = { 'script.js': { 853: 'R4', 1391: 'R4', 1462: 'R4', 1463: 'R4', 1464: 'R4', 1504: 'R4', 1673: 'R1' }, 'core/relations.js': { 115: 'R4', 154: 'R4', 194: 'R4' } };
 const asTable = kind => { const o = {}; for (const s of src.filter(x => x.kind === kind)) { (o[s.file] = o[s.file] || {})[s.line] = s.cls; } return o; };
-check('지점 표: Math.random 표현 20곳의 (파일, 줄, 분류)가 설계 §4.1.1 표와 같음', eq(asTable('direct'), EXPECT_DIRECT), JSON.stringify(asTable('direct')));
-check('지점 표: 공유·래퍼 함수 호출 10곳의 (파일, 줄, 분류)가 설계 표와 같음(R1 은 nextYear 1557 한 곳 — F1 885)', eq(asTable('call'), EXPECT_CALL), JSON.stringify(asTable('call')));
+check('지점 표: Math.random 표현 21곳의 (파일, 줄, 분류)가 설계 §4.1.1 표와 같음', eq(asTable('direct'), EXPECT_DIRECT), JSON.stringify(asTable('direct')));
+check('지점 표: 공유·래퍼 함수 호출 10곳의 (파일, 줄, 분류)가 설계 표와 같음(R1 은 nextYear 1673 한 곳 — F1 885)', eq(asTable('call'), EXPECT_CALL), JSON.stringify(asTable('call')));
 {   // 독립 정적 검색: 주석을 뺀 줄에서 Math.random 을 센다
     let n = 0; texts.forEach(t => t.split('\n').forEach(l => { const code = l.replace(/\/\/.*$/, ''); n += (code.match(/Math\.random/g) || []).length; }));
-    check('지점 표: 항목 수 = 독립 정적 검색 결과 수(Math.random 20)', n === 20 && src.filter(s => s.kind === 'direct').length === 20, 'grep=' + n);
+    check('지점 표: 항목 수 = 독립 정적 검색 결과 수(Math.random 21)', n === 21 && src.filter(s => s.kind === 'direct').length === 21, 'grep=' + n);
 }
 check('지점 표: 분류되지 않은 지점(UNKNOWN) 0, 지점 id 중복 0', sites.every(s => s.cls !== 'UNKNOWN') && new Set(sites.map(s => s.id)).size === sites.length);
 const hs = sites.filter(s => s.area === 'harness');
-check('지점 표: 하네스 영역의 Math.random 호출 지점은 driverChoose 한 곳(HARNESS)', hs.length === 1 && hs[0].fn === 'driverChoose' && hs[0].cls === 'HARNESS', JSON.stringify(hs.map(s => s.id + ':' + s.cls)));
+check('지점 표: 하네스 영역의 Math.random 호출 지점은 driverChoose(HARNESS)·driverChooseRelocate(HARNESS-relocate) 두 곳', hs.length === 2 && hs.some(s => s.fn === 'driverChoose' && s.cls === 'HARNESS') && hs.some(s => s.fn === 'driverChooseRelocate' && s.cls === 'HARNESS-relocate'), JSON.stringify(hs.map(s => s.id + ':' + s.cls)));
 check('지점 표: 러너가 기록한 표와 같음', eq(J.sites.map(s => [s.id, s.file, s.line, s.col, s.cls]), sites.map(s => [s.id, s.file, s.line, s.col, s.cls])));
 check('지점 표: lineage.js · recruit.js 의 주석 속 "Math.random" 은 지점이 아님', sites.every(s => s.file !== 'core/lineage.js' && s.file !== 'core/recruit.js'));
 
@@ -140,8 +144,8 @@ check('지점 표: lineage.js · recruit.js 의 주석 속 "Math.random" 은 지
     check('지점 표: 호출식(뒤에 "(" — 공백 허용)만 지점. 대입·참조·비교·문자열·주석·템플릿 본문·다른 객체 속성·다른 이름은 제외', st.length === 2 && st[0].fn === 'a' && st[1].fn === 'e' && st.every(s => s.cls === 'R4'), JSON.stringify(st.map(s => s.id)));
     const pageHarness = ['tests/lib/rng_core.js', 'tests/lib/rng_sites.js', 'tests/lib/commit_queue.js', 'tests/lib/driver_core.js', 'tests/lib/page_driver.js'].map(read).join('\n');
     const ph = R.buildSiteTable([{ area: 'harness', file: 'harness', text: pageHarness }]);
-    check('지점 표: Chromium 주입 하네스의 호출 지점도 driverChoose 한 곳(페이지 어댑터의 Math.random 대입·비교 참조는 지점이 아님)', ph.length === 1 && ph[0].id === 'harness:driverChoose:random#1' && ph[0].cls === 'HARNESS' && /Math\.random = recordedRandom/.test(pageHarness), JSON.stringify(ph.map(s => s.id)));
-    check('지점 표: Node 와 Chromium 의 지점 수가 같음(게임 30 + 하네스 1 = 31)', sites.length === 31 && src.length + ph.length === 31);
+    check('지점 표: Chromium 주입 하네스의 호출 지점도 driverChoose·driverChooseRelocate 두 곳(페이지 어댑터의 Math.random 대입·비교 참조는 지점이 아님)', ph.length === 2 && ph.some(x => x.id === 'harness:driverChoose:random#1' && x.cls === 'HARNESS') && ph.some(x => x.id === 'harness:driverChooseRelocate:random#1' && x.cls === 'HARNESS-relocate') && /Math\.random = recordedRandom/.test(pageHarness), JSON.stringify(ph.map(s => s.id)));
+    check('지점 표: Node 와 Chromium 의 지점 수가 같음(게임 31 + 하네스 2 = 33)', sites.length === 33 && src.length + ph.length === 33);
 }
 // ── 명시적 허용 목록(와일드카드 없음)과 판정 불가 구조 ───────────────────────────────────────
 {
