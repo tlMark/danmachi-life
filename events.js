@@ -78,7 +78,7 @@ const EVENT_AREA = {
     find_grimoire: ['dungeon'], daedalus_orb: ['dungeon'], floor_boss_upper: ['dungeon'], mid_floor_expedition: ['dungeon'],
     deep_floor_survey: ['dungeon'], floor_lord_hunt: ['dungeon'], legend_clash: ['dungeon'],
     supporter_route: ['dungeon'],
-    free_supporter_route: ['supporter_accompany'],
+    free_supporter_route: ['surface'],   // F1D4A G1-가(사용자 결정 2026-11-27, D-FSR §3): 지상 짐 운반 일로 재설계. 'supporter_accompany' 분류는 소속 사건 0개(앞으로 쓰려면 별도 설계·승인)
     sea: ['surface_ref', '항구에 흘러나온 몬스터와의 조우. 던전 내부 탐색이 아님(melen 출신 한정)'],
     healer_shift: ['surface_ref', '치료소에서 던전 부상자를 돌봄. 던전에 들어가지 않음'],
     parent_worry: ['surface_ref', '부모의 편지. 던전 활동 없음'],
@@ -314,12 +314,13 @@ const EVENTS = [
         { label: '운반량을 줄이고 귀환 경로를 확보한다', text: '원정대가 무사히 귀환해 당신의 판단을 인정했다.', fx: { bond: 3, valis: 700 } },
         { label: '추가 물자를 더 챙긴다', chance: { p: 0.55, stat: 'agi', per: 0.001, ok: { text: '예상치 못한 상황에 대비할 수 있었다.', fx: { valis: 900, bond: 1 } }, fail: { text: '무거운 짐 때문에 부상을 입었다.', fx: { hp: -12 } } } }
     ] },
-    // 프리 서포터 예외(원작 프로토타입 22화: 무소속 프리 서포터는 팔나가 없고, 위험·보수 때문에 보통 던전에 들어가지 않는다).
-    // 팔나·파밀리아 없음 + 빈곤(발리스 상한) + 평생 1회 + 낮은 가중치. 위험은 실제 사망 가능성을 포함한다(임의 밸런스 값).
-    { id: 'free_supporter_route', w: 3, once: true, cond: { age: [16, 50], job: ['supporter'], noFlags: ['falna'], hasFamilia: false, max: { valis: 3000 } }, text: '무소속 서포터로는 일감이 끊겼다. 생활비가 바닥난 당신에게 팔나 없이 던전에 동행하면 큰 일당을 주겠다는 파티가 접근했다. 팔나가 없으니 몬스터의 일격이 곧 목숨이다.', choices: [
-        { label: '거절하고 지상의 허드렛일을 찾는다', text: '일당은 적었지만 목숨은 지켰다.', fx: { valis: 200, bond: 1 } },
-        { label: '상층 입구까지만 짐을 나른다', chance: { p: 0.8, stat: 'agi', per: 0.002, ok: { text: '무사히 짐을 넘기고 일당을 받았다.', fx: { valis: 900 } }, fail: { text: '고블린 무리에 쫓겨 크게 다쳤다.', fx: { hp: -35 } } } },
-        { label: '큰 일당을 위해 중층 동행까지 받아들인다', chance: { p: 0.45, stat: 'agi', per: 0.003, ok: { text: '팔나도 없이 중층을 다녀와 큰돈을 쥐었다. 두 번 다시 하고 싶지 않다.', fx: { valis: 3000, bond: -1, hp: -10 } }, fail: { text: '파티가 무너지며 팔나 없는 몸으로는 버틸 수 없었다.', fx: { die: true } } } }
+    // (이전 설계, G1-가 이전) 프리 서포터 예외: 원작 프로토타입 22화 근거(무소속 프리 서포터는 팔나가 없고 위험·보수 때문에 보통 던전에 들어가지 않는다 — QA 인용, 원문 미대조).
+    //   팔나·파밀리아 없음 + 빈곤(발리스 상한) + 평생 1회 + 낮은 가중치는 유지. 던전 동행·사망 가능성은 G1-가에서 없앴다.
+    // F1D4A G1-가(사용자 결정 2026-11-27): 조건 원문 유지(RT-6~8). 던전 동행·사망 경로 제거 → 지상 짐 운반 일. 금지 효과(die·음수 hp·직업·소속·팔나·거주·위치·feat) 없음. 수치는 결정 요청서 G1-가 그대로(게임 고유)
+    { id: 'free_supporter_route', w: 3, once: true, cond: { age: [16, 50], job: ['supporter'], noFlags: ['falna'], hasFamilia: false, max: { valis: 3000 } }, text: '일감이 끊긴 서포터에게 지상의 짐 운반 일이 들어왔다.', choices: [
+        { label: '창고 하역과 물자 정리를 맡는다', text: '하루 종일 짐을 내리고 정리해 일당을 받았다.', fx: { valis: 600 } },
+        { label: '상점과 공방 사이 배송을 맡는다', chance: { p: 0.7, stat: 'agi', per: 0.002, ok: { text: '약속한 시간 안에 배송을 마쳐 웃돈을 받았다.', fx: { valis: 1000 } }, fail: { text: '길이 막혀 늦었고 일당이 깎였다.', fx: { valis: 200 } } } },
+        { label: '일을 거절하고 쉰다', text: '무리하지 않고 하루를 쉬며 몸을 돌봤다.', fx: { bond: 1 } }
     ] },
     { id: 'blacksmith_order', w: 18, cool: 3, maxTimes: 2, cond: { age: [18, 75], job: ['blacksmith'] }, text: '단골 모험자가 중요한 원정을 앞두고 무기 점검을 맡겼다. 작은 결함도 목숨을 위협할 수 있다.', choices: [
         { label: '시간을 들여 정밀하게 수리한다', text: '무기의 균형을 바로잡아 단골의 신뢰를 얻었다.', fx: { valis: 800, bond: 3 } },
