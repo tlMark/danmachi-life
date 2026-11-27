@@ -1,0 +1,58 @@
+PASS F1-T13a events.js 에 fallback 속성 0
+PASS F1-T13b applyRecruit 에 fallback 분기 0
+PASS F1-T13c 후속 선택 지정은 join_hard(persistence) 하나뿐
+PASS F1-T13d 다른 recruit spec 불변(join·career_choice self_apply, latejoin scout)
+PASS F1-T1 0 실제 심사 거절 시드 존재
+PASS F1-T1a 직업·고용처·flags·valis·팔나·소속 동일
+PASS F1-T1b application: attemptSeq +1·history rejected 1건 추가·blocked 불변·current null
+PASS F1-T1c 후속 화면 표시(awaiting_choice)·다음 해 버튼 없음
+PASS F1-T1d 주 RNG = 후보 선택 1회
+PASS F1-T2 / CD-1·CD-4 cooldown 차단 [합성 상태 주입] a 차단 사유 cooldown
+PASS F1-T2 / CD-1·CD-4 cooldown 차단 [합성 상태 주입] b 직업·고용처·flags·valis·팔나·소속 동일(자동 대체 효과 0)
+PASS F1-T2 / CD-1·CD-4 cooldown 차단 [합성 상태 주입] c application: blocked +1 만, history·attemptSeq 불변
+PASS F1-T2 / CD-1·CD-4 cooldown 차단 [합성 상태 주입] d 주 RNG 0
+PASS F1-T2 / CD-1·CD-4 cooldown 차단 [합성 상태 주입] e 후속 화면 표시·reason 보존
+PASS F1-T2 / CD-1·CD-4 cooldown 차단 [합성 상태 주입] f(V-1) stay 후 application 바이트 동일
+PASS F1-T2 / CD-1·CD-4 cooldown 차단 [합성 상태 주입] g(F1-T3) stay: 후속 선택 직전 대비 S 전체 불변·주 RNG 0
+PASS F1-T2 / CD-1·CD-4 cooldown 차단 [합성 상태 주입] h '다음 해로' 1개·보류 정리
+PASS F1-T2b / LC-1·LC-2 lifetime_cap 차단 [합성 상태 주입] a 차단 사유 lifetime_cap
+PASS F1-T2b / LC-1·LC-2 lifetime_cap 차단 [합성 상태 주입] b 직업·고용처·flags·valis·팔나·소속 동일(자동 대체 효과 0)
+PASS F1-T2b / LC-1·LC-2 lifetime_cap 차단 [합성 상태 주입] c application: blocked +1 만, history·attemptSeq 불변
+PASS F1-T2b / LC-1·LC-2 lifetime_cap 차단 [합성 상태 주입] d 주 RNG 0
+PASS F1-T2b / LC-1·LC-2 lifetime_cap 차단 [합성 상태 주입] e 후속 화면 표시·reason 보존
+PASS F1-T2b / LC-1·LC-2 lifetime_cap 차단 [합성 상태 주입] f(V-1) stay 후 application 바이트 동일
+PASS F1-T2b / LC-1·LC-2 lifetime_cap 차단 [합성 상태 주입] g(F1-T3) stay: 후속 선택 직전 대비 S 전체 불변·주 RNG 0
+PASS F1-T2b / LC-1·LC-2 lifetime_cap 차단 [합성 상태 주입] h '다음 해로' 1개·보류 정리
+PASS V-1a P0→P1 허용 변경: history +1·attemptSeq +1·blocked 그대로·current null
+PASS V-1b P1→P2 바이트 동일
+PASS F1-T3a S 전체 불변
+PASS F1-T3b(F1-T4e) 근속 6년이어도 지급 0·jobSince 불변·고용처 유지
+PASS F1-T3c(C24) 주 RNG 0
+PASS C25 child
+PASS C25 고용처 없는 기존 직업
+PASS C25 고용 중
+PASS C25 retired
+PASS C25 retired + 고용처(고용처 문구 우선)
+PASS F1-T7 / LC-7 이미 서포터: 서포터 선택지 비노출
+PASS F1-T7b 비노출 선택지 직접 호출 거부(상태 불변)
+PASS Q-P 선택지에 마침표 없음
+PASS 안내 문구(화면 전용)
+PASS F1-T9a child: supporter 플래그·직업 supporter·+600
+PASS F1-T9b 후속 선택 없음
+PASS F1-T9c 기존 직업 보유자: 플래그만 추가·직업 유지·+600(기존 동작 그대로)
+PASS F1-T10a 사망 처리·보류 정리
+PASS F1-T10b 후속 화면 미표시
+PASS F1-T10c 생애 시작 시 초기화
+PASS F1-T11a join_hard 거절 문구 = {familia}의 심사에서 탈락했다.
+PASS F1-T11b 접미사 생략·이름 1회·서포터 서술 없음
+PASS F1-T11c 치환자 없는 failText(합성): 접미사 유지
+PASS F1-T11d followup 미지정 spec 은 보류를 만들지 않음
+PASS F1-T11e join(self_apply) 거절: 기존 문구·접미사 그대로, 후속 선택 없음(범위 고정)
+PASS 합격 → 입단·recruit_after_fail 없음·(조건부) 이주 선택 또는 다음 해 버튼
+PASS F1-T14a 선택 전 nextYear·endLife 진입 불가
+PASS F1-T14b 유효하지 않은 선택 거부
+PASS F1-T14c sourceEventId·route·reason·currentEventId 복원
+PASS F1-T14d 처리 후 정리·다음 해 버튼
+PASS F1-T14e 등록된 kind 는 recruit_after_fail · relocate(P4) 둘(U-2b-9 선택지 미추가)
+RESULT: PASS 56/56 (f1_joinhard_test)
+exit=0

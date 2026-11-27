@@ -1,0 +1,29 @@
+ENV  chromium=153.0.8010.12 playwright=1.63.0 node=v22.23.4 load=file:// seed=20261104 lives=20 harnessSha256=6777addf85f20204
+PASS  TM-1 주 루프(자동 진행 꺼짐)는 타이머를 쓰지 않음: setTimeout 호출 Node 0 · Chromium 0
+PASS  TM-1 생애별 사건 id 순서열이 Node 와 Chromium 에서 같음(20생애)
+PASS  TM-1 생애별 지점 id 순서열(R1·R3·R4·R5·HARNESS)이 같음
+PASS  TM-1 생애별 최종 상태 요약·RNG 호출 수가 같음
+PASS  TM-1 두 환경 모두 UNKNOWN 0, 반영 큐 경계 정상, 페이지 오류 0
+PASS  TM-1 두 환경에서 실행된 driverChoose · createRng 소스가 같음
+INFO  TM-1 호출 수 합계 10827, 사건 수 합계 981
+PASS  TM-2 두 환경 모두 생애 20개가 끝까지 진행(Node 동기 중첩 / Chromium 비동기 순차), UNKNOWN 0, 반영 큐 경계 정상
+PASS  TM-2 자동 진행의 버튼 선택은 R2(script.js showEvent 콜백)로 분류되고 HARNESS 는 0
+PASS  TM-2 Node: 동기 중첩에서도 사건 순서가 발급 순번대로 반영됨(사건 수 = 반영 수)
+INFO  TM-2 비교 결과(기대값이지 전제가 아님): 사건 id 순서열 동일 · 지점 id 순서열 동일 · 최종 상태 요약 동일
+INFO  TM-2 R2 호출 수 Node 1010 / Chromium 1010, Chromium setTimeout 호출 2027
+PASS  TM-2b P3 어댑터: 두 치환문이 현재 러너에 그대로 들어 있음(현재 러너와 같은 입력 상태) · F1 원본에는 각 1곳
+PASS  TM-2b 실행 유효성(F1 러너): 종료 코드 0 · 400생애 완주 · lifeDigest 유효 · 세 집계(rollCalls · rollModes · rollModeByEvent) 객체·양의 정수·합계 = rollFamilia 호출 수
+PASS  TM-2b 실행 유효성(현재 러너): 같은 조건
+PASS  TM-2b 실행 유효성(변이 러너): 같은 조건 — 실행 실패·자료 누락은 변이 검출로 인정하지 않음
+PASS  TM-2b 사건별 귀속: 현재 러너의 rollCalls · rollModes · rollModeByEvent 가 F1 러너와 같음
+PASS  TM-2b 자동 진행 러너의 출력 전체(lifeDigest · 사건 집계 포함, p4Relocate 줄 제외)가 F1 러너와 같음
+PASS  TM-2b 변이 전제: 세 러너의 rollFamilia 호출 수 · lifeDigest · rollModes 가 같음(차이가 사건 귀속에서만 나야 함)
+PASS  TM-2b 변이: 활성 사건 스택을 쓰지 않으면 사건별 귀속(rollCalls 와 rollModeByEvent 둘 다)이 F1 과 달라짐 — 시험이 결함을 잡음
+PASS  TM-2b 유효성 검사의 변이 14종(종료 코드 · 완주 수 · lifeDigest 누락/비숫자 · 계측 누락 · 배열 · 빈 객체 · 문자열/0/음수 카운트 · 합계 불일치)을 모두 무효로 판정
+INFO  TM-2b rollFamilia 계측 호출 수 F1 211 / 현재 211 / 변이 211, lifeDigest(자동 진행 400생애) 2919020598 / 2919020598 / 2919020598
+PASS  TM-3 전제: 정지 시점에 자동 진행 타이머가 1개 이상 예약되어 있음(합성 상태 주입)
+PASS  TM-3 정지 뒤 타이머가 실행돼도 진행 0: 나이·상태 전체·난수 호출 수 불변, 생애 미종료
+PASS  TM-3 남은 타이머는 stale_timer 진단만 남김(다른 진단 없음), 예약 목록은 비워짐
+PASS  TM-3 새 게임(startLife) 뒤에는 정지가 풀리고 생애가 끝까지 진행(UNKNOWN 0), 페이지 오류 0
+RESULT: PASS 22/22 (rng_timer_test)
+exit=0

@@ -1,0 +1,12 @@
+DIFF physical/777: lifeDigest=3640313501 rng=2619091017 exit=0 completed=3000 inv=true exc=0 ref=768019484
+DIFF physical/314159: lifeDigest=2354554544 rng=2100819340 exit=0 completed=3000 inv=true exc=0 ref=1010932874
+DIFF physical/8675309: lifeDigest=210939761 rng=545107101 exit=0 completed=3000 inv=true exc=0 ref=25719806
+DIFF physical/20261104: lifeDigest=780928835 rng=2187010721 exit=0 completed=3000 inv=true exc=0 ref=1715334118
+DIFF calendar/20261104: lifeDigest=988406346 rng=1239289394 exit=0 completed=3000 inv=true exc=0 ref=583302575
+DIFF newborn_parent_familia/20261104: lifeDigest=1029559938 rng=3484114229 exit=0 completed=3000 inv=true exc=0 ref=3171639045
+DIFF off/777: lifeDigest=2767838513 rng=2766822083 exit=0 completed=3000 inv=true exc=0 ref=4044146834
+DIFF off/314159: lifeDigest=4181606804 rng=3551207515 exit=0 completed=3000 inv=true exc=0 ref=1456308072
+DIFF off/8675309: lifeDigest=2387677858 rng=2054853508 exit=0 completed=3000 inv=true exc=0 ref=2414645484
+DIFF off/20261104: lifeDigest=3460328982 rng=495146276 exit=0 completed=3000 inv=true exc=0 ref=4007702018
+SUMMARY: 0/10 SAME vs ref
+exit=0

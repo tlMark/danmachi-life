@@ -1,0 +1,157 @@
+PASS RB-T10-0 resolve 단독 예외 a 원래 예외 객체 그대로 전파
+PASS RB-T10-0 resolve 단독 예외 b progressHalted true
+PASS RB-T10-0 resolve 단독 예외 c 다섯 정리 단계 모두 실행(각 1회)
+PASS RB-T10-0 resolve 단독 예외 d cleanupErrors = 실패 단계(순서 고정)
+PASS RB-T10-0 resolve 단독 예외 e pending·currentEventId 정리
+PASS RB-T10-0 resolve 단독 예외 f 상태 원복(S 전체 = 스냅숏)
+PASS RB-T10-0 resolve 단독 예외 g '다음 해로' 0개·resolve 1회
+PASS RB-T10-0 resolve 단독 예외 h 정지 후 nextYear 진행 0
+PASS RB-T10-1 + clearAutoTimers 실패 a 원래 예외 객체 그대로 전파
+PASS RB-T10-1 + clearAutoTimers 실패 b progressHalted true
+PASS RB-T10-1 + clearAutoTimers 실패 c 다섯 정리 단계 모두 실행(각 1회)
+PASS RB-T10-1 + clearAutoTimers 실패 d cleanupErrors = 실패 단계(순서 고정)
+PASS RB-T10-1 + clearAutoTimers 실패 e pending·currentEventId 정리
+PASS RB-T10-1 + clearAutoTimers 실패 f 상태 원복(S 전체 = 스냅숏)
+PASS RB-T10-1 + clearAutoTimers 실패 g '다음 해로' 0개·resolve 1회
+PASS RB-T10-1 + clearAutoTimers 실패 h 정지 후 nextYear 진행 0
+PASS RB-T10-2 + 롤백 실패 a 원래 예외 객체 그대로 전파
+PASS RB-T10-2 + 롤백 실패 b progressHalted true
+PASS RB-T10-2 + 롤백 실패 c 다섯 정리 단계 모두 실행(각 1회)
+PASS RB-T10-2 + 롤백 실패 d cleanupErrors = 실패 단계(순서 고정)
+PASS RB-T10-2 + 롤백 실패 e pending·currentEventId 정리
+PASS RB-T10-2 + 롤백 실패 f 상태 롤백 실패로 불일치(정지로 진행 차단)
+PASS RB-T10-2 + 롤백 실패 g '다음 해로' 0개·resolve 1회
+PASS RB-T10-2 + 롤백 실패 h 정지 후 nextYear 진행 0
+PASS RB-T10-3 + 렌더 실패 a 원래 예외 객체 그대로 전파
+PASS RB-T10-3 + 렌더 실패 b progressHalted true
+PASS RB-T10-3 + 렌더 실패 c 다섯 정리 단계 모두 실행(각 1회)
+PASS RB-T10-3 + 렌더 실패 d cleanupErrors = 실패 단계(순서 고정)
+PASS RB-T10-3 + 렌더 실패 e pending·currentEventId 정리
+PASS RB-T10-3 + 렌더 실패 f 상태 원복(S 전체 = 스냅숏)
+PASS RB-T10-3 + 렌더 실패 g '다음 해로' 0개·resolve 1회
+PASS RB-T10-3 + 렌더 실패 h 정지 후 nextYear 진행 0
+PASS RB-T10-4 + 안내 실패 a 원래 예외 객체 그대로 전파
+PASS RB-T10-4 + 안내 실패 b progressHalted true
+PASS RB-T10-4 + 안내 실패 c 다섯 정리 단계 모두 실행(각 1회)
+PASS RB-T10-4 + 안내 실패 d cleanupErrors = 실패 단계(순서 고정)
+PASS RB-T10-4 + 안내 실패 e pending·currentEventId 정리
+PASS RB-T10-4 + 안내 실패 f 상태 원복(S 전체 = 스냅숏)
+PASS RB-T10-4 + 안내 실패 g '다음 해로' 0개·resolve 1회
+PASS RB-T10-4 + 안내 실패 h 정지 후 nextYear 진행 0
+PASS RB-T10-5 + 진단 실패 a 원래 예외 객체 그대로 전파
+PASS RB-T10-5 + 진단 실패 b progressHalted true
+PASS RB-T10-5 + 진단 실패 c 다섯 정리 단계 모두 실행(각 1회)
+PASS RB-T10-5 + 진단 실패 d cleanupErrors = 실패 단계(순서 고정)
+PASS RB-T10-5 + 진단 실패 e pending·currentEventId 정리
+PASS RB-T10-5 + 진단 실패 f 상태 원복(S 전체 = 스냅숏)
+PASS RB-T10-5 + 진단 실패 g '다음 해로' 0개·resolve 1회
+PASS RB-T10-5 + 진단 실패 h 정지 후 nextYear 진행 0
+PASS RB-T10-6 + 다섯 단계 모두 실패 a 원래 예외 객체 그대로 전파
+PASS RB-T10-6 + 다섯 단계 모두 실패 b progressHalted true
+PASS RB-T10-6 + 다섯 단계 모두 실패 c 다섯 정리 단계 모두 실행(각 1회)
+PASS RB-T10-6 + 다섯 단계 모두 실패 d cleanupErrors = 실패 단계(순서 고정)
+PASS RB-T10-6 + 다섯 단계 모두 실패 e pending·currentEventId 정리
+PASS RB-T10-6 + 다섯 단계 모두 실패 f 상태 롤백 실패로 불일치(정지로 진행 차단)
+PASS RB-T10-6 + 다섯 단계 모두 실패 g '다음 해로' 0개·resolve 1회
+PASS RB-T10-6 + 다섯 단계 모두 실패 h 정지 후 nextYear 진행 0
+PASS RB-T10-7 a 원시값 그대로 전파
+PASS RB-T10-7 b 정지·정리·원복
+PASS PF-9a job·jobSince·flags·bond·valis 원복
+PASS PF-9b logHistory 길이·기존 항목 내용 동일
+PASS PF-9c 2-i: falnaState·전이·conversionPending 불변, syncDepth 0
+PASS PF-9d 2-i 기준값 = 스냅숏 시점 값(RB-1a 원자 롤백)
+PASS PF-9e 화면에 오류 안내 1건(logHistory 미기록)
+PASS PF-9f syncInvariantLog 추가 0
+PASS PF-14a '다음 해로' 버튼 0·새 타이머 예약 0
+PASS PF-14b 남은 자동 타이머 취소 시도(G1+)
+PASS PF-14c 남은 타이머가 실행돼도 진행 0
+PASS HT-1 nextYear
+PASS HT-1 choose
+PASS HT-1 chooseBody
+PASS HT-1 showEvent
+PASS HT-1 endLife
+PASS HT-1 chooseFollowup
+PASS HT-1 renderFollowup
+PASS HT-4 setAspiration
+PASS HT-4 setJob
+PASS HT-4 leaveFamilia
+PASS HT-4 sealByGodReturn
+PASS HT-4 applyGodReturn
+PASS HT-4 applyRecruit
+PASS HT-4 completeConversion
+PASS HT-4 recompute
+PASS HT-4 recordLevel
+PASS HT-4 tryLevelUp
+PASS HT-4 convertExp
+PASS HT-4 apply
+PASS HT-4 ensureHistory
+PASS HT-4 openMembership
+PASS HT-4 closeMembership
+PASS HT-4 joinOrganization
+PASS HT-4 rollFamilia
+PASS HT-4 checkFalna
+PASS HT-4 moveResidence
+PASS HT-4 recordService
+PASS HT-4 yearlyActivity
+PASS HT-4 recoverYearly
+PASS HT-4 tryRescue
+PASS HT-4 handleRelationEvents
+PASS HT-4 createFollowup
+PASS HT-2 사건 선택 버튼
+PASS HT-2b '다음 해로' 버튼
+PASS HT-3 T1 사건 자동 선택(Math.random 호출 전 차단)
+PASS HT-3 T2 자동 '다음 해로'
+PASS HT-3 T3 후속 화면 stay 자동 클릭
+PASS HT-5a 예외 후 정지
+PASS HT-5b 진행 함수 호출로는 해제되지 않음
+PASS HT-5c startLife 로 해제·세대 +1·새 생애 정상 시작
+PASS HT-5d(CT-7) 새 생애 시작 과정에서 halted_entry 진단 0
+PASS HT-6 '다음 해로' 0개·남은 버튼 클릭해도 진행 0
+PASS HT-7-T1 사건 자동 선택 / 예외 있음 0 생애 A 예외로 정지
+PASS HT-7-T1 사건 자동 선택 / 예외 있음 a S 변경 0
+PASS HT-7-T1 사건 자동 선택 / 예외 있음 b RNG 소비 0
+PASS HT-7-T1 사건 자동 선택 / 예외 있음 c 버튼 클릭 0
+PASS HT-7-T1 사건 자동 선택 / 예외 있음 d 사건 기록 변경 0
+PASS HT-7-T1 사건 자동 선택 / 예외 있음 e DOM 변경 0·새 타이머 0
+PASS HT-7-T1 사건 자동 선택 / 예외 있음 f 진단 = stale_timer 1건뿐(followupDiagLog)
+PASS HT-7-T1 사건 자동 선택 / 예외 있음 g 생애 B 는 정지 아님
+PASS HT-7-T1b 사건 자동 선택 / 예외 없음 a S 변경 0
+PASS HT-7-T1b 사건 자동 선택 / 예외 없음 b RNG 소비 0
+PASS HT-7-T1b 사건 자동 선택 / 예외 없음 c 버튼 클릭 0
+PASS HT-7-T1b 사건 자동 선택 / 예외 없음 d 사건 기록 변경 0
+PASS HT-7-T1b 사건 자동 선택 / 예외 없음 e DOM 변경 0·새 타이머 0
+PASS HT-7-T1b 사건 자동 선택 / 예외 없음 f 진단 = stale_timer 1건뿐(followupDiagLog)
+PASS HT-7-T1b 사건 자동 선택 / 예외 없음 g 생애 B 는 정지 아님
+PASS HT-7-T2 자동 '다음 해로' / 예외 있음 0 생애 A 예외로 정지
+PASS HT-7-T2 자동 '다음 해로' / 예외 있음 a S 변경 0
+PASS HT-7-T2 자동 '다음 해로' / 예외 있음 b RNG 소비 0
+PASS HT-7-T2 자동 '다음 해로' / 예외 있음 c 버튼 클릭 0
+PASS HT-7-T2 자동 '다음 해로' / 예외 있음 d 사건 기록 변경 0
+PASS HT-7-T2 자동 '다음 해로' / 예외 있음 e DOM 변경 0·새 타이머 0
+PASS HT-7-T2 자동 '다음 해로' / 예외 있음 f 진단 = stale_timer 1건뿐(followupDiagLog)
+PASS HT-7-T2 자동 '다음 해로' / 예외 있음 g 생애 B 는 정지 아님
+PASS HT-7-T2b 자동 '다음 해로' / 예외 없음 a S 변경 0
+PASS HT-7-T2b 자동 '다음 해로' / 예외 없음 b RNG 소비 0
+PASS HT-7-T2b 자동 '다음 해로' / 예외 없음 c 버튼 클릭 0
+PASS HT-7-T2b 자동 '다음 해로' / 예외 없음 d 사건 기록 변경 0
+PASS HT-7-T2b 자동 '다음 해로' / 예외 없음 e DOM 변경 0·새 타이머 0
+PASS HT-7-T2b 자동 '다음 해로' / 예외 없음 f 진단 = stale_timer 1건뿐(followupDiagLog)
+PASS HT-7-T2b 자동 '다음 해로' / 예외 없음 g 생애 B 는 정지 아님
+PASS HT-7-T3 후속 화면 stay / 예외 있음 0 생애 A 예외로 정지
+PASS HT-7-T3 후속 화면 stay / 예외 있음 a S 변경 0
+PASS HT-7-T3 후속 화면 stay / 예외 있음 b RNG 소비 0
+PASS HT-7-T3 후속 화면 stay / 예외 있음 c 버튼 클릭 0
+PASS HT-7-T3 후속 화면 stay / 예외 있음 d 사건 기록 변경 0
+PASS HT-7-T3 후속 화면 stay / 예외 있음 e DOM 변경 0·새 타이머 0
+PASS HT-7-T3 후속 화면 stay / 예외 있음 f 진단 = stale_timer 1건뿐(followupDiagLog)
+PASS HT-7-T3 후속 화면 stay / 예외 있음 g 생애 B 는 정지 아님
+PASS HT-7-T3b 후속 화면 stay / 예외 없음 a S 변경 0
+PASS HT-7-T3b 후속 화면 stay / 예외 없음 b RNG 소비 0
+PASS HT-7-T3b 후속 화면 stay / 예외 없음 c 버튼 클릭 0
+PASS HT-7-T3b 후속 화면 stay / 예외 없음 d 사건 기록 변경 0
+PASS HT-7-T3b 후속 화면 stay / 예외 없음 e DOM 변경 0·새 타이머 0
+PASS HT-7-T3b 후속 화면 stay / 예외 없음 f 진단 = stale_timer 1건뿐(followupDiagLog)
+PASS HT-7-T3b 후속 화면 stay / 예외 없음 g 생애 B 는 정지 아님
+PASS HT-8 startLife 가 이전 타이머를 취소
+RESULT: PASS 155/155 (followup_halt_test)
+exit=0

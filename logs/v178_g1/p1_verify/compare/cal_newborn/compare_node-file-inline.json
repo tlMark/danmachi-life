@@ -1,0 +1,654 @@
+{
+ "runs": 3000,
+ "configs": [
+  "calendar/20261104",
+  "newborn_parent_familia/20261104"
+ ],
+ "envs": [
+  "node",
+  "file",
+  "inline"
+ ],
+ "stackTraceLimit": 50,
+ "node": "v22.23.4",
+ "rows": {
+  "calendar/20261104": {
+   "node": {
+    "tag": "node",
+    "lives": 3000,
+    "lifeDigest": 988406346,
+    "rngCallDigest": 1239289394,
+    "rngCallsTotal": 1595755,
+    "unknownLives": 0,
+    "unknownUnit": 0,
+    "siteCalls": 1595755,
+    "byCls": {
+     "R4": 996379,
+     "R1": 257710,
+     "HARNESS": 299350,
+     "R3": 18773,
+     "R5": 22926,
+     "HARNESS-relocate": 617
+    },
+    "byId": {
+     "script.js:getRandomItemByWeight:random#1<-script.js:startLife:call-getRandomItemByWeight#1": 3000,
+     "script.js:getRandomItemByWeight:random#1<-script.js:startLife:call-getRandomItemByWeight#2": 3000,
+     "script.js:getRandomItemByWeight:random#1<-script.js:startLife:call-getRandomItemByWeight#3": 3000,
+     "core/relations.js:generateFamily:random#1": 5882,
+     "core/relations.js:generateFamily:random#2": 5382,
+     "core/relations.js:weightedPick:random#1<-core/relations.js:generateFamily:call-weightedPick#1": 2996,
+     "script.js:startLife:random#1": 2972,
+     "core/relations.js:advanceYear:random#2": 622331,
+     "core/relations.js:advanceYear:random#3": 31304,
+     "script.js:getRandomItemByWeight:random#1<-script.js:nextYear:call-getRandomItemByWeight#1": 257710,
+     "harness:driverChoose:random#1": 299350,
+     "script.js:chooseBody:random#1": 18773,
+     "core/growth.js:rollAnnualExcelia:random#1": 245544,
+     "script.js:getRandomItemByWeight:random#1<-script.js:pickFamiliaCandidate:call-getRandomItemByWeight#1": 1980,
+     "core/relations.js:advanceYear:random#1": 55695,
+     "script.js:nextYear:random#1": 22926,
+     "core/relations.js:generateFamily:random#3": 2628,
+     "script.js:rnd:random#1<-script.js:rollFamiliaBody:call-rnd#1": 1432,
+     "harness:driverChooseRelocate:random#1": 617,
+     "core/relations.js:createRomanticPartner:random#1": 1860,
+     "core/relations.js:pickPartnerRace:random#1": 1907,
+     "core/relations.js:createRomanticPartner:random#2": 1860,
+     "core/relations.js:createChild:random#1": 1545,
+     "core/relations.js:weightedPick:random#1<-core/relations.js:pickPartnerRace:call-weightedPick#1": 737,
+     "core/relations.js:parentRaces:random#1": 144,
+     "script.js:getRandomItemByWeight:random#1<-script.js:startLife:call-getRandomItemByWeight#4": 412,
+     "core/relations.js:weightedPick:random#1<-core/relations.js:createRomanticPartner:call-weightedPick#1": 595,
+     "script.js:rollFamiliaBody:random#1": 173
+    },
+    "unitCalls": 48574,
+    "unitByCls": {
+     "R4": 42988,
+     "R1": 5521,
+     "R2": 51,
+     "R3": 9,
+     "R5": 5
+    },
+    "seqDigest": 2963964610,
+    "perLifeCallDigest": 1239289394,
+    "integrity": {
+     "broken": false,
+     "firstError": null,
+     "seq": null,
+     "issued": 149761,
+     "committed": 149761,
+     "discarded": 0
+    },
+    "extra": {
+     "exit": 0,
+     "spawnError": null,
+     "firstLifeRngState": {
+      "state": 88733889203515,
+      "calls": 48447
+     },
+     "stackTraceLimit": 50,
+     "rows": 19,
+     "driverCoreSha256": "f56b9cfea4fdd7f73bb7c755213780ddc77134fb7cf5b4a33b2dc462686afd31",
+     "rngCoreSha256": "0a593b4116375b2efc0592af3a332d2375b40a8462dd5fdce2715ed0a3a6349d",
+     "sourceSha256": {
+      "data.js": "4c856e75ad9060b7b73dd089cb64198b960df16672a925258e3dbfe6471cebf7",
+      "events.js": "5274e2b41ea4453f0dcc1af6e056da09c25139d18057402ff8b6d64c4e434f97",
+      "core/aging.js": "4544c8be1bf76c74536c062818c6e075a22926e502bba7f16a4be2bfb6f34881",
+      "core/growth.js": "35d782a73f14feffd69c246826d399591f94e9acb65774a90ee2107344bb747b",
+      "core/relations.js": "7aad574bded11fe03ed09c6c51036dc686d5d4c004049b849cb67e5caed990f6",
+      "core/items.js": "42ebf1d29c2b678675f17ac34db0529b024d6b5ecb7bc611182ef808f11a99f0",
+      "core/recruit.js": "b897fb3a2488d6f40dc4b661d8ca39a1987ddc0f4ac9bc24e950413ba663485a",
+      "core/lineage.js": "729f3796b6c3150c08262870e52e34650e987ede3d8e599631192c8dea85a7c8",
+      "script.js": "0b2af9543055778fdc31e7e128a235dc8ea5ba36646246559a5675635baa7007"
+     },
+     "siteCount": 33,
+     "unitCalls": 48574,
+     "unitByCls": {
+      "R4": 42988,
+      "R1": 5521,
+      "R2": 51,
+      "R3": 9,
+      "R5": 5
+     }
+    },
+    "unknownSamples": []
+   },
+   "file": {
+    "tag": "file",
+    "lives": 3000,
+    "lifeDigest": 988406346,
+    "rngCallDigest": 1239289394,
+    "rngCallsTotal": 1595755,
+    "unknownLives": 0,
+    "unknownUnit": 0,
+    "siteCalls": 1595755,
+    "byCls": {
+     "R4": 996379,
+     "R1": 257710,
+     "HARNESS": 299350,
+     "R3": 18773,
+     "R5": 22926,
+     "HARNESS-relocate": 617
+    },
+    "byId": {
+     "script.js:getRandomItemByWeight:random#1<-script.js:startLife:call-getRandomItemByWeight#1": 3000,
+     "script.js:getRandomItemByWeight:random#1<-script.js:startLife:call-getRandomItemByWeight#2": 3000,
+     "script.js:getRandomItemByWeight:random#1<-script.js:startLife:call-getRandomItemByWeight#3": 3000,
+     "core/relations.js:generateFamily:random#1": 5882,
+     "core/relations.js:generateFamily:random#2": 5382,
+     "core/relations.js:weightedPick:random#1<-core/relations.js:generateFamily:call-weightedPick#1": 2996,
+     "script.js:startLife:random#1": 2972,
+     "core/relations.js:advanceYear:random#2": 622331,
+     "core/relations.js:advanceYear:random#3": 31304,
+     "script.js:getRandomItemByWeight:random#1<-script.js:nextYear:call-getRandomItemByWeight#1": 257710,
+     "harness:driverChoose:random#1": 299350,
+     "script.js:chooseBody:random#1": 18773,
+     "core/growth.js:rollAnnualExcelia:random#1": 245544,
+     "script.js:getRandomItemByWeight:random#1<-script.js:pickFamiliaCandidate:call-getRandomItemByWeight#1": 1980,
+     "core/relations.js:advanceYear:random#1": 55695,
+     "script.js:nextYear:random#1": 22926,
+     "core/relations.js:generateFamily:random#3": 2628,
+     "script.js:rnd:random#1<-script.js:rollFamiliaBody:call-rnd#1": 1432,
+     "harness:driverChooseRelocate:random#1": 617,
+     "core/relations.js:createRomanticPartner:random#1": 1860,
+     "core/relations.js:pickPartnerRace:random#1": 1907,
+     "core/relations.js:createRomanticPartner:random#2": 1860,
+     "core/relations.js:createChild:random#1": 1545,
+     "core/relations.js:weightedPick:random#1<-core/relations.js:pickPartnerRace:call-weightedPick#1": 737,
+     "core/relations.js:parentRaces:random#1": 144,
+     "script.js:getRandomItemByWeight:random#1<-script.js:startLife:call-getRandomItemByWeight#4": 412,
+     "core/relations.js:weightedPick:random#1<-core/relations.js:createRomanticPartner:call-weightedPick#1": 595,
+     "script.js:rollFamiliaBody:random#1": 173
+    },
+    "unitCalls": 0,
+    "unitByCls": {},
+    "seqDigest": 2963964610,
+    "perLifeCallDigest": 1239289394,
+    "integrity": {
+     "broken": false,
+     "firstError": null,
+     "seq": null,
+     "issued": 149758,
+     "committed": 149758,
+     "discarded": 0
+    },
+    "extra": {
+     "error": null,
+     "pageErrors": [],
+     "asmInfo": null,
+     "pageSha": {
+      "driverChoose": "a4c7e8f54a7d965643ef5516134116c5609f39d6170ca0a0d7282311af0777ae",
+      "createRng": "b32bbfccae124aec72878d3ae3527434746cc8821ae691b941a4d2ea92ed147d",
+      "expectDriver": "a4c7e8f54a7d965643ef5516134116c5609f39d6170ca0a0d7282311af0777ae",
+      "expectRng": "b32bbfccae124aec72878d3ae3527434746cc8821ae691b941a4d2ea92ed147d",
+      "same": true
+     },
+     "driverCoreSha256": "f56b9cfea4fdd7f73bb7c755213780ddc77134fb7cf5b4a33b2dc462686afd31",
+     "rngCoreSha256": "0a593b4116375b2efc0592af3a332d2375b40a8462dd5fdce2715ed0a3a6349d",
+     "harnessSha256": "3ed827c20e76cb1e947e6dd733b4fa773637ec2b56ad510e0e7b444e8ca1f411",
+     "siteCount": 33,
+     "startState": {
+      "state": 88733889203515,
+      "calls": 48447
+     },
+     "mathRandomIsRecorder": true,
+     "preConfigCalls": 0,
+     "progressHalted": false,
+     "autoChecked": false,
+     "sourceSha256": {
+      "data.js": "4c856e75ad9060b7b73dd089cb64198b960df16672a925258e3dbfe6471cebf7",
+      "events.js": "5274e2b41ea4453f0dcc1af6e056da09c25139d18057402ff8b6d64c4e434f97",
+      "core/aging.js": "4544c8be1bf76c74536c062818c6e075a22926e502bba7f16a4be2bfb6f34881",
+      "core/growth.js": "35d782a73f14feffd69c246826d399591f94e9acb65774a90ee2107344bb747b",
+      "core/relations.js": "7aad574bded11fe03ed09c6c51036dc686d5d4c004049b849cb67e5caed990f6",
+      "core/items.js": "42ebf1d29c2b678675f17ac34db0529b024d6b5ecb7bc611182ef808f11a99f0",
+      "core/recruit.js": "b897fb3a2488d6f40dc4b661d8ca39a1987ddc0f4ac9bc24e950413ba663485a",
+      "core/lineage.js": "729f3796b6c3150c08262870e52e34650e987ede3d8e599631192c8dea85a7c8",
+      "script.js": "0b2af9543055778fdc31e7e128a235dc8ea5ba36646246559a5675635baa7007"
+     }
+    },
+    "unknownSamples": []
+   },
+   "inline": {
+    "tag": "inline",
+    "lives": 3000,
+    "lifeDigest": 988406346,
+    "rngCallDigest": 1239289394,
+    "rngCallsTotal": 1595755,
+    "unknownLives": 0,
+    "unknownUnit": 0,
+    "siteCalls": 1595755,
+    "byCls": {
+     "R4": 996379,
+     "R1": 257710,
+     "HARNESS": 299350,
+     "R3": 18773,
+     "R5": 22926,
+     "HARNESS-relocate": 617
+    },
+    "byId": {
+     "script.js:getRandomItemByWeight:random#1<-script.js:startLife:call-getRandomItemByWeight#1": 3000,
+     "script.js:getRandomItemByWeight:random#1<-script.js:startLife:call-getRandomItemByWeight#2": 3000,
+     "script.js:getRandomItemByWeight:random#1<-script.js:startLife:call-getRandomItemByWeight#3": 3000,
+     "core/relations.js:generateFamily:random#1": 5882,
+     "core/relations.js:generateFamily:random#2": 5382,
+     "core/relations.js:weightedPick:random#1<-core/relations.js:generateFamily:call-weightedPick#1": 2996,
+     "script.js:startLife:random#1": 2972,
+     "core/relations.js:advanceYear:random#2": 622331,
+     "core/relations.js:advanceYear:random#3": 31304,
+     "script.js:getRandomItemByWeight:random#1<-script.js:nextYear:call-getRandomItemByWeight#1": 257710,
+     "harness:driverChoose:random#1": 299350,
+     "script.js:chooseBody:random#1": 18773,
+     "core/growth.js:rollAnnualExcelia:random#1": 245544,
+     "script.js:getRandomItemByWeight:random#1<-script.js:pickFamiliaCandidate:call-getRandomItemByWeight#1": 1980,
+     "core/relations.js:advanceYear:random#1": 55695,
+     "script.js:nextYear:random#1": 22926,
+     "core/relations.js:generateFamily:random#3": 2628,
+     "script.js:rnd:random#1<-script.js:rollFamiliaBody:call-rnd#1": 1432,
+     "harness:driverChooseRelocate:random#1": 617,
+     "core/relations.js:createRomanticPartner:random#1": 1860,
+     "core/relations.js:pickPartnerRace:random#1": 1907,
+     "core/relations.js:createRomanticPartner:random#2": 1860,
+     "core/relations.js:createChild:random#1": 1545,
+     "core/relations.js:weightedPick:random#1<-core/relations.js:pickPartnerRace:call-weightedPick#1": 737,
+     "core/relations.js:parentRaces:random#1": 144,
+     "script.js:getRandomItemByWeight:random#1<-script.js:startLife:call-getRandomItemByWeight#4": 412,
+     "core/relations.js:weightedPick:random#1<-core/relations.js:createRomanticPartner:call-weightedPick#1": 595,
+     "script.js:rollFamiliaBody:random#1": 173
+    },
+    "unitCalls": 0,
+    "unitByCls": {},
+    "seqDigest": 2963964610,
+    "perLifeCallDigest": 1239289394,
+    "integrity": {
+     "broken": false,
+     "firstError": null,
+     "seq": null,
+     "issued": 149758,
+     "committed": 149758,
+     "discarded": 0
+    },
+    "extra": {
+     "error": null,
+     "pageErrors": [],
+     "asmInfo": {
+      "rows": 32,
+      "sourceRows": 9,
+      "harnessRows": 1,
+      "documentSha256": "da86b48892c84035f4ab27b4a5d4b05df30d9b79034d5db4328748526b76d327"
+     },
+     "pageSha": {
+      "driverChoose": "a4c7e8f54a7d965643ef5516134116c5609f39d6170ca0a0d7282311af0777ae",
+      "createRng": "b32bbfccae124aec72878d3ae3527434746cc8821ae691b941a4d2ea92ed147d",
+      "expectDriver": "a4c7e8f54a7d965643ef5516134116c5609f39d6170ca0a0d7282311af0777ae",
+      "expectRng": "b32bbfccae124aec72878d3ae3527434746cc8821ae691b941a4d2ea92ed147d",
+      "same": true
+     },
+     "driverCoreSha256": "f56b9cfea4fdd7f73bb7c755213780ddc77134fb7cf5b4a33b2dc462686afd31",
+     "rngCoreSha256": "0a593b4116375b2efc0592af3a332d2375b40a8462dd5fdce2715ed0a3a6349d",
+     "harnessSha256": "6777addf85f2020459d539cd6304bfa410a186890bbd0334a00c2a736c95150c",
+     "siteCount": 33,
+     "startState": {
+      "state": 88733889203515,
+      "calls": 48447
+     },
+     "mathRandomIsRecorder": true,
+     "preConfigCalls": 0,
+     "progressHalted": false,
+     "autoChecked": false,
+     "sourceSha256": {
+      "data.js": "4c856e75ad9060b7b73dd089cb64198b960df16672a925258e3dbfe6471cebf7",
+      "events.js": "5274e2b41ea4453f0dcc1af6e056da09c25139d18057402ff8b6d64c4e434f97",
+      "core/aging.js": "4544c8be1bf76c74536c062818c6e075a22926e502bba7f16a4be2bfb6f34881",
+      "core/growth.js": "35d782a73f14feffd69c246826d399591f94e9acb65774a90ee2107344bb747b",
+      "core/relations.js": "7aad574bded11fe03ed09c6c51036dc686d5d4c004049b849cb67e5caed990f6",
+      "core/items.js": "42ebf1d29c2b678675f17ac34db0529b024d6b5ecb7bc611182ef808f11a99f0",
+      "core/recruit.js": "b897fb3a2488d6f40dc4b661d8ca39a1987ddc0f4ac9bc24e950413ba663485a",
+      "core/lineage.js": "729f3796b6c3150c08262870e52e34650e987ede3d8e599631192c8dea85a7c8",
+      "script.js": "0b2af9543055778fdc31e7e128a235dc8ea5ba36646246559a5675635baa7007"
+     }
+    },
+    "unknownSamples": []
+   },
+   "verdict": {
+    "status": "PASS",
+    "missing": [],
+    "failures": {
+     "node": [],
+     "file": [],
+     "inline": []
+    },
+    "pairSame": {
+     "node=file": true,
+     "node=inline": true,
+     "file=inline": true
+    }
+   }
+  },
+  "newborn_parent_familia/20261104": {
+   "node": {
+    "tag": "node",
+    "lives": 3000,
+    "lifeDigest": 1029559938,
+    "rngCallDigest": 3484114229,
+    "rngCallsTotal": 1601330,
+    "unknownLives": 0,
+    "unknownUnit": 0,
+    "siteCalls": 1601330,
+    "byCls": {
+     "R4": 992746,
+     "R1": 261965,
+     "HARNESS": 302839,
+     "HARNESS-relocate": 622,
+     "R3": 19744,
+     "R5": 23414
+    },
+    "byId": {
+     "script.js:getRandomItemByWeight:random#1<-script.js:startLife:call-getRandomItemByWeight#1": 3000,
+     "script.js:getRandomItemByWeight:random#1<-script.js:startLife:call-getRandomItemByWeight#2": 3000,
+     "script.js:getRandomItemByWeight:random#1<-script.js:startLife:call-getRandomItemByWeight#3": 3000,
+     "core/relations.js:generateFamily:random#1": 5884,
+     "core/relations.js:generateFamily:random#2": 5411,
+     "core/relations.js:weightedPick:random#1<-core/relations.js:generateFamily:call-weightedPick#1": 3000,
+     "script.js:startLife:random#1": 2968,
+     "core/relations.js:advanceYear:random#2": 614798,
+     "core/relations.js:advanceYear:random#3": 31473,
+     "script.js:getRandomItemByWeight:random#1<-script.js:nextYear:call-getRandomItemByWeight#1": 261965,
+     "harness:driverChoose:random#1": 302839,
+     "core/growth.js:rollAnnualExcelia:random#1": 249778,
+     "script.js:getRandomItemByWeight:random#1<-script.js:pickFamiliaCandidate:call-getRandomItemByWeight#1": 1805,
+     "script.js:rnd:random#1<-script.js:rollFamiliaBody:call-rnd#1": 1711,
+     "harness:driverChooseRelocate:random#1": 622,
+     "script.js:chooseBody:random#1": 19744,
+     "core/relations.js:generateFamily:random#3": 2602,
+     "core/relations.js:advanceYear:random#1": 54783,
+     "core/relations.js:createRomanticPartner:random#1": 1870,
+     "core/relations.js:pickPartnerRace:random#1": 1999,
+     "core/relations.js:createRomanticPartner:random#2": 1870,
+     "core/relations.js:weightedPick:random#1<-core/relations.js:createRomanticPartner:call-weightedPick#1": 668,
+     "script.js:nextYear:random#1": 23414,
+     "core/relations.js:weightedPick:random#1<-core/relations.js:pickPartnerRace:call-weightedPick#1": 786,
+     "core/relations.js:createChild:random#1": 1562,
+     "script.js:rollFamiliaBody:random#1": 179,
+     "script.js:getRandomItemByWeight:random#1<-script.js:startLife:call-getRandomItemByWeight#4": 435,
+     "core/relations.js:parentRaces:random#1": 164
+    },
+    "unitCalls": 50035,
+    "unitByCls": {
+     "R4": 44373,
+     "R1": 5597,
+     "R2": 51,
+     "R3": 9,
+     "R5": 5
+    },
+    "seqDigest": 1840671630,
+    "perLifeCallDigest": 3484114229,
+    "integrity": {
+     "broken": false,
+     "firstError": null,
+     "seq": null,
+     "issued": 151516,
+     "committed": 151516,
+     "discarded": 0
+    },
+    "extra": {
+     "exit": 0,
+     "spawnError": null,
+     "firstLifeRngState": {
+      "state": 91435448777690,
+      "calls": 49922
+     },
+     "stackTraceLimit": 50,
+     "rows": 19,
+     "driverCoreSha256": "f56b9cfea4fdd7f73bb7c755213780ddc77134fb7cf5b4a33b2dc462686afd31",
+     "rngCoreSha256": "0a593b4116375b2efc0592af3a332d2375b40a8462dd5fdce2715ed0a3a6349d",
+     "sourceSha256": {
+      "data.js": "4c856e75ad9060b7b73dd089cb64198b960df16672a925258e3dbfe6471cebf7",
+      "events.js": "5274e2b41ea4453f0dcc1af6e056da09c25139d18057402ff8b6d64c4e434f97",
+      "core/aging.js": "4544c8be1bf76c74536c062818c6e075a22926e502bba7f16a4be2bfb6f34881",
+      "core/growth.js": "35d782a73f14feffd69c246826d399591f94e9acb65774a90ee2107344bb747b",
+      "core/relations.js": "7aad574bded11fe03ed09c6c51036dc686d5d4c004049b849cb67e5caed990f6",
+      "core/items.js": "42ebf1d29c2b678675f17ac34db0529b024d6b5ecb7bc611182ef808f11a99f0",
+      "core/recruit.js": "b897fb3a2488d6f40dc4b661d8ca39a1987ddc0f4ac9bc24e950413ba663485a",
+      "core/lineage.js": "729f3796b6c3150c08262870e52e34650e987ede3d8e599631192c8dea85a7c8",
+      "script.js": "0b2af9543055778fdc31e7e128a235dc8ea5ba36646246559a5675635baa7007"
+     },
+     "siteCount": 33,
+     "unitCalls": 50035,
+     "unitByCls": {
+      "R4": 44373,
+      "R1": 5597,
+      "R2": 51,
+      "R3": 9,
+      "R5": 5
+     }
+    },
+    "unknownSamples": []
+   },
+   "file": {
+    "tag": "file",
+    "lives": 3000,
+    "lifeDigest": 1029559938,
+    "rngCallDigest": 3484114229,
+    "rngCallsTotal": 1601330,
+    "unknownLives": 0,
+    "unknownUnit": 0,
+    "siteCalls": 1601330,
+    "byCls": {
+     "R4": 992746,
+     "R1": 261965,
+     "HARNESS": 302839,
+     "HARNESS-relocate": 622,
+     "R3": 19744,
+     "R5": 23414
+    },
+    "byId": {
+     "script.js:getRandomItemByWeight:random#1<-script.js:startLife:call-getRandomItemByWeight#1": 3000,
+     "script.js:getRandomItemByWeight:random#1<-script.js:startLife:call-getRandomItemByWeight#2": 3000,
+     "script.js:getRandomItemByWeight:random#1<-script.js:startLife:call-getRandomItemByWeight#3": 3000,
+     "core/relations.js:generateFamily:random#1": 5884,
+     "core/relations.js:generateFamily:random#2": 5411,
+     "core/relations.js:weightedPick:random#1<-core/relations.js:generateFamily:call-weightedPick#1": 3000,
+     "script.js:startLife:random#1": 2968,
+     "core/relations.js:advanceYear:random#2": 614798,
+     "core/relations.js:advanceYear:random#3": 31473,
+     "script.js:getRandomItemByWeight:random#1<-script.js:nextYear:call-getRandomItemByWeight#1": 261965,
+     "harness:driverChoose:random#1": 302839,
+     "core/growth.js:rollAnnualExcelia:random#1": 249778,
+     "script.js:getRandomItemByWeight:random#1<-script.js:pickFamiliaCandidate:call-getRandomItemByWeight#1": 1805,
+     "script.js:rnd:random#1<-script.js:rollFamiliaBody:call-rnd#1": 1711,
+     "harness:driverChooseRelocate:random#1": 622,
+     "script.js:chooseBody:random#1": 19744,
+     "core/relations.js:generateFamily:random#3": 2602,
+     "core/relations.js:advanceYear:random#1": 54783,
+     "core/relations.js:createRomanticPartner:random#1": 1870,
+     "core/relations.js:pickPartnerRace:random#1": 1999,
+     "core/relations.js:createRomanticPartner:random#2": 1870,
+     "core/relations.js:weightedPick:random#1<-core/relations.js:createRomanticPartner:call-weightedPick#1": 668,
+     "script.js:nextYear:random#1": 23414,
+     "core/relations.js:weightedPick:random#1<-core/relations.js:pickPartnerRace:call-weightedPick#1": 786,
+     "core/relations.js:createChild:random#1": 1562,
+     "script.js:rollFamiliaBody:random#1": 179,
+     "script.js:getRandomItemByWeight:random#1<-script.js:startLife:call-getRandomItemByWeight#4": 435,
+     "core/relations.js:parentRaces:random#1": 164
+    },
+    "unitCalls": 0,
+    "unitByCls": {},
+    "seqDigest": 1840671630,
+    "perLifeCallDigest": 3484114229,
+    "integrity": {
+     "broken": false,
+     "firstError": null,
+     "seq": null,
+     "issued": 151513,
+     "committed": 151513,
+     "discarded": 0
+    },
+    "extra": {
+     "error": null,
+     "pageErrors": [],
+     "asmInfo": null,
+     "pageSha": {
+      "driverChoose": "a4c7e8f54a7d965643ef5516134116c5609f39d6170ca0a0d7282311af0777ae",
+      "createRng": "b32bbfccae124aec72878d3ae3527434746cc8821ae691b941a4d2ea92ed147d",
+      "expectDriver": "a4c7e8f54a7d965643ef5516134116c5609f39d6170ca0a0d7282311af0777ae",
+      "expectRng": "b32bbfccae124aec72878d3ae3527434746cc8821ae691b941a4d2ea92ed147d",
+      "same": true
+     },
+     "driverCoreSha256": "f56b9cfea4fdd7f73bb7c755213780ddc77134fb7cf5b4a33b2dc462686afd31",
+     "rngCoreSha256": "0a593b4116375b2efc0592af3a332d2375b40a8462dd5fdce2715ed0a3a6349d",
+     "harnessSha256": "3ed827c20e76cb1e947e6dd733b4fa773637ec2b56ad510e0e7b444e8ca1f411",
+     "siteCount": 33,
+     "startState": {
+      "state": 91435448777690,
+      "calls": 49922
+     },
+     "mathRandomIsRecorder": true,
+     "preConfigCalls": 0,
+     "progressHalted": false,
+     "autoChecked": false,
+     "sourceSha256": {
+      "data.js": "4c856e75ad9060b7b73dd089cb64198b960df16672a925258e3dbfe6471cebf7",
+      "events.js": "5274e2b41ea4453f0dcc1af6e056da09c25139d18057402ff8b6d64c4e434f97",
+      "core/aging.js": "4544c8be1bf76c74536c062818c6e075a22926e502bba7f16a4be2bfb6f34881",
+      "core/growth.js": "35d782a73f14feffd69c246826d399591f94e9acb65774a90ee2107344bb747b",
+      "core/relations.js": "7aad574bded11fe03ed09c6c51036dc686d5d4c004049b849cb67e5caed990f6",
+      "core/items.js": "42ebf1d29c2b678675f17ac34db0529b024d6b5ecb7bc611182ef808f11a99f0",
+      "core/recruit.js": "b897fb3a2488d6f40dc4b661d8ca39a1987ddc0f4ac9bc24e950413ba663485a",
+      "core/lineage.js": "729f3796b6c3150c08262870e52e34650e987ede3d8e599631192c8dea85a7c8",
+      "script.js": "0b2af9543055778fdc31e7e128a235dc8ea5ba36646246559a5675635baa7007"
+     }
+    },
+    "unknownSamples": []
+   },
+   "inline": {
+    "tag": "inline",
+    "lives": 3000,
+    "lifeDigest": 1029559938,
+    "rngCallDigest": 3484114229,
+    "rngCallsTotal": 1601330,
+    "unknownLives": 0,
+    "unknownUnit": 0,
+    "siteCalls": 1601330,
+    "byCls": {
+     "R4": 992746,
+     "R1": 261965,
+     "HARNESS": 302839,
+     "HARNESS-relocate": 622,
+     "R3": 19744,
+     "R5": 23414
+    },
+    "byId": {
+     "script.js:getRandomItemByWeight:random#1<-script.js:startLife:call-getRandomItemByWeight#1": 3000,
+     "script.js:getRandomItemByWeight:random#1<-script.js:startLife:call-getRandomItemByWeight#2": 3000,
+     "script.js:getRandomItemByWeight:random#1<-script.js:startLife:call-getRandomItemByWeight#3": 3000,
+     "core/relations.js:generateFamily:random#1": 5884,
+     "core/relations.js:generateFamily:random#2": 5411,
+     "core/relations.js:weightedPick:random#1<-core/relations.js:generateFamily:call-weightedPick#1": 3000,
+     "script.js:startLife:random#1": 2968,
+     "core/relations.js:advanceYear:random#2": 614798,
+     "core/relations.js:advanceYear:random#3": 31473,
+     "script.js:getRandomItemByWeight:random#1<-script.js:nextYear:call-getRandomItemByWeight#1": 261965,
+     "harness:driverChoose:random#1": 302839,
+     "core/growth.js:rollAnnualExcelia:random#1": 249778,
+     "script.js:getRandomItemByWeight:random#1<-script.js:pickFamiliaCandidate:call-getRandomItemByWeight#1": 1805,
+     "script.js:rnd:random#1<-script.js:rollFamiliaBody:call-rnd#1": 1711,
+     "harness:driverChooseRelocate:random#1": 622,
+     "script.js:chooseBody:random#1": 19744,
+     "core/relations.js:generateFamily:random#3": 2602,
+     "core/relations.js:advanceYear:random#1": 54783,
+     "core/relations.js:createRomanticPartner:random#1": 1870,
+     "core/relations.js:pickPartnerRace:random#1": 1999,
+     "core/relations.js:createRomanticPartner:random#2": 1870,
+     "core/relations.js:weightedPick:random#1<-core/relations.js:createRomanticPartner:call-weightedPick#1": 668,
+     "script.js:nextYear:random#1": 23414,
+     "core/relations.js:weightedPick:random#1<-core/relations.js:pickPartnerRace:call-weightedPick#1": 786,
+     "core/relations.js:createChild:random#1": 1562,
+     "script.js:rollFamiliaBody:random#1": 179,
+     "script.js:getRandomItemByWeight:random#1<-script.js:startLife:call-getRandomItemByWeight#4": 435,
+     "core/relations.js:parentRaces:random#1": 164
+    },
+    "unitCalls": 0,
+    "unitByCls": {},
+    "seqDigest": 1840671630,
+    "perLifeCallDigest": 3484114229,
+    "integrity": {
+     "broken": false,
+     "firstError": null,
+     "seq": null,
+     "issued": 151513,
+     "committed": 151513,
+     "discarded": 0
+    },
+    "extra": {
+     "error": null,
+     "pageErrors": [],
+     "asmInfo": {
+      "rows": 32,
+      "sourceRows": 9,
+      "harnessRows": 1,
+      "documentSha256": "49b20fdb6f107575b9661e308c4a35bbcabf8c048d6a3cf3916904a90ed4cb11"
+     },
+     "pageSha": {
+      "driverChoose": "a4c7e8f54a7d965643ef5516134116c5609f39d6170ca0a0d7282311af0777ae",
+      "createRng": "b32bbfccae124aec72878d3ae3527434746cc8821ae691b941a4d2ea92ed147d",
+      "expectDriver": "a4c7e8f54a7d965643ef5516134116c5609f39d6170ca0a0d7282311af0777ae",
+      "expectRng": "b32bbfccae124aec72878d3ae3527434746cc8821ae691b941a4d2ea92ed147d",
+      "same": true
+     },
+     "driverCoreSha256": "f56b9cfea4fdd7f73bb7c755213780ddc77134fb7cf5b4a33b2dc462686afd31",
+     "rngCoreSha256": "0a593b4116375b2efc0592af3a332d2375b40a8462dd5fdce2715ed0a3a6349d",
+     "harnessSha256": "6777addf85f2020459d539cd6304bfa410a186890bbd0334a00c2a736c95150c",
+     "siteCount": 33,
+     "startState": {
+      "state": 91435448777690,
+      "calls": 49922
+     },
+     "mathRandomIsRecorder": true,
+     "preConfigCalls": 0,
+     "progressHalted": false,
+     "autoChecked": false,
+     "sourceSha256": {
+      "data.js": "4c856e75ad9060b7b73dd089cb64198b960df16672a925258e3dbfe6471cebf7",
+      "events.js": "5274e2b41ea4453f0dcc1af6e056da09c25139d18057402ff8b6d64c4e434f97",
+      "core/aging.js": "4544c8be1bf76c74536c062818c6e075a22926e502bba7f16a4be2bfb6f34881",
+      "core/growth.js": "35d782a73f14feffd69c246826d399591f94e9acb65774a90ee2107344bb747b",
+      "core/relations.js": "7aad574bded11fe03ed09c6c51036dc686d5d4c004049b849cb67e5caed990f6",
+      "core/items.js": "42ebf1d29c2b678675f17ac34db0529b024d6b5ecb7bc611182ef808f11a99f0",
+      "core/recruit.js": "b897fb3a2488d6f40dc4b661d8ca39a1987ddc0f4ac9bc24e950413ba663485a",
+      "core/lineage.js": "729f3796b6c3150c08262870e52e34650e987ede3d8e599631192c8dea85a7c8",
+      "script.js": "0b2af9543055778fdc31e7e128a235dc8ea5ba36646246559a5675635baa7007"
+     }
+    },
+    "unknownSamples": []
+   },
+   "verdict": {
+    "status": "PASS",
+    "missing": [],
+    "failures": {
+     "node": [],
+     "file": [],
+     "inline": []
+    },
+    "pairSame": {
+     "node=file": true,
+     "node=inline": true,
+     "file=inline": true
+    }
+   }
+  }
+ },
+ "chromium": "153.0.8010.12",
+ "playwright": "1.63.0",
+ "overall": {
+  "pass": 2,
+  "partial": 0,
+  "fail": 0,
+  "exitCode": 0,
+  "requiredEnvs": [
+   "node",
+   "file",
+   "inline"
+  ],
+  "notRunEnvs": []
+ }
+}

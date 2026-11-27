@@ -1,0 +1,13 @@
+PASS FSR-T1a 선택지 3개(G1-가)
+PASS FSR-T1b 금지 효과·음수 hp 0
+PASS FSR-T1c 어휘 목록(던전·계층·층·몬스터·고블린·동행·팔나·미궁·원정) 0건
+PASS FSR-T1d 수치 = 결정 요청서 G1-가: [0] valis 600 · [1] p .7 agi per .002 ok 1000 / fail 200 · [2] bond 1
+PASS FSR-T2 w·once·조건 원문 바이트 동일
+PASS FSR-T3a free_supporter_route = surface
+PASS FSR-T3b supporter_accompany 소속 사건 0
+PASS FSR-T4 선택 [0] → valis +600 · 생존 · 상태 불변
+PASS FSR-T4 선택 [1] 난수 0 → valis +1000 · 생존 · 상태 불변
+PASS FSR-T4 선택 [1] 난수 0.999 → valis +200 · 생존 · 상태 불변
+PASS FSR-T4 선택 [2] → valis +0 · 생존 · 상태 불변
+RESULT: PASS 11/11 (fsr_g1_test)
+exit=0
