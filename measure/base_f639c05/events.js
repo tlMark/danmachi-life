@@ -1,0 +1,414 @@
+// 항목(id)별 능력치 보정. data.js의 id와 연결됩니다. (보정값은 임의 값, 원작 근거 아님)
+const MODS = {
+    races: {
+        human: { fx: { bond: 2 } }, beastman: { bias: { str: 1.5, agi: 1.5 }, fx: { hp: 6 } },
+        pallum: { bias: { dex: 2, agi: 1.3 }, fx: {} }, dwarf: { bias: { str: 2, vit: 2 }, fx: { hp: 8 } },
+        elf: { rate: 4, bias: { mag: 3 }, fx: { power: 3 } },
+        half_elf: { bias: { mag: 1.5 }, fx: { power: 2, bond: 1 } },
+        amazon: { bias: { str: 2, agi: 1.5 }, fx: { power: 5 } },
+        renard: { bias: { mag: 2 }, fx: { bond: 3 } }, xenos: { fx: { power: 6, flags: ['xenos'] } }
+    },
+    origins: {
+        orario: { fx: { valis: 600, bond: 2 } }, rakia: { fx: { power: 3, hp: 3 } }, melen: { fx: { valis: 400 } },
+        far_east: { fx: { power: 2 } }, telskyura: { fx: { power: 6, hp: -5 } },
+        elven_forest: { fx: { power: 3, bond: -2 } }, unknown: { fx: { power: 5 } }
+    },
+    talents: {
+        none: { fx: {} }, dev_ability_hunter: { bias: { dex: 1.5 }, fx: { power: 5 } },
+        dev_ability_craft: { bias: { dex: 2 }, fx: { valis: 600, flags: ['crafter'] } },
+        basic_magic: { bias: { mag: 3 }, fx: { power: 8 } }, curse: { bias: { mag: 2 }, fx: { power: 7, hp: -5 } },
+        chantless: { bias: { mag: 3 }, fx: { power: 12 } }, rare_skill: { fx: { power: 16 } },
+        liaris: { fx: { power: 20, flags: ['liaris'] } }
+    },
+    organizations: {
+        hostess: { fx: { bond: 6, valis: 300 } },
+        guild: { fx: { valis: 600, bond: 2 } }
+    },
+    familias: {
+        ares: { adv: true, fx: { power: 4, hp: 4} }, ganesha: { adv: true, fx: { power: 3, bond: 3} },
+        hephaestus: { adv: true, fx: { valis: 800} }, loki: { adv: true, fx: { power: 12} },
+        freya: { adv: true, fx: { power: 12} }, kali: { adv: true, fx: { power: 8, hp: -5} },
+        hermes: { adv: true, fx: { power: 3, valis: 400} },
+        astraea: { adv: true, fx: { bond: 8, power: 2} },
+        hestia: { adv: true, fx: { power: 6, bond: 8} },
+        demeter: { fx: { valis: 800, bond: 3 } }, miach: { fx: { valis: 400, bond: 4 } },
+        takemikazuchi: { adv: true, falna: [5, 10], fx: { power: 6, bond: 3} }, soma: { adv: true, fx: { power: 3} }
+    }
+};
+
+const DEFAULT_FALNA = [12, 18];
+const MAX_LEVEL = 12;
+
+// ---- 나이 조건 규칙 ----
+// cond.age  : 육체 나이(S.phase). 종족 수명, 레벨/팔나에 의한 노화 억제가 반영된다. 몸 상태·전투·번식·노년 이벤트용.
+// cond.cage : 달력 나이(S.age). 입단·징집·성년·진로 등 제도/사회 시점과 "살아온 햇수"가 중요한 이벤트용.
+// 두 조건이 함께 있으면 모두 만족해야 한다.
+
+// ---- 임의 밸런스 값 (원작 근거 없음) ----
+// 직업별 연간 활동 엑세리아. 팔나 전에는 잠재력(potential)으로 쌓인다.  levelScale: 레벨당 증가 비율
+const ANNUAL_ACTIVITY = {
+    child: { exp: [0.2, 0.5], levelScale: 0 },
+    adventurer: { exp: [1.6, 3.2], levelScale: 0.06 },
+    supporter: { exp: [0.8, 1.8], levelScale: 0.08 },
+    soldier: { exp: [1, 2.5], levelScale: 0.08 },
+    blacksmith: { exp: [0.5, 1.2], levelScale: 0.05 },
+    healer: { exp: [0.3, 0.8], levelScale: 0.05 },
+    farmer: { exp: [0.5, 1.2], levelScale: 0.03 },
+    guild_staff: { exp: [0.2, 0.6], levelScale: 0.03 },
+    merchant: { exp: [0.2, 0.5], levelScale: 0.03 },
+    waitstaff: { exp: [0.2, 0.5], levelScale: 0.03 },
+    retired: { exp: [0, 0], levelScale: 0 }
+};
+// 연간 체력 회복(휴식·치료). v1.2.1에는 회복 경로가 거의 없어 체력이 일생의 소모품이었다.
+// perYear 는 '육체 나이 1년'당 회복량(임의 밸런스 값). 달력 1년에 흐른 육체 나이(노화율)에 비례해 적용된다.
+const HP_REGEN = [{ untilPhase: 45, perYear: 1 }];
+const HP_REGEN_MODE = (typeof globalThis !== 'undefined' && globalThis.__HP_REGEN_MODE) || 'physical';   // 테스트용 A/B 스위치(기본 physical)
+const FAMILIA_BIAS = { rakia: { ares: 4 }, telskyura: { kali: 6 } };
+
+// ── 이벤트 영역 카탈로그(명시적 전수 분류) ─────────────────────────────────────────
+// 모든 이벤트 id 는 반드시 아래 표에 정확히 한 번 등재되어야 한다(테스트가 누락·잔존 id 를 실패 처리).
+//   'dungeon'            : 던전 탐색·몬스터 조우·층 단위 활동(정규). cond.job 에 adventurer 또는 supporter, cond.flags 'falna' 가 **명시적으로** 있어야 한다
+//                          (min.level 로 팔나를 암묵 가정하지 않는다). 서포터라면 hasFamilia:true 도 필요.
+//   'supporter_accompany': 프리 서포터 예외(팔나 없는 던전 동행). job:['supporter'] + noFlags falna + hasFamilia:false + once + 낮은 w + 빈곤 상한(max.valis).
+//   'surface'            : 던전과 무관한 지상 생활·관계·진로·사건.
+//   'surface_ref'        : 지상 사건이지만 던전/몬스터를 배경·사후 처리로만 언급(두 번째 값 = 근거).
+const EVENT_AREA = {
+    dive1: ['dungeon'], routine: ['dungeon'], minotaur: ['dungeon'], expedition: ['dungeon'], xenos: ['dungeon'],
+    purple_moth: ['dungeon'], high_excelia: ['dungeon'], guild_advisor: ['dungeon'], encounter_goliath: ['dungeon'],
+    find_grimoire: ['dungeon'], daedalus_orb: ['dungeon'], floor_boss_upper: ['dungeon'], mid_floor_expedition: ['dungeon'],
+    deep_floor_survey: ['dungeon'], floor_lord_hunt: ['dungeon'], legend_clash: ['dungeon'],
+    supporter_route: ['dungeon'],
+    free_supporter_route: ['supporter_accompany'],
+    sea: ['surface_ref', '항구에 흘러나온 몬스터와의 조우. 던전 내부 탐색이 아님(melen 출신 한정)'],
+    healer_shift: ['surface_ref', '치료소에서 던전 부상자를 돌봄. 던전에 들어가지 않음'],
+    parent_worry: ['surface_ref', '부모의 편지. 던전 활동 없음'],
+    craft_drop_weapon: ['surface_ref', '획득한 드롭 아이템을 대장간에서 가공. 상점 거래'],
+    wargame: ['surface_ref', '파밀리아 전쟁유희(지상). 참가 자격은 cond.hasFamilia:true 로 검증됨(v1.7.3)'],
+    festival: ['surface_ref', '오라리오 축제 몬스터 필리아. 던전 활동 없음'],
+    clash: ['surface'], hero_sacrifice: ['surface_ref', '지상 도시 방어전(흑룡 습격). 레벨 6 이상 한정'],
+    buy_pyonkichi: ['surface'], magic_sword_crozzo: ['surface'], buy_elemental_cloth: ['surface'], buy_dual_potion: ['surface'],
+    market: ['surface'], sick: ['surface'], join: ['surface'], latejoin: ['surface'], tavern: ['surface'], love: ['surface'],
+    relationship_crisis: ['surface'], conscript: ['surface'], ritual: ['surface'], retire: ['surface'], join_hard: ['surface'],
+    supporter_scorn: ['surface'], elf_touch: ['surface'], pallum_scorn: ['surface'], amazon_duel: ['surface'], neglect: ['surface'],
+    god_gone: ['surface'], theology: ['surface'], hieroglyph_unlock: ['surface'], gods_whim: ['surface'], curse_awaken: ['surface'],
+    blacksmith_forge: ['surface'], have_child: ['surface'], career_choice: ['surface'], guild_counter: ['surface'],
+    merchant_trade: ['surface'], farm_season: ['surface'], retired_days: ['surface'], career_pivot: ['surface'],
+    family_gathering: ['surface'], city_disaster: ['surface'], old_friend: ['surface'], mentor: ['surface'],
+    blacksmith_order: ['surface'], waitstaff_shift: ['surface'], soldier_patrol: ['surface'], neighborhood_help: ['surface'],
+    street_performance: ['surface'], seasonal_fair: ['surface'], unexpected_rain: ['surface'], lost_child: ['surface'],
+    small_injury: ['surface'], book_discovery: ['surface'], charity_work: ['surface'], travel_offer: ['surface'],
+    community_role: ['surface'], parent_wellbeing: ['surface'], sibling_visit: ['surface'], sibling_rivalry: ['surface'],
+    child_growing: ['surface'], family_empty_home: ['surface']
+};
+// 부모가 파밀리아 소속일 때 자녀의 이후 파밀리아 추첨에서 그 파밀리아에 곱하는 가중치(임의 밸런스 값).
+const PARENT_FAMILIA_BIAS = 6;
+
+// ── R-i(v1.7.8-ri): 거주지 기록 전용 데이터 ─────────────────────────────────────────
+// 지역 id = 출생지 id(data.js origins). R-i 에서는 이벤트 조건·판정에 쓰지 않는다(R-iii 미승인).
+const REGION_IDS = ['orario', 'rakia', 'melen', 'far_east', 'telskyura', 'elven_forest', 'unknown'];
+// 파밀리아 소재지(사용자 건별 지정 2026-11-07, IMPL-P0a §7.1). null = 소재지 미지정(지역·이주 규칙 미적용).
+// 등급: hephaestus·miach = 2차+사용자 확인 / ares·kali = 2차 / 그 밖 = 사용자 제공 정보. 원작 확정 0.
+// R-i 에서는 기록용 데이터일 뿐 어떤 판정에도 쓰지 않는다(입단 이주는 2b·R-ii).
+const FAMILIA_HOME = {
+    hephaestus: 'orario', miach: 'orario', ares: 'rakia', kali: 'telskyura',
+    ganesha: 'orario', loki: 'orario', freya: 'orario', hermes: 'orario', demeter: 'orario',
+    takemikazuchi: 'orario', soma: 'orario', hestia: 'orario',
+    astraea: null
+};
+// true = v1.7.1 방식(출생 직후 자녀가 부모 소속으로 즉시 입단·팔나 0세). false(기본) = 부모 소속과 자녀 입단을 분리.
+const NEWBORN_MEMBERSHIP = (typeof globalThis !== 'undefined' && globalThis.__NEWBORN_MEMBERSHIP) || false;
+
+const EVENTS = [
+    { id: 'market', w: 20, cond: { age: [6, 13] }, text: '시장 골목에서 모험자들의 무용담을 엿들었다.', choices: [
+        { label: '끝까지 귀 기울인다', text: '가슴 속에 모험에 대한 동경이 자리 잡았다.', fx: { flags: ['dreamer'], bond: 1 } },
+        { label: '심부름 일을 거든다', text: '푼돈을 벌고 상인들과 안면을 텄다.', fx: { valis: 300, bond: 2 } }] },
+    { id: 'sick', w: 10, cond: { age: [3, 90] }, text: '지독한 감기가 퍼졌다.', choices: [
+        { label: '약을 사 먹는다', text: '돈은 들었지만 금방 나았다.', fx: { valis: -400 } },
+        { label: '그냥 버틴다', chance: { p: .7, stat: 'hp', per: .003, ok: { text: '며칠 앓고 털고 일어났다.', fx: { hp: -5 } }, fail: { text: '병이 깊어졌다.', fx: { hp: -25 } } } }] },
+    { id: 'join', w: 100, once: true, cond: { cage: [12, 22], hasFamilia: false, notRace: ['human', 'pallum'] }, text: '스스로 파밀리아를 찾아 나설 때가 되었다. 마법과 신체 재능이 있는 종족은 신들이 먼저 눈여겨본다.', choices: [
+        { label: '파밀리아의 문을 두드리고 다닌다', text: '파밀리아의 문을 두드리고 다녔다.', fx: { recruit: { route: 'self_apply', okText: '몇 번 퇴짜를 맞은 끝에 받아 줄 신을 만났다.', failText: '끝내 받아 주는 신을 찾지 못했다.' } } },
+        { label: '길드 주변에서 서포터 일을 구한다', text: '짐꾼 일로 하루하루를 벌기 시작했다.', fx: { flags: ['supporter'], valis: 600 } }] },
+    { id: 'latejoin', w: 12, once: true, cond: { cage: [20, 35], hasFamilia: false, flags: ['supporter'] }, text: '오랜 서포터 생활 끝에 받아 주겠다는 신이 나타났다.', choices: [
+        { label: '손을 잡는다', text: '늦었지만 새 출발을 했다.', fx: { recruit: { route: 'scout' } } },
+        { label: '지금의 삶이 낫다고 거절한다', text: '안정된 일상을 택했다.', fx: { bond: 3 } }] },
+    { id: 'dive1', w: 60, once: true, cond: { canEnterDungeon: true, flags: ['falna'], age: [15, 40], job: ['adventurer'] }, text: '처음으로 던전 상층에 내려갔다.', choices: [
+        { label: '1층만 신중하게 돈다', text: '고블린 몇 마리를 잡고 무사히 돌아왔다.', fx: { power: 6, valis: 400 } },
+        { label: '욕심내서 더 깊이 내려간다', chance: { p: .55, stat: 'power', per: .004, ok: { text: '큰 수확을 안고 살아 돌아왔다.', fx: { power: 14, valis: 1200, feat: 1 } }, fail: { text: '몬스터 무리에 둘러싸여 간신히 도망쳤다.', fx: { hp: -60 } } } }] },
+    { id: 'routine', w: 25, cond: { canEnterDungeon: true, flags: ['falna'], age: [16, 50], job: ['adventurer'] }, text: '평소처럼 던전에 들어갈 채비를 했다.', choices: [
+        { label: '안전한 구간만 돈다', text: '소득은 적지만 무리 없는 하루였다.', fx: { power: 2, valis: 300 } },
+        { label: '한 계층 더 내려간다', chance: { p: .6, stat: 'power', per: .004, ok: { text: '성과가 좋았다.', fx: { power: 5, valis: 900 } }, fail: { text: '부상을 입고 돌아왔다.', fx: { hp: -20, valis: -200 } } } }] },
+    { id: 'tavern', w: 12, cond: { age: [16, 70] }, text: '저녁에 술집 ‘풍요의 여주인’ 앞을 지나게 되었다.', choices: [
+        { label: '들어가 한잔한다', text: '사람들과 어울리며 즐거운 밤을 보냈다.', fx: { valis: -300, bond: 4 } },
+        { label: '일손을 거들고 품삯을 받는다', text: '바쁘게 일하고 약간의 돈을 벌었다.', fx: { valis: 400 } }] },
+    { id: 'love', w: 14, cond: { age: [18, 45], hasPartner: false }, text: '마음이 가는 사람이 생겼다.', choices: [
+        { label: '용기 내어 마음을 전한다', chance: { p: .4, stat: 'bond', per: .01, ok: { text: '마음이 닿아 함께하게 되었다.', fx: { relationship: 'romance', bond: 10 } }, fail: { text: '거절당했지만 시간이 약이었다.', fx: { bond: -2 } } } },
+        { label: '지켜보기만 한다', text: '아무 일도 일어나지 않았다.', fx: {} }] },
+    { id: 'relationship_crisis', w: 1, once: true, cond: { age: [18, 90], hasPartner: true }, text: '서로의 삶이 달라지며 관계에 작은 균열이 생겼다. 이 관계를 어떻게 이어갈까?', choices: [
+        { label: '마주 앉아 솔직하게 대화한다', chance: { p: .75, stat: 'bond', per: .005, ok: { text: '서로의 마음을 다시 확인하며 관계를 이어갔다.', fx: { bond: 3 } }, fail: { text: '끝내 간극을 좁히지 못하고 각자의 길을 걷게 되었다.', fx: { relationshipEnd: 'breakup', bond: -3 } } } },
+        { label: '서로를 위해 헤어진다', text: '좋았던 기억을 간직한 채 연인 관계를 마무리했다.', fx: { relationshipEnd: 'breakup' } }] },
+    { id: 'conscript', w: 80, once: true, cond: { cage: [17, 28], origin: ['rakia'] }, text: '라키아에서 징집 명령이 내려왔다.', choices: [
+        { label: '징집에 응한다', text: '전쟁터에서 거칠게 단련되었다.', fx: { power: 8, hp: -5, flags: ['soldier'], service: 'conscripted' } },
+        { label: '오라리오로 도망친다', chance: { p: .5, ok: { text: '국경을 넘어 새 삶을 시작했다.', fx: { valis: -400, bond: -3, residence: 'orario', residenceReason: 'fled', location: 'orario', locationReason: 'fled', service: 'deserter' } }, fail: { text: '추격대에 붙잡혀 크게 다쳤다.', fx: { hp: -25 } } } }] },
+    { id: 'minotaur', w: 14, once: true, cond: { canEnterDungeon: true, flags: ['falna'], age: [16, 40], job: ['adventurer'], max: { power: 35 } }, text: '상층에서 있을 리 없는 미노타우로스와 마주쳤다.', choices: [
+        { label: '전력으로 도망친다', chance: { p: .5, stat: 'power', per: .004, ok: { text: '살아 돌아왔지만 공포가 오래 남았다.', fx: { hp: -15, bond: -1 } }, fail: { text: '따라잡혀 중상을 입었다.', fx: { hp: -55 } } } },
+        { label: '맞서 싸운다', chance: { p: .15, stat: 'power', per: .006, ok: { text: '기적처럼 살아남아 이름이 알려졌다.', fx: { power: 25, bond: 4, feat: 2 } }, fail: { text: '압도적인 힘 앞에 쓰러졌다.', fx: { hp: -65 } } } }] },
+    { id: 'expedition', w: 25, once: true, cond: { canEnterDungeon: true, flags: ['falna'], age: [25, 55], job: ['adventurer'], min: { power: 55 } }, text: '심층 원정대를 꾸린다는 소식이 돌았다.', choices: [
+        { label: '참가한다', chance: { p: .5, stat: 'power', per: .003, ok: { text: '원정은 성공했고 전설로 회자되었다.', fx: { power: 25, valis: 5000, flags: ['veteran'], feat: 2 } }, fail: { text: '원정 도중 돌아오지 못했다.', fx: { die: true } } } },
+        { label: '지상에 남는다', text: '대신 후방 일을 도우며 안정적으로 지냈다.', fx: { valis: 800 } }] },
+    { id: 'ritual', w: 90, once: true, cond: { cage: [14, 22], origin: ['telskyura'], residenceIn: ['telskyura'] }, text: '텔스큐라의 의식에 휘말려 싸움에 나서야 한다.', choices: [
+        // P5 DF-6(P-1): 팔나판(앞)·비팔나판 복제. 라벨·확률·실패 같음, 비팔나판 ok 에서 feat 만 뺌. 데이터 인덱스: 몰래 빠져나간다 [1]→[2]
+        { label: '정면으로 싸운다', cond: { flags: ['falna'] }, chance: { p: .5, stat: 'power', per: .005, ok: { text: '살아남아 전사로 인정받았다.', fx: { power: 15, flags: ['warrior'], feat: 1 } }, fail: { text: '싸움에서 목숨을 잃었다.', fx: { die: true } } } },
+        { label: '정면으로 싸운다', cond: { noFlags: ['falna'] }, chance: { p: .5, stat: 'power', per: .005, ok: { text: '살아남아 전사로 인정받았다.', fx: { power: 15, flags: ['warrior'] } }, fail: { text: '싸움에서 목숨을 잃었다.', fx: { die: true } } } },
+        { label: '몰래 빠져나간다', chance: { p: .4, ok: { text: '무사히 도망쳤지만 고향을 잃었다.', fx: { bond: -3 } }, fail: { text: '붙잡혀 크게 다쳤다.', fx: { hp: -40 } } } }] },
+    { id: 'xenos', w: 6, once: true, cond: { canEnterDungeon: true, flags: ['falna'], age: [20, 50], job: ['adventurer'] }, text: '미궁 깊은 곳에서 이성을 가진 몬스터와 마주쳤다.', choices: [
+        { label: '대화를 시도한다', text: '인간과 몬스터 사이의 비밀스러운 유대가 생겼다.', fx: { flags: ['xenos_friend'], bond: 10 } },
+        { label: '길드에 보고한다', text: '포상금을 받았지만 마음 한구석이 불편했다.', fx: { valis: 1600, bond: -4 } }] },
+    { id: 'retire', w: 30, once: true, cond: { age: [45, 70] }, text: '몸이 예전 같지 않다. 앞으로를 생각할 때가 왔다.', choices: [
+        { label: '후배를 가르친다', text: '후배들이 따르는 사람이 되었다.', fx: { bond: 8, job: 'retired' } },
+        { label: '메렌으로 이주해 낚시로 지낸다', text: '그물을 손질하며 평온한 나날을 보냈다.', fx: { hp: 12, flags: ['fisher'], job: 'retired', residence: 'melen', residenceReason: 'retirement', location: 'melen', locationReason: 'retirement' } }] },
+    { id: 'join_hard', w: 100, once: true, cond: { cage: [12, 22], hasFamilia: false, race: ['human', 'pallum'] }, text: '팔나를 받으려 파밀리아를 찾아다니지만, 특별한 재능이 없어 보이면 문전박대를 당하기 쉽다.', choices: [
+        { label: '끈질기게 문을 두드린다', text: '끈질기게 문을 두드렸다.', fx: { recruit: { route: 'persistence', okText: '끝내 받아 주는 신을 만났다.', failText: '{familia}의 심사에서 탈락했다.', followup: 'recruit_after_fail' } } },
+        { label: '길드 주변에서 서포터 일을 구한다', text: '짐꾼 일로 하루하루를 벌기 시작했다.', fx: { flags: ['supporter'], valis: 600 } }] },
+    { id: 'supporter_scorn', w: 15, cond: { age: [16, 60], job: ['supporter'] }, text: '전리품 몫을 두고 모험자에게 업신여김을 당했다.', choices: [
+        { label: '참고 넘긴다', text: '다툼은 피했지만 마음이 무거웠다.', fx: { bond: -1, valis: 100 } },
+        { label: '정당한 몫을 요구한다', chance: { p: .5, stat: 'bond', per: .005, ok: { text: '떳떳한 태도에 상대가 물러섰다.', fx: { valis: 500, bond: 2 } }, fail: { text: '주먹이 돌아왔다.', fx: { hp: -15, valis: -100 } } } }] },
+    { id: 'wargame', w: 8, cond: { age: [20, 55], job: ['adventurer'], hasFamilia: true, familiaRole: ['member'] }, text: '파밀리아 간의 전쟁유희가 열려 우리 파밀리아도 참가하게 되었다.', choices: [
+        { label: '전선에 선다', chance: { p: .55, stat: 'power', per: .003, ok: { text: '맹활약해 승리에 크게 기여했다.', fx: { power: 12, valis: 1000, bond: 4, feat: 1 } }, fail: { text: '격전 끝에 크게 다쳤다.', fx: { hp: -50 } } } },
+        { label: '후방에서 지원한다', text: '무리하지 않고 몫을 챙겼다.', fx: { valis: 300, bond: 2 } }] },
+    { id: 'clash', w: 10, cond: { age: [8, 70], locationIn: ['orario'] }, text: '시가지 한복판에서 파밀리아 간의 항쟁이 터졌다.', choices: [
+        { label: '곧장 대피한다', chance: { p: .8, ok: { text: '다치지 않고 피했다.', fx: {} }, fail: { text: '파편에 맞아 다쳤다.', fx: { hp: -20 } } } },
+        { label: '구경하러 다가간다', chance: { p: .4, ok: { text: '소문 하나를 얻고 돌아왔다.', fx: { bond: 1 } }, fail: { text: '싸움에 휘말려 다쳤다.', fx: { hp: -25 } } } }] },
+    { id: 'festival', w: 12, cond: { age: [5, 70], locationIn: ['orario'] }, text: '도시 전체가 들뜨는 모험자 축제, 몬스터 필리아가 열렸다.', choices: [
+        { label: '마음껏 즐긴다', text: '사람들과 어울리며 잊지 못할 하루를 보냈다.', fx: { valis: -200, bond: 4 } },
+        { label: '노점을 연다', text: '대목을 맞아 짭짤하게 벌었다.', fx: { valis: 400 } }] },
+    { id: 'sea', w: 15, cond: { age: [12, 60], locationIn: ['melen'] }, text: '배를 타고 나갔다가 던전에서 흘러나온 몬스터와 마주쳤다.', choices: [
+        { label: '서둘러 항구로 돌아간다', chance: { p: .65, stat: 'hp', per: .003, ok: { text: '무사히 돌아와 어획물을 팔았다.', fx: { valis: 200 } }, fail: { text: '배가 부서지고 다쳤다.', fx: { hp: -25, valis: -300 } } } },
+        { label: '모험자에게 도움을 청한다', text: '사례금을 치렀지만 안전하게 돌아왔다.', fx: { valis: -300, bond: 1 } }] },
+    { id: 'elf_touch', w: 10, cond: { age: [10, 80], race: ['elf'] }, text: '낯선 이가 허락 없이 몸에 손을 댔다.', choices: [
+        { label: '참고 넘긴다', text: '불쾌함을 삼켰다.', fx: { bond: -1 } },
+        { label: '단호히 밀쳐 낸다', text: '엘프다운 단호함으로 선을 그었다.', fx: { bond: -2, power: 1 } }] },
+    { id: 'pallum_scorn', w: 10, cond: { age: [10, 45], race: ['pallum'] }, text: '작은 체구 때문에 사람들에게 무시를 당했다.', choices: [
+        { label: '머리를 써서 되받는다', chance: { p: .5, stat: 'bond', per: .005, ok: { text: '기지로 상대를 놀라게 했다.', fx: { bond: 3, valis: 400 } }, fail: { text: '오히려 비웃음만 샀다.', fx: { bond: -2 } } } },
+        { label: '묵묵히 실력을 쌓는다', text: '조용히 자신만의 기술을 갈고닦았다.', fx: { power: 3 } }] },
+    { id: 'amazon_duel', w: 10, cond: { age: [18, 45], race: ['amazon'], hasPartner: false }, text: '마음에 든 상대에게 승부를 청할 기회가 왔다.', choices: [
+        { label: '정면 승부를 건다', chance: { p: .5, stat: 'power', per: .003, ok: { text: '승부 끝에 서로를 인정하게 되었다.', fx: { relationship: 'romance', bond: 10 } }, fail: { text: '완패했지만 다음을 기약했다.', fx: { hp: -10, power: 3 } } } },
+        { label: '그냥 지나친다', text: '아무 일도 일어나지 않았다.', fx: {} }] },
+    { id: 'neglect', w: 25, once: true, cond: { age: [16, 50], familia: ['soma'], familiaRole: ['member'] }, text: '주신이 단원들을 방임하는 탓에 파밀리아가 점점 어수선해졌다.', choices: [
+        { label: '기강을 바로잡으려 나선다', chance: { p: .5, stat: 'bond', per: .01, ok: { text: '뜻을 같이하는 단원들이 모여들었다.', fx: { bond: 6, power: 3 } }, fail: { text: '반발을 사 몸싸움이 벌어졌다.', fx: { hp: -15, bond: -4 } } } },
+        { label: '모른 척한다', text: '분란에 휘말리지 않으려 몸을 사렸다.', fx: { bond: -2 } }] },
+    // 2b-a(2026-11-07): 팔나 보유(active) 조건 추가(사용자 결정), 송환 = 봉인(godReturn), 성공 시 송환된 파밀리아를 뺀 재수여. 실패·포기는 봉인 유지 + 명시된 clearFlags(adventurer).
+    { id: 'god_gone', w: 3, once: true, cond: { age: [20, 60], job: ['adventurer'], falnaState: ['active'] }, text: '주신이 규칙을 어겨 천계로 송환되었고, 새겨진 팔나가 봉인되었다.', choices: [
+        { label: '새 주신을 찾아 나선다', chance: { p: .6, stat: 'bond', per: .004, ok: { text: '받아 주는 신을 만나 힘을 되찾았다.', fx: { godReturn: 'regrant' } }, fail: { text: '받아 줄 신을 찾지 못해 평범한 사람으로 돌아갔다.', fx: { godReturn: 'seal', clearFlags: ['adventurer'], bond: -3 } } } },
+        { label: '모험을 접고 일상으로 돌아간다', text: '힘을 잃은 채 평범한 생활을 택했다.', fx: { godReturn: 'seal', clearFlags: ['adventurer'], hp: 5 } }] },
+    { id: 'purple_moth', w: 15, once: true, cond: { canEnterDungeon: true, flags: ['falna'], age: [15, 50], job: ['adventurer'] }, text: '상층에서 독가루를 뿌리는 퍼플 모스와 마주쳤다.', choices: [
+        { label: '해독약을 쓰고 물러난다', text: '비용은 들었지만 안전하게 빠져나왔다.', fx: { valis: -1000 } },
+        { label: '독을 무릅쓰고 맞선다', chance: { p: .55, stat: 'hp', per: .003, ok: { text: '독을 이겨 내며 몸이 독에 익숙해졌다.', fx: { power: 4, flags: ['resist'] } }, fail: { text: '독이 번져 앓아누웠다.', fx: { hp: -30, valis: -500 } } } }] },
+    { id: 'theology', w: 8, once: true, cond: { age: [16, 40], noFlags: ['scholar'] }, text: '학구에서 신성문자를 가르치는 종합신학 강의를 들어 볼 기회가 생겼다. 합격하는 사람은 열에 하나도 되지 않는다.', choices: [
+        { label: '도전한다', chance: { p: .1, stat: 'bond', per: .002, ok: { text: '높은 벽을 넘어 합격했고 신성문자를 읽을 수 있게 되었다.', fx: { flags: ['scholar'], bond: 3, valis: 2000 } }, fail: { text: '시험의 벽은 높았다.', fx: { valis: -600 } } } },
+        { label: '다른 길을 택한다', text: '배움 대신 현장에서 경험을 쌓기로 했다.', fx: { power: 2 } }] },
+    { id: 'hieroglyph_unlock', w: 15, once: true, cond: { age: [18, 45], flags: ['falna'] }, text: '어둠의 상인으로부터 신의 피(이코르)로 만든 금지된 해정약을 몰래 사지 않겠냐는 제안을 받았다.', choices: [
+        { label: '비싼 돈을 주고 구매해 사용한다', chance: { p: .5, stat: 'valis', per: .0001, ok: { text: '숨겨져 있던 스테이터스가 해제되며 새로운 힘을 깨달았다.', fx: { valis: -1000, power: 8, flags: ['unlocked_stats'] } }, fail: { text: '길드에 발각되어 막대한 벌금을 물었다.', fx: { valis: -1500, bond: -2 } } } },
+        { label: '위험한 거래를 거절한다', text: '유혹을 뿌리치고 정공법으로 수련에 매진했다.', fx: { power: 2 } }] },
+    { id: 'gods_whim', w: 12, cond: { age: [15, 55], flags: ['falna'] }, text: '천계의 지루함을 참지 못하고 내려온 어느 신의 변덕스러운 유희에 휘말렸다.', choices: [
+        { label: '신의 장단에 맞춰 준다', chance: { p: .6, ok: { text: '신을 즐겁게 해준 대가로 후한 보상을 받았다.', fx: { valis: 800, bond: 3 } }, fail: { text: '장난이 너무 지나쳐 크게 다쳤다.', fx: { hp: -25 } } } },
+        { label: '재빨리 도망친다', text: '신들의 장난을 피했지만 눈밖에 났다.', fx: { bond: -3 } }] },
+    { id: 'high_excelia', w: 20, cond: { canEnterDungeon: true, age: [18, 50], job: ['adventurer'], flags: ['falna'] }, text: '던전 탐색 중 자신의 한계를 아득히 뛰어넘는 몬스터와 마주쳤다. 랭크 업을 위한 상위 엑세리아(위업)를 쌓을 절호의, 그리고 치명적인 기회다.', choices: [
+        { label: '죽음을 각오하고 홀로 맞선다', chance: { p: .15, stat: 'power', per: .005, ok: { text: '불가능을 가능으로 바꾸며 엄청난 위업을 달성했다!', fx: { power: 25, hp: -30, feat: 3 } }, fail: { text: '압도적인 힘에 유린당해 치명상을 입었다.', fx: { hp: -60 } } } },
+        { label: '파티원들과 협력해 싸운다', chance: { p: .6, stat: 'bond', per: .01, ok: { text: '모두의 힘을 합쳐 쓰러트리고 경험을 나누었다.', fx: { power: 10, bond: 5 } }, fail: { text: '전멸의 위기를 간신히 넘기고 후퇴했다.', fx: { hp: -35 } } } }] },
+    { id: 'curse_awaken', w: 8, once: true, cond: { age: [15, 60], flags: ['falna'], max: { bond: 5 } }, text: '극한의 스트레스와 세상에 대한 원망이 마법 슬롯에 끔찍한 주술적 힘인 커스(저주)로 발현되려 한다.', choices: [
+        { label: '저주의 힘을 받아들인다', text: '강력한 힘을 얻었지만, 영혼의 일부가 깎여나갔다.', fx: { power: 15, hp: -10, bond: -5, flags: ['cursed'] } },
+        { label: '정신력으로 억누른다', text: '끔찍한 힘을 억제하는 데 성공했지만 깊은 피로가 남았다.', fx: { hp: -5 } }] },
+    { id: 'blacksmith_forge', w: 18, cond: { age: [15, 60], job: ['blacksmith'] }, text: '단야 어빌리티를 살려 직접 무기를 벼려냈다.', choices: [
+        { label: '명검을 만들기 위해 심혈을 기울인다', chance: { p: 0.35, stat: 'dex', per: 0.005, ok: { text: '최고급 무기를 완성하여 큰돈을 벌었다.', fx: { valis: 3000, power: 5 } }, fail: { text: '강도 조절에 실패해 재료와 시간만 날렸다.', fx: { valis: -500, hp: -5 } } } },
+        { label: '일반 무기를 대량 생산한다', text: '안전하고 꾸준하게 수입을 올렸다.', fx: { valis: 800, power: 1 } }] },
+    { id: 'have_child', w: 25, once: true, cond: { age: [20, 45], hasPartner: true }, text: '사랑하는 연인과 가족을 이루고, 작고 소중한 생명이 태어났다.', choices: [
+        { label: '은퇴하고 아이에게 전념한다', text: '위험한 일을 내려놓고 부모로서의 삶을 시작했다.', fx: { dropFamilia: true, clearFlags: ['adventurer'], relationship: 'child', bond: 15, hp: 5 } },
+        { label: '모험을 계속하며 아이를 키운다', text: '육아와 일을 병행하느라 고단하지만 큰 행복을 느낀다.', fx: { hp: -10, relationship: 'child', bond: 8, power: 2 } }] },
+    { id: 'hero_sacrifice', w: 3, once: true, cond: { age: [20, 60], min: { level: 6 }, locationIn: ['orario'] }, text: '오라리오에 흑룡이 습격해왔다. 도시의 존망이 걸린 절망적인 전투가 시작된다.', choices: [
+        { label: '선두에 서서 흑룡에게 돌격한다', chance: { p: 0.05, stat: 'power', per: 0.001, ok: { text: '기적적인 일격으로 흑룡을 물리치고 전설이 되었다.', fx: { milestone: 'hero', flags: ['hero'] } }, fail: { text: '흑룡의 브레스에 흔적도 없이 사라졌다.', fx: { die: true } } } },
+        { label: '후방 벙커로 피난한다', text: '영웅들의 희생으로 도시는 구원받았으나 평생 죄책감을 안고 살게 되었다.', fx: { bond: -10, hp: -5 } }] },
+    { id: 'guild_advisor', w: 20, cond: { canEnterDungeon: true, flags: ['falna'], age: [14, 20], job: ['adventurer'], max: { level: 1 } }, text: '길드 본부에 방문하여 어드바이저에게 던전 탐색 가이드라인을 제공받았다.', choices: [
+        { label: '안전한 상층(1~12계층) 공략법을 따른다', text: '어드바이저의 조언에 따라 무리하지 않고 저급 몬스터를 사냥하여 마석을 모았다.', fx: { valis: 500, hp: 10 } },
+        { label: '조언을 무시하고 중층(13~24계층)으로 직행한다', chance: { p: 0.2, stat: 'dex', per: 0.01, ok: { text: '퍼스트 라인이라 불리는 중층에서 간신히 살아남아 큰 경험을 얻었다.', fx: { feat: 1, power: 15 } }, fail: { text: '13계층에서 헬 하운드의 화염에 큰 화상을 입고 도망쳤다.', fx: { hp: -30, valis: -200 } } } } ] },
+    
+    // --- 아이템 도입: fx.getItem 사용 및 valis 밸런스 조정 ---
+    { id: 'buy_pyonkichi', w: 15, once: true, cond: { job: ['adventurer'], min: { valis: 10000 } }, text: '상점을 둘러보던 중 메탈 래빗의 모피로 만들어진 깡총이 Mk-2 경갑을 발견했다.', choices: [
+        { label: '9,900발리스를 지불하고 장비한다', text: '자신을 위해 만들어진 것처럼 몸에 딱 맞아 던전에서의 생존력이 크게 상승했다.', fx: { valis: -9900, getItem: 'pyonkichi' } },
+        { label: '이름이 우스꽝스러워 구매를 포기한다', text: '성능보다는 겉멋을 중시하여 기존의 낡은 장비를 유지하기로 했다.', fx: { valis: 0 } } ] },
+    { id: 'magic_sword_crozzo', w: 10, once: true, cond: { job: ['adventurer'], min: { valis: 15000 } }, text: '무영창으로 마법 발동이 가능한 강력한 소모품, 크로조의 마검을 구매할 기회가 생겼다.', choices: [
+        { label: '거금을 들여 마검을 하나 장만한다', text: '비싼 가격을 지불했지만, 심층 원정이나 위기 상황을 타개할 강력한 결전 병기를 얻었다.', fx: { valis: -15000, getItem: 'magic_sword' } },
+        { label: '비싼 소모품이라 포기한다', text: '마검에 의존하지 않고 자신의 순수한 전투력만으로 미궁에 도전하기로 했다.', fx: { valis: 0 } } ] },
+    { id: 'encounter_goliath', w: 12, once: true, cond: { canEnterDungeon: true, flags: ['falna'], job: ['adventurer'], min: { level: 2 } }, text: '17계층 통곡의 대벽에서 신장 7m의 계층 터주(몬스터 렉스) 골라이아스와 조우했다.', choices: [
+        { label: '파티원들과 연계하여 전면전에 나선다', chance: { p: 0.4, stat: 'power', per: 0.005, ok: { text: '사투 끝에 골라이아스를 토벌하고 18계층 리빌라 마을로 무사히 진입했다.', fx: { valis: 20000, feat: 3 } }, fail: { text: '계층 터주의 압도적인 파괴력에 짓눌려 뼈가 부러지는 중상을 입었다.', fx: { hp: -50 } } } },
+        { label: '패스 퍼레이드를 일으켜 다른 파티에 몬스터 떠넘긴다', text: '비겁한 수단으로 목숨은 건졌으나 오라리오 내에서 모험자로서의 평판이 하락했다.', fx: { hp: -10 } } ] },
+    { id: 'buy_elemental_cloth', w: 15, cond: { age: [15, 50], job: ['adventurer'], noItem: ['salamander_wool', 'undine_cloth'], min: { level: 2, valis: 8000 } }, text: '중층과 하층의 가혹한 환경을 버티기 위해 정령의 가호가 깃든 방호포를 구매할 기회가 생겼다.', choices: [
+        { label: '살라만다 울 구매 (화염 내성)', text: '헬 하운드의 화염과 중층의 열기를 견딜 수 있는 살라만다 울을 장비했다.', fx: { valis: -8000, getItem: 'salamander_wool' } },
+        { label: '운디네 클로스 구매 (수속성 내성)', text: '물의 미로도시(25~27계층) 공략에 필수적인 운디네 클로스를 장비했다.', fx: { valis: -8000, getItem: 'undine_cloth' } },
+        { label: '장비를 믿고 구매하지 않는다', chance: { p: 0.7, stat: 'dex', per: 0.005, ok: { text: '뛰어난 회피 능력으로 속성 공격을 피해 냈다.', fx: { power: 3 } }, fail: { text: '화염과 극도의 추위에 노출되어 심각한 피해를 입었다.', fx: { hp: -35 } } } } ] },
+    { id: 'craft_drop_weapon', w: 12, cond: { job: ['adventurer'], noItem: ['custom_weapon'], min: { level: 2, feat: 2 } }, text: '강력한 몬스터를 쓰러뜨리고 얻은 희귀 드롭 아이템을 헤파이스토스 파밀리아의 대장장이에게 가져갔다.', choices: [
+        { label: '전용 특수 무장 제작을 의뢰한다', chance: { p: 0.8, stat: 'dex', per: 0.002, ok: { text: '뛰어난 위력을 지닌 자신만의 전용 무기가 완성되었다.', fx: { valis: -5000, getItem: 'custom_weapon' } }, fail: { text: '대장장이의 실수로 재료가 파손되어 평범한 무기만 받았다.', fx: { valis: -2000, power: 5 } } } },
+        { label: '비싼 값에 길드나 상인에게 매각한다', text: '무기 대신 막대한 자금을 확보하여 앞으로의 원정 자금을 마련했다.', fx: { valis: 40000 } } ] },
+    { id: 'buy_dual_potion', w: 20, cond: { job: ['adventurer'], noItem: ['dual_potion'], min: { valis: 2000 } }, text: '미아흐 파밀리아의 『푸른 약포』에서 체력과 마인드를 동시에 회복시키는 신약 듀얼 포션을 판매하고 있다.', choices: [
+        { label: '비상용으로 듀얼 포션을 대량 구매한다', text: '위험한 던전 탐색 중 큰 위기를 넘길 수 있는 생명줄을 확보했다.', fx: { valis: -2000, getItem: 'dual_potion' } },
+        { label: '일반 포션으로 만족한다', text: '비용을 아꼈으나, 전투 지속력에는 한계가 남았다.', fx: { valis: 0 } } ] },
+    { id: 'find_grimoire', w: 3, once: true, cond: { canEnterDungeon: true, flags: ['falna'], age: [15, 60], job: ['adventurer'], min: { level: 3 } }, text: '던전 탐색 중 혹은 우연한 기회로, 읽는 것만으로 마법을 각성시켜 준다는 초희귀 마도서 『그리므와르』를 손에 넣었다.', choices: [
+        { label: '마도서를 직접 읽어 마법을 각성한다', text: '책은 재가 되어 사라졌지만, 강력한 마법을 깨우쳐 압도적인 힘을 얻었다.', fx: { flags: ['magic_user'], getItem: 'grimoire' } },
+        { label: '경매에 올려 막대한 부를 얻는다', text: '최상위 파밀리아에게 1억 발리스가 넘는 가격에 매각하여 평생 쓸 돈을 벌었다.', fx: { valis: 1000000 } } ] },
+    { id: 'daedalus_orb', w: 5, once: true, cond: { canEnterDungeon: true, flags: ['falna'], job: ['adventurer'], min: { level: 3 } }, text: '어둠의 파벌(이블스)의 잔당을 토벌하던 중, 붉은 눈알에 D가 새겨진 기괴한 아이템 『다이달로스의 눈』을 주웠다.', choices: [
+        { label: '인조 미궁 크노소스 탐색에 뛰어든다', chance: { p: 0.3, stat: 'power', per: 0.005, ok: { text: '미궁의 함정을 돌파하고 엄청난 밀수품과 마석을 탈취했다.', fx: { valis: 50000, feat: 4 } }, fail: { text: '독 포자를 뿜는 몬스터와 폭발 트랩에 휘말려 사경을 헤맸다.', fx: { hp: -60, valis: -10000 } } } },
+        { label: '위험한 물건이라 판단해 길드에 넘긴다', text: '길드로부터 포상금을 받고 불필요한 위험을 피했다.', fx: { valis: 15000 } } ] },
+
+    // 직업 선택: 파밀리아와 별개로 생업을 선택한다.
+    { id: 'career_choice', w: 90, once: true, cond: { cage: [13, 19], job: ['child'] }, text: '어느덧 스스로 생계를 꾸릴 나이가 되었다. 지금까지의 경험과 인연을 바탕으로 앞으로의 길을 정해야 한다.', choices: [
+        { label: '길드의 견습 직원이 된다', cond: { inRecruitAreaOf: 'guild' }, text: '모험자 등록과 의뢰 접수를 배우며 도시의 행정과 던전 정보를 익혔다.', fx: { job: 'guild_staff', organization: 'guild', valis: 500, bond: 2 } },   // P3 DI-4
+        { label: '주점 ‘풍요의 여주인’에서 일한다', cond: { inRecruitAreaOf: 'hostess' }, text: '전직 모험자 출신 점원들 틈에서 홀 일을 배우기 시작했다. (신의 파밀리아가 아니라 고용처이므로 팔나는 없다)', fx: { job: 'waitstaff', organization: 'hostess' } },   // P3 DI-4
+        { label: '상점에서 장사를 배운다', text: '물건의 값과 사람들의 마음을 읽는 법을 익히며 상인의 길에 들어섰다.', fx: { job: 'merchant', valis: 900 } },
+        { label: '농장 일을 돕는다', text: '계절에 맞춰 씨를 뿌리고 거두는 삶을 시작했다.', fx: { job: 'farmer', hp: 5, valis: 400 } },
+        { label: '치유사의 조수가 된다', text: '약초와 치료 도구를 다루며 다친 이들을 돌보는 일을 배웠다.', fx: { job: 'healer', bond: 3, valis: 300 } },
+        { label: '대장간에서 기술을 배운다', text: '쇠를 두드리고 무기를 수리하는 법을 익혀 장인의 길에 들어섰다.', fx: { job: 'blacksmith', valis: 500 } },
+        { label: '모험자 파밀리아에 들어간다', text: '모험자 파밀리아의 문을 두드렸다.', fx: { recruit: { route: 'self_apply', okText: '팔나를 받고 던전에 도전할 기회를 얻었다.', failText: '받아 주는 파밀리아를 찾지 못했다.' } } },
+        { label: '서포터로 일한다', text: '모험자들의 짐을 나르고 전리품을 정리하는 일을 시작했다.', fx: { job: 'supporter', valis: 600 } }
+    ] },
+    { id: 'guild_counter', w: 22, cool: 4, maxTimes: 3, cond: { age: [18, 70], job: ['guild_staff'], employerIn: ['guild'], atSiteOf: 'guild' }, text: '길드 창구에는 의뢰를 접수하려는 모험자와 항의하러 온 시민이 뒤섞여 긴 줄을 만들었다.', choices: [
+        { label: '초보 모험자의 의뢰서를 꼼꼼히 확인한다', text: '실수를 미리 찾아내 큰 사고를 막았다. 감사 인사가 작은 보람으로 남았다.', fx: { bond: 3, valis: 350 } },
+        { label: '마석 감정 업무를 맡는다', text: '시세를 정확히 맞혀 길드의 신뢰를 얻었다.', fx: { valis: 700, power: 1 } }
+    ] },
+    { id: 'merchant_trade', w: 20, cool: 4, maxTimes: 3, cond: { age: [18, 75], job: ['merchant'] }, text: '거래처에서 희귀한 물자가 들어왔다는 소식이 왔다. 지금 움직이면 이익을 볼 수 있지만 손해를 볼 수도 있다.', choices: [
+        { label: '신중하게 시세를 확인하고 거래한다', text: '큰 이익은 아니지만 안정적인 거래를 성사시켰다.', fx: { valis: 900, bond: 1 } },
+        { label: '전 재산을 걸고 선점한다', chance: { p: 0.45, stat: 'valis', per: 0.00001, ok: { text: '물건이 불티나게 팔려 큰돈을 벌었다.', fx: { valis: 3500 } }, fail: { text: '수요를 잘못 읽어 재고를 떠안았다.', fx: { valis: -1800 } } } }
+    ] },
+    { id: 'farm_season', w: 20, cool: 4, maxTimes: 3, cond: { age: [18, 80], job: ['farmer'] }, text: '계절이 바뀌며 밭의 작황이 드러났다. 날씨와 병충해가 수확량을 좌우할 것이다.', choices: [
+        { label: '이웃과 품을 나눠 피해를 줄인다', text: '수확은 평범했지만 이웃과의 유대가 깊어졌다.', fx: { bond: 3, valis: 500 } },
+        { label: '새 농법을 시험한다', chance: { p: 0.55, stat: 'dex', per: 0.001, ok: { text: '시험한 농법이 효과를 거둬 풍작을 맞았다.', fx: { valis: 1400 } }, fail: { text: '작물이 상해 손실을 보았다.', fx: { valis: -500, hp: -5 } } } }
+    ] },
+    { id: 'healer_shift', w: 20, cool: 4, maxTimes: 3, cond: { age: [18, 80], job: ['healer'] }, text: '던전에서 돌아온 부상자들이 치료소에 몰려들었다. 제한된 약재로 누구부터 돌볼지 판단해야 한다.', choices: [
+        { label: '중상자를 먼저 치료한다', text: '고된 하루였지만 한 사람의 생명을 지켜냈다.', fx: { hp: -3, bond: 5 } },
+        { label: '약재를 아껴 여러 환자를 돌본다', text: '치료소 운영을 안정시키고 환자들의 신뢰를 얻었다.', fx: { bond: 3, valis: 300 } }
+    ] },
+    { id: 'retired_days', w: 18, cool: 5, maxTimes: 3, cond: { age: [45, 90], job: ['retired'] }, text: '위험한 현장을 떠난 뒤의 하루는 길고 조용하다. 이제 무엇에 시간을 쓸지 스스로 정할 수 있다.', choices: [
+        { label: '후배와 가족을 돌본다', text: '쌓아 온 경험을 나누며 주변 사람들과 평온한 시간을 보냈다.', fx: { bond: 5, hp: 2 } },
+        { label: '작은 일을 찾아 다시 사회에 보탠다', text: '무리하지 않는 일거리를 얻어 생활에 활기가 돌아왔다.', fx: { valis: 500, bond: 2 } }
+    ] },
+    { id: 'career_pivot', w: 12, once: true, cond: { age: [25, 65], noFlags: ['career_pivot_done'] }, text: '지금까지 해 온 일을 계속할지, 새로운 길을 찾아볼지 고민하게 되었다. 익숙한 삶을 바꾸는 데에는 용기가 필요하다.', choices: [
+        { label: '현재 직업을 유지한다', text: '지금까지 쌓아 온 경험을 더 깊게 다지기로 했다.', fx: { flags: ['career_pivot_done'], bond: 2 } },
+        { label: '안전한 생업으로 전환한다', text: '위험을 줄이고 꾸준히 살아갈 수 있는 일을 택했다.', fx: { job: 'merchant', flags: ['career_pivot_done'], valis: 500 } },
+        { label: '은퇴하고 후배를 돕는다', text: '현역에서 물러나 경험을 전하는 삶을 시작했다.', fx: { job: 'retired', flags: ['career_pivot_done'], bond: 5 } }
+    ] },
+    { id: 'family_gathering', w: 18, cool: 3, maxTimes: 2, cond: { age: [18, 85] }, text: '오랜만에 가까운 이들이 한자리에 모였다. 각자 바쁜 삶을 살았지만 함께한 시간만큼은 변하지 않았다.', choices: [
+        { label: '모임을 주최하고 비용을 부담한다', text: '사람들의 웃음소리가 집 안에 오래 머물렀다.', fx: { valis: -300, bond: 5 } },
+        { label: '소박한 선물을 건넨다', text: '작은 정성이 관계를 다시 단단하게 만들었다.', fx: { valis: -100, bond: 3 } }
+    ] },
+    { id: 'city_disaster', w: 10, once: true, cond: { age: [10, 80] }, text: '도시 외곽에서 화재가 번져 주민들이 대피하기 시작했다. 불길은 바람을 타고 주거 구역으로 향하고 있었다.', choices: [
+        { label: '이웃을 대피시키는 일을 돕는다', text: '연기 속에서 사람들을 이끌어냈고 감사 인사를 받았다.', fx: { hp: -8, bond: 5 } },
+        { label: '안전한 곳으로 피신한다', text: '다치지는 않았지만 며칠 동안 도시의 피해 소식을 들어야 했다.', fx: { bond: -1 } }
+    ] },
+    { id: 'old_friend', w: 16, cool: 4, maxTimes: 2, cond: { age: [16, 85] }, text: '어린 시절 알고 지내던 친구와 우연히 재회했다. 서로 다른 길을 걸어온 시간이 대화 사이에 놓여 있었다.', choices: [
+        { label: '지난 세월을 나누며 밤늦게까지 이야기한다', text: '잊고 있던 추억이 되살아나 마음이 한결 가벼워졌다.', fx: { bond: 5 } },
+        { label: '함께 작은 일을 시작한다', text: '서로의 장점을 살려 소소한 수익을 얻었다.', fx: { bond: 2, valis: 600 } }
+    ] },
+    { id: 'mentor', w: 14, once: true, cond: { age: [25, 65], min: { bond: 5 } }, text: '당신의 성실함을 눈여겨본 연장자가 자신의 경험을 전해 주겠다고 제안했다.', choices: [
+        { label: '제자로 들어가 배운다', text: '오랜 경험에서 나온 조언은 이후의 선택에 큰 도움이 되었다.', fx: { power: 5, bond: 4 } },
+        { label: '독립적으로 해 보겠다고 답한다', text: '스스로 판단하고 책임지는 법을 배웠다.', fx: { bond: 2, valis: 300 } }
+    ] },
+    { id: 'supporter_route', w: 18, cool: 3, maxTimes: 2, cond: { age: [16, 60], job: ['supporter'], flags: ['falna'], hasFamilia: true, familiaRole: ['member'] }, text: '소속 파밀리아의 원정대가 짐이 많고 귀환 경로도 험한 탐색에 나선다. 팔나를 받은 서포터로서 준비와 판단이 중요해졌다.', choices: [
+        { label: '운반량을 줄이고 귀환 경로를 확보한다', text: '원정대가 무사히 귀환해 당신의 판단을 인정했다.', fx: { bond: 3, valis: 700 } },
+        { label: '추가 물자를 더 챙긴다', chance: { p: 0.55, stat: 'agi', per: 0.001, ok: { text: '예상치 못한 상황에 대비할 수 있었다.', fx: { valis: 900, bond: 1 } }, fail: { text: '무거운 짐 때문에 부상을 입었다.', fx: { hp: -12 } } } }
+    ] },
+    // 프리 서포터 예외(원작 프로토타입 22화: 무소속 프리 서포터는 팔나가 없고, 위험·보수 때문에 보통 던전에 들어가지 않는다).
+    // 팔나·파밀리아 없음 + 빈곤(발리스 상한) + 평생 1회 + 낮은 가중치. 위험은 실제 사망 가능성을 포함한다(임의 밸런스 값).
+    { id: 'free_supporter_route', w: 3, once: true, cond: { age: [16, 50], job: ['supporter'], noFlags: ['falna'], hasFamilia: false, max: { valis: 3000 } }, text: '무소속 서포터로는 일감이 끊겼다. 생활비가 바닥난 당신에게 팔나 없이 던전에 동행하면 큰 일당을 주겠다는 파티가 접근했다. 팔나가 없으니 몬스터의 일격이 곧 목숨이다.', choices: [
+        { label: '거절하고 지상의 허드렛일을 찾는다', text: '일당은 적었지만 목숨은 지켰다.', fx: { valis: 200, bond: 1 } },
+        { label: '상층 입구까지만 짐을 나른다', chance: { p: 0.8, stat: 'agi', per: 0.002, ok: { text: '무사히 짐을 넘기고 일당을 받았다.', fx: { valis: 900 } }, fail: { text: '고블린 무리에 쫓겨 크게 다쳤다.', fx: { hp: -35 } } } },
+        { label: '큰 일당을 위해 중층 동행까지 받아들인다', chance: { p: 0.45, stat: 'agi', per: 0.003, ok: { text: '팔나도 없이 중층을 다녀와 큰돈을 쥐었다. 두 번 다시 하고 싶지 않다.', fx: { valis: 3000, bond: -1, hp: -10 } }, fail: { text: '파티가 무너지며 팔나 없는 몸으로는 버틸 수 없었다.', fx: { die: true } } } }
+    ] },
+    { id: 'blacksmith_order', w: 18, cool: 3, maxTimes: 2, cond: { age: [18, 75], job: ['blacksmith'] }, text: '단골 모험자가 중요한 원정을 앞두고 무기 점검을 맡겼다. 작은 결함도 목숨을 위협할 수 있다.', choices: [
+        { label: '시간을 들여 정밀하게 수리한다', text: '무기의 균형을 바로잡아 단골의 신뢰를 얻었다.', fx: { valis: 800, bond: 3 } },
+        { label: '빠르게 수리하고 다음 주문을 받는다', text: '많은 주문을 처리했지만 마감 품질은 아쉬웠다.', fx: { valis: 1100, bond: -1 } }
+    ] },
+    { id: 'waitstaff_shift', w: 18, cool: 3, maxTimes: 2, cond: { age: [18, 75], job: ['waitstaff'], employerIn: ['hostess'], atSiteOf: 'hostess' }, text: '풍요의 여주인에 단체 손님이 몰려들었다. 바쁜 홀에서 손님들의 요구를 놓치지 않아야 한다.', choices: [
+        { label: '동료와 호흡을 맞춰 주문을 처리한다', text: '손님들이 만족스럽게 식사를 마쳤고 팁도 넉넉했다.', fx: { valis: 700, bond: 3 } },
+        { label: '문제가 생긴 테이블을 직접 맡는다', text: '언쟁을 가라앉히고 단골손님을 얻었다.', fx: { bond: 4 } }
+    ] },
+    { id: 'soldier_patrol', w: 18, cool: 3, maxTimes: 2, cond: { age: [18, 60], job: ['soldier'] }, text: '국경 경비 중 정체를 알 수 없는 무리가 접근했다. 먼저 움직이면 충돌을 막을 수도 있지만 위험을 감수해야 한다.', choices: [
+        { label: '정찰을 보내 상황을 확인한다', text: '상대가 물러나 불필요한 충돌을 피했다.', fx: { bond: 2, power: 2 } },
+        // P5 DF-6b(P-1): 팔나판(앞)·비팔나판 복제. 데이터 인덱스: 길목을 지킨다 [1]→[1](팔나)·[2](비팔나)
+        { label: '부대를 이끌고 길목을 지킨다', cond: { flags: ['falna'] }, chance: { p: 0.6, stat: 'power', per: 0.002, ok: { text: '침착한 지휘로 경계를 마쳤다.', fx: { power: 4, feat: 1 } }, fail: { text: '작은 교전에서 부상을 입었다.', fx: { hp: -18 } } } },
+        { label: '부대를 이끌고 길목을 지킨다', cond: { noFlags: ['falna'] }, chance: { p: 0.6, stat: 'power', per: 0.002, ok: { text: '침착한 지휘로 경계를 마쳤다.', fx: { power: 4 } }, fail: { text: '작은 교전에서 부상을 입었다.', fx: { hp: -18 } } } }
+    ] },
+    { id: 'neighborhood_help', w: 18, cool: 3, maxTimes: 2, cond: { age: [7, 85] }, text: '이웃이 이사 준비로 곤란을 겪고 있었다. 하루 정도 시간을 내면 큰 도움이 될 것 같다.', choices: [
+        { label: '짐을 나르는 일을 돕는다', text: '이웃과 가까워졌고 작은 답례도 받았다.', fx: { bond: 3, valis: 150 } },
+        { label: '필요한 도구를 빌려준다', text: '도구를 빌려준 덕에 이사는 무사히 끝났다.', fx: { bond: 2 } }
+    ] },
+    { id: 'street_performance', w: 15, cool: 3, maxTimes: 2, cond: { age: [8, 75] }, text: '광장에서 악사와 이야기꾼들이 사람들을 모으고 있었다. 잠시 발걸음을 멈추자 하루의 피로가 가시는 듯했다.', choices: [
+        { label: '공연을 감상하고 동전을 보탠다', text: '흥겨운 음악과 이야기에 마음이 한결 가벼워졌다.', fx: { valis: -100, bond: 2, hp: 2 } },
+        { label: '공연 준비를 거들고 품삯을 받는다', text: '무대를 정리하고 소소한 보수를 받았다.', fx: { valis: 250 } }
+    ] },
+    { id: 'seasonal_fair', w: 16, cool: 4, maxTimes: 2, cond: { age: [6, 80] }, text: '계절 축제가 열려 거리마다 노점과 놀이판이 들어섰다. 사람들 사이에서 오랜만에 여유를 느낄 수 있었다.', choices: [
+        { label: '친구들과 축제를 즐긴다', text: '웃고 떠드는 사이 잊지 못할 추억이 생겼다.', fx: { valis: -200, bond: 4 } },
+        { label: '노점에서 하루 일한다', text: '손님이 많아 예상보다 많은 돈을 벌었다.', fx: { valis: 500 } }
+    ] },
+    { id: 'unexpected_rain', w: 14, cool: 3, maxTimes: 2, cond: { age: [5, 85] }, text: '갑작스러운 폭우가 도시를 덮쳤다. 배수로가 넘치기 전에 주변을 정리해야 했다.', choices: [
+        { label: '배수로의 낙엽과 쓰레기를 치운다', text: '침수 피해를 줄이는 데 보탬이 되었다.', fx: { hp: -2, bond: 3 } },
+        { label: '비가 그칠 때까지 안전한 곳에서 기다린다', text: '큰 피해 없이 비가 지나갔다.', fx: { hp: 1 } }
+    ] },
+    { id: 'lost_child', w: 12, once: true, cond: { age: [16, 80] }, text: '시장 한복판에서 길을 잃고 울고 있는 아이를 발견했다. 아이는 보호자의 이름조차 제대로 말하지 못했다.', choices: [
+        { label: '길드에 도움을 요청해 보호자를 찾는다', text: '아이를 가족에게 돌려보냈고 길드 직원의 칭찬을 들었다.', fx: { bond: 5 } },
+        { label: '주변 상인들과 함께 아이를 찾는다', text: '상인들의 협력으로 아이의 가족을 찾아냈다.', fx: { bond: 4 } }
+    ] },
+    { id: 'small_injury', w: 16, cool: 4, maxTimes: 2, cond: { age: [10, 80] }, text: '일을 하던 중 발을 헛디뎌 가벼운 부상을 입었다. 며칠은 무리하지 않는 편이 좋겠다.', choices: [
+        { label: '치료를 받고 충분히 쉰다', text: '일정은 미뤄졌지만 상처가 깨끗하게 나았다.', fx: { valis: -150, hp: 5 } },
+        { label: '붕대만 감고 일을 계속한다', text: '예정보다 빨리 복귀했지만 피로가 쌓였다.', fx: { hp: -4, valis: 200 } }
+    ] },
+    { id: 'book_discovery', w: 12, once: true, cond: { age: [12, 70] }, text: '오래된 서고에서 낡은 기록물을 발견했다. 해독할 수 있다면 과거의 생활상을 알 수 있을 것이다.', choices: [
+        { label: '시간을 들여 읽고 정리한다', text: '오래된 기록에서 유용한 지식을 얻었다.', fx: { flags: ['scholar'], bond: 2, power: 2 } },
+        { label: '필요한 부분만 필사해 판다', text: '기록의 일부를 정리해 학자에게 넘기고 보수를 받았다.', fx: { valis: 700 } }
+    ] },
+    { id: 'charity_work', w: 14, cool: 4, maxTimes: 2, cond: { age: [18, 85] }, text: '도시 빈민가에서 식량과 의약품을 나누는 자원봉사자를 모집하고 있었다.', choices: [
+        { label: '하루 품을 내어 배급을 돕는다', text: '도움을 받은 이들의 감사가 오래 기억에 남았다.', fx: { bond: 4, hp: -2 } },
+        { label: '물자 구입에 돈을 보탠다', text: '작은 기부가 여러 사람의 끼니가 되었다.', fx: { valis: -300, bond: 3 } }
+    ] },
+    { id: 'travel_offer', w: 12, once: true, cond: { age: [20, 65] }, text: '먼 도시를 오가는 상단이 동행자를 구하고 있었다. 낯선 곳을 경험할 기회지만 집을 오래 비워야 한다.', choices: [
+        { label: '상단에 합류해 여행한다', text: '여행길에서 새로운 사람과 문화를 접하고 견문을 넓혔다.', fx: { bond: 3, valis: 800, power: 3 } },
+        { label: '지금의 생활을 지킨다', text: '익숙한 일상에 남아 주변 사람들과 시간을 보냈다.', fx: { bond: 2 } }
+    ] },
+    { id: 'community_role', w: 12, once: true, cond: { age: [30, 75], cage: [30, 400], min: { bond: 8 } }, text: '주민들이 마을의 일을 맡아 줄 사람을 찾고 있다. 사람들의 신뢰를 얻은 당신에게도 제안이 왔다.', choices: [
+        { label: '공동체 일을 맡는다', text: '사람들의 의견을 조율하며 책임감과 보람을 느꼈다.', fx: { bond: 5, valis: 500 } },
+        { label: '다른 이에게 자리를 양보한다', text: '자신보다 더 적합한 사람을 추천하고 뒤에서 도왔다.', fx: { bond: 3 } }
+    ] },
+    // ---- v1.7: 가족 관계 이벤트 (S.relations의 살아 있는 가족이 있을 때만 발생) ----
+    { id: 'parent_wellbeing', w: 16, cool: 4, maxTimes: 3, cond: { age: [12, 80], relative: ['parent'] }, text: '고향에서 부모님의 소식이 전해졌다. 요즘 몸이 예전 같지 않다고 한다.', choices: [
+        { label: '직접 찾아뵙고 곁에서 돌본다', text: '오랜만에 함께 식탁에 앉았다. 말수는 적어도 마음이 오갔다.', fx: { valis: -300, bond: 5, hp: 2 } },
+        { label: '편지와 약간의 생활비를 보낸다', text: '짧은 답장이 돌아왔다. 걱정하지 말라는 말이 먼저였다.', fx: { valis: -200, bond: 2 } }] },
+    { id: 'parent_worry', w: 14, once: true, cond: { age: [14, 60], relative: ['parent'], job: ['adventurer'] }, text: '부모님이 모험자의 길을 걱정하는 편지를 보냈다. 던전에서 돌아오지 못한 이웃의 이야기가 적혀 있었다.', choices: [
+        { label: '무리하지 않겠다고 약속한다', text: '약속은 무겁지만, 돌아갈 곳이 있다는 사실이 마음을 붙들어 주었다.', fx: { bond: 4, hp: 3 } },
+        { label: '이 길을 택한 이유를 솔직히 전한다', text: '답장에는 한참 만에 짧은 응원이 적혀 있었다.', fx: { bond: 2, power: 3 } }] },
+    { id: 'sibling_visit', w: 14, cool: 4, maxTimes: 3, cond: { age: [10, 85], relative: ['sibling'] }, text: '형제자매가 일 때문에 근처를 지나다 안부를 물으러 들렀다.', choices: [
+        { label: '밤새 옛날이야기를 나눈다', text: '어린 시절의 이야기에 웃음이 끊이지 않았다.', fx: { bond: 4, valis: -150 } },
+        { label: '서로의 근황을 짧게 나눈다', text: '바쁜 와중에도 서로의 안부를 확인했다.', fx: { bond: 2 } }] },
+    { id: 'sibling_rivalry', w: 10, once: true, cond: { cage: [10, 50], relative: ['sibling'] }, text: '형제자매와 진로를 두고 의견이 갈렸다.', choices: [
+        { label: '끝까지 대화로 풀어 간다', chance: { p: .6, stat: 'bond', per: .01, ok: { text: '서로의 입장을 이해하고 화해했다.', fx: { bond: 4 } }, fail: { text: '말다툼 끝에 한동안 연락이 끊겼다.', fx: { bond: -3 } } } },
+        { label: '각자의 길을 가기로 한다', text: '아쉽지만 서로의 선택을 존중하기로 했다.', fx: { bond: 1 } }] },
+    { id: 'child_growing', w: 16, cool: 3, maxTimes: 3, cond: { age: [20, 80], relative: ['child'] }, text: '아이가 하루가 다르게 자란다. 오늘은 처음으로 직접 만든 것을 내밀었다.', choices: [
+        { label: '함께 시간을 보내 준다', text: '평범한 하루가 오래 기억에 남았다.', fx: { bond: 6, hp: 2 } },
+        { label: '바쁜 일 때문에 짧게 칭찬만 한다', text: '아이는 웃었지만 조금 아쉬운 표정이었다.', fx: { bond: 2, valis: 200 } }] },
+    { id: 'family_empty_home', w: 12, once: true, cond: { cage: [16, 400], noRelative: ['parent', 'sibling', 'child'] }, text: '고향 집을 지나다가, 이제 돌아갈 가족이 곁에 남아 있지 않다는 사실을 새삼 느꼈다.', choices: [
+        { label: '오래도록 집 앞에 서 있다 돌아선다', text: '쓸쓸했지만 함께했던 기억은 오래 남았다.', fx: { bond: 1, hp: -2 } },
+        { label: '이웃과 친구들에게 먼저 안부를 건넨다', text: '새로운 인연이 빈자리를 조금씩 채워 주었다.', fx: { bond: 4 } }] },
+
+    // ---- v1.7: 위업 공급 (모험자·팔나 보유자 전용, 레벨 단계별 / 임의 밸런스 값) ----
+    { id: 'floor_boss_upper', w: 24, cool: 4, maxTimes: 3, cond: { canEnterDungeon: true, age: [15, 55], job: ['adventurer'], flags: ['falna'], min: { level: 1 } }, text: '상층의 터주급 몬스터 토벌 의뢰가 길드 게시판에 붙었다.', choices: [
+        { label: '파티를 모집해 정면으로 토벌한다', chance: { p: .6, stat: 'power', per: .004, ok: { text: '파티와 호흡을 맞춰 토벌에 성공했다.', fx: { power: 6, feat: 1, valis: 1500 } }, fail: { text: '반격에 밀려 후퇴했다.', fx: { hp: -18, valis: -300 } } } },
+        { label: '후방 지원 역할을 맡는다', text: '무리하지 않고 파티를 도와 보수를 나눠 받았다.', fx: { power: 2, bond: 2, valis: 500 } }] },
+    { id: 'mid_floor_expedition', w: 22, cool: 5, maxTimes: 3, cond: { canEnterDungeon: true, age: [18, 55], job: ['adventurer'], flags: ['falna'], min: { level: 2 } }, text: '중층 탐사대가 신규 단원을 모집한다. 보수와 위험이 모두 크다.', choices: [
+        { label: '탐사대의 선봉을 맡는다', chance: { p: .5, stat: 'power', per: .003, ok: { text: '미지의 구역을 개척하고 이름이 알려졌다.', fx: { power: 10, feat: 2, valis: 3000 } }, fail: { text: '기습을 받아 큰 부상을 입고 귀환했다.', fx: { hp: -28, valis: -500 } } } },
+        { label: '후위에서 안전하게 따라간다', text: '위험은 피했지만 얻은 것도 많지 않았다.', fx: { power: 3, valis: 800 } }] },
+    { id: 'deep_floor_survey', w: 20, cool: 5, maxTimes: 3, cond: { canEnterDungeon: true, age: [20, 55], job: ['adventurer'], flags: ['falna'], min: { level: 3 } }, text: '하층 조사 의뢰가 길드에서 상급 모험자에게만 전달되었다.', choices: [
+        { label: '조사대를 이끌고 심부로 향한다', chance: { p: .45, stat: 'power', per: .0025, ok: { text: '위협을 돌파하고 귀중한 정보를 가져왔다.', fx: { power: 14, feat: 3, valis: 6000 } }, fail: { text: '퇴로가 막혀 간신히 탈출했다.', fx: { hp: -35, valis: -800 } } } },
+        { label: '정찰 임무만 수행한다', text: '위험을 줄이고 확실한 성과만 챙겼다.', fx: { power: 4, valis: 1500 } }] },
+    { id: 'floor_lord_hunt', w: 18, cool: 6, maxTimes: 2, cond: { canEnterDungeon: true, age: [20, 58], job: ['adventurer'], flags: ['falna'], min: { level: 4 } }, text: '계층 주인급 몬스터의 출현이 확인되었다. 각 파벌이 연합 토벌대를 꾸리고 있다.', choices: [
+        { label: '토벌대의 중핵으로 참가한다', chance: { p: .45, stat: 'power', per: .002, ok: { text: '연합 토벌에서 결정타를 날렸다.', fx: { power: 18, feat: 4, valis: 9000, bond: 3 } }, fail: { text: '격전 끝에 크게 다쳤다.', fx: { hp: -40 } } } },
+        { label: '보급과 퇴로 확보에 전념한다', text: '묵묵히 뒤를 받치며 토벌을 성공으로 이끌었다.', fx: { power: 5, bond: 3, valis: 2000 } }] },
+    { id: 'legend_clash', w: 16, cool: 6, maxTimes: 2, cond: { canEnterDungeon: true, age: [20, 60], job: ['adventurer'], flags: ['falna'], min: { level: 5 } }, text: '전설로만 전해지던 규격 외 몬스터가 모습을 드러냈다. 이름 있는 모험자들이 하나둘 모여든다.', choices: [
+        { label: '최전선에서 맞선다', chance: { p: .4, stat: 'power', per: .0015, ok: { text: '모두의 힘으로 전설을 쓰러뜨렸다.', fx: { power: 24, feat: 5, valis: 15000, bond: 5 } }, fail: { text: '압도적인 힘 앞에 중상을 입고 후퇴했다.', fx: { hp: -45 } } } },
+        { label: '후방에서 부상자를 구한다', text: '많은 이를 살렸고 그 일은 오래 기억되었다.', fx: { power: 6, feat: 1, bond: 6 } }] }
+];
