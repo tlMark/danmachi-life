@@ -1,0 +1,168 @@
+PASS DI-1a guild
+PASS DI-1b hostess
+PASS DI-1c 조직은 2개 그대로 · scope 는 조직 단위에 없음 · 외부 지부(region ≠ orario) 0
+PASS AS-1 위치 orario (출생·거주 orario) → true
+PASS AS-1 위치 rakia (출생·거주 orario) → false
+PASS AS-1 위치 melen (출생·거주 orario) → false
+PASS AS-1 위치 far_east (출생·거주 orario) → false
+PASS AS-1 위치 telskyura (출생·거주 orario) → false
+PASS AS-1 위치 elven_forest (출생·거주 orario) → false
+PASS AS-1 위치 unknown (출생·거주 orario) → false
+PASS AS-2 출생 melen · 거주 rakia · 위치 orario → 참(위치 기준)
+PASS AS-3 값 '__nope__' → false
+PASS AS-3 값 ['guild'] → false
+PASS AS-3 값 1 → false
+PASS AS-3 값 true → false
+PASS AS-3 값 {} → false
+PASS AS-4 위치 없음 → false
+PASS FS-1 atSiteOf: '' → match 거짓
+PASS FS-2 atSiteOf: '' → choiceMatch 거짓(형식 오류)
+PASS FS-3 atSiteOf: '' → 사건 조건 후보 아님
+PASS FS-4 atSiteOf: '' → 선택지 숨김
+PASS FS-5 atSiteOf: '' → chooseBody 거부(cond_malformed) · S·난수 불변
+PASS FS-1 atSiteOf: null → match 거짓
+PASS FS-2 atSiteOf: null → choiceMatch 거짓(형식 오류)
+PASS FS-3 atSiteOf: null → 사건 조건 후보 아님
+PASS FS-4 atSiteOf: null → 선택지 숨김
+PASS FS-5 atSiteOf: null → chooseBody 거부(cond_malformed) · S·난수 불변
+PASS FS-1 atSiteOf: false → match 거짓
+PASS FS-2 atSiteOf: false → choiceMatch 거짓(형식 오류)
+PASS FS-3 atSiteOf: false → 사건 조건 후보 아님
+PASS FS-4 atSiteOf: false → 선택지 숨김
+PASS FS-5 atSiteOf: false → chooseBody 거부(cond_malformed) · S·난수 불변
+PASS FS-1 atSiteOf: 0 → match 거짓
+PASS FS-2 atSiteOf: 0 → choiceMatch 거짓(형식 오류)
+PASS FS-3 atSiteOf: 0 → 사건 조건 후보 아님
+PASS FS-4 atSiteOf: 0 → 선택지 숨김
+PASS FS-5 atSiteOf: 0 → chooseBody 거부(cond_malformed) · S·난수 불변
+PASS FS-1 atSiteOf: undefined → match 거짓
+PASS FS-2 atSiteOf: undefined → choiceMatch 거짓(형식 오류)
+PASS FS-3 atSiteOf: undefined → 사건 조건 후보 아님
+PASS FS-4 atSiteOf: undefined → 선택지 숨김
+PASS FS-5 atSiteOf: undefined → chooseBody 거부(cond_malformed) · S·난수 불변
+PASS FS-1 inRecruitAreaOf: '' → match 거짓
+PASS FS-2 inRecruitAreaOf: '' → choiceMatch 거짓(형식 오류)
+PASS FS-3 inRecruitAreaOf: '' → 사건 조건 후보 아님
+PASS FS-4 inRecruitAreaOf: '' → 선택지 숨김
+PASS FS-5 inRecruitAreaOf: '' → chooseBody 거부(cond_malformed) · S·난수 불변
+PASS FS-1 inRecruitAreaOf: null → match 거짓
+PASS FS-2 inRecruitAreaOf: null → choiceMatch 거짓(형식 오류)
+PASS FS-3 inRecruitAreaOf: null → 사건 조건 후보 아님
+PASS FS-4 inRecruitAreaOf: null → 선택지 숨김
+PASS FS-5 inRecruitAreaOf: null → chooseBody 거부(cond_malformed) · S·난수 불변
+PASS FS-1 inRecruitAreaOf: false → match 거짓
+PASS FS-2 inRecruitAreaOf: false → choiceMatch 거짓(형식 오류)
+PASS FS-3 inRecruitAreaOf: false → 사건 조건 후보 아님
+PASS FS-4 inRecruitAreaOf: false → 선택지 숨김
+PASS FS-5 inRecruitAreaOf: false → chooseBody 거부(cond_malformed) · S·난수 불변
+PASS FS-1 inRecruitAreaOf: 0 → match 거짓
+PASS FS-2 inRecruitAreaOf: 0 → choiceMatch 거짓(형식 오류)
+PASS FS-3 inRecruitAreaOf: 0 → 사건 조건 후보 아님
+PASS FS-4 inRecruitAreaOf: 0 → 선택지 숨김
+PASS FS-5 inRecruitAreaOf: 0 → chooseBody 거부(cond_malformed) · S·난수 불변
+PASS FS-1 inRecruitAreaOf: undefined → match 거짓
+PASS FS-2 inRecruitAreaOf: undefined → choiceMatch 거짓(형식 오류)
+PASS FS-3 inRecruitAreaOf: undefined → 사건 조건 후보 아님
+PASS FS-4 inRecruitAreaOf: undefined → 선택지 숨김
+PASS FS-5 inRecruitAreaOf: undefined → chooseBody 거부(cond_malformed) · S·난수 불변
+PASS FS-6 대조: 정상 문자열은 참(위치 orario)
+PASS FS-7 키가 없으면 검사하지 않음(다른 조건만)
+PASS AS-5
+PASS DI-6a 위치 melen: atSiteOf 참 · inRecruitAreaOf 거짓(모집 지역 rakia)
+PASS DI-6b 위치 rakia: atSiteOf 거짓 · inRecruitAreaOf 참
+PASS DI-6c 합성 지부(melen) 추가 → atSiteOf guild 참, recruitArea 는 그대로라 inRecruitAreaOf guild 거짓
+PASS CC-0 데이터: [0] inRecruitAreaOf guild, [1] inRecruitAreaOf hostess, [2]~[7] 조건 없음, 8개
+PASS CC-1 위치 orario → 보이는 선택지 8
+PASS CC-1 위치 rakia → 보이는 선택지 6
+PASS CC-1 위치 melen → 보이는 선택지 6
+PASS CC-1 위치 far_east → 보이는 선택지 6
+PASS CC-1 위치 telskyura → 보이는 선택지 6
+PASS CC-1 위치 elven_forest → 보이는 선택지 6
+PASS CC-1 위치 unknown → 보이는 선택지 6
+PASS CC-2 출생·거주 orario 라도 위치 melen 이면 6개(위치 기준)
+PASS CC-3 seed 1 버튼 6 · 자동 진행 후 guild_staff/waitstaff 아님 · 고용처 없음
+PASS CC-3 seed 2 버튼 6 · 자동 진행 후 guild_staff/waitstaff 아님 · 고용처 없음
+PASS CC-3 seed 3 버튼 6 · 자동 진행 후 guild_staff/waitstaff 아님 · 고용처 없음
+PASS CC-3 seed 4 버튼 6 · 자동 진행 후 guild_staff/waitstaff 아님 · 고용처 없음
+PASS CC-3 seed 5 버튼 6 · 자동 진행 후 guild_staff/waitstaff 아님 · 고용처 없음
+PASS CC-3 seed 6 버튼 6 · 자동 진행 후 guild_staff/waitstaff 아님 · 고용처 없음
+PASS CC-4 숨긴 [0](길드) 직접 호출 거부 · 상태·난수 불변 · 진단 cond_unmet
+PASS CC-5 오라리오에서 [0] 클릭 → guild_staff · 고용처 guild
+PASS WK-0 guild_counter 조건 데이터
+PASS WK-1 guild_counter 오라리오 · 고용처 있음 → 후보
+PASS WK-2 guild_counter 오라리오 · 고용처 없음 → 아님
+PASS WK-3 guild_counter 위치 melen · 고용처 있음 → 아님(시설 없음)
+PASS WK-4 guild_counter 다른 직업 · 고용처 있음 · 오라리오 → 아님
+PASS WK-0 waitstaff_shift 조건 데이터
+PASS WK-1 waitstaff_shift 오라리오 · 고용처 있음 → 후보
+PASS WK-2 waitstaff_shift 오라리오 · 고용처 없음 → 아님
+PASS WK-3 waitstaff_shift 위치 melen · 고용처 있음 → 아님(시설 없음)
+PASS WK-4 waitstaff_shift 다른 직업 · 고용처 있음 · 오라리오 → 아님
+PASS MV-0 준비: waitstaff · hostess · 후보
+PASS MV-1 이주 뒤 직업·고용처 그대로, 근무 사건 후보 아님
+PASS MV-2 위치만 오라리오로 돌아오면 다시 후보(거주지 melen 이어도)
+PASS RT-0 조건 데이터
+PASS RT-1 {"origin":"telskyura","residence":"telskyura"} → true
+PASS RT-1 {"origin":"telskyura","residence":"orario"} → false
+PASS RT-1 {"origin":"orario","residence":"telskyura"} → false
+PASS RT-1 {"origin":"telskyura","residence":"telskyura","location":"orario"} → true
+PASS LC-0 조건 데이터: origin 키 없음, locationIn
+PASS LC-1 출생 orario · 위치 orario
+PASS LC-1 출생 melen · 위치 orario
+PASS LC-1 출생 rakia · 위치 orario
+PASS LC-1 출생 orario · 위치 rakia
+PASS LC-1 출생 melen · 위치 rakia
+PASS LC-1 출생 rakia · 위치 rakia
+PASS LC-1 출생 orario · 위치 melen
+PASS LC-1 출생 melen · 위치 melen
+PASS LC-1 출생 rakia · 위치 melen
+PASS LC-1 출생 orario · 위치 far_east
+PASS LC-1 출생 melen · 위치 far_east
+PASS LC-1 출생 rakia · 위치 far_east
+PASS LC-1 출생 orario · 위치 telskyura
+PASS LC-1 출생 melen · 위치 telskyura
+PASS LC-1 출생 rakia · 위치 telskyura
+PASS LC-1 출생 orario · 위치 elven_forest
+PASS LC-1 출생 melen · 위치 elven_forest
+PASS LC-1 출생 rakia · 위치 elven_forest
+PASS LC-1 출생 orario · 위치 unknown
+PASS LC-1 출생 melen · 위치 unknown
+PASS LC-1 출생 rakia · 위치 unknown
+PASS DR5-a 거주 orario · 이력 2구간 · 이유 fled · 사건 conscript
+PASS DR5-b 위치 orario · 이력 2구간 · 이유 fled · 사건 conscript
+PASS DR5-c 출생지 rakia 유지 · 직업·소속·팔나·플래그·가족·아이템·고용처 불변
+PASS DR5-d 도주 실패: 거주·위치 rakia 그대로, 이력 1구간
+PASS HOLD-1
+PASS HOLD-1d 라키아 출생 · 거주 orario → 징집 후보 false
+PASS HOLD-1d 라키아 출생 · 거주 rakia → 징집 후보 true
+PASS HOLD-1d 라키아 출생 · 거주 melen → 징집 후보 false
+PASS HOLD-1d 라키아 출생 · 거주 far_east → 징집 후보 false
+PASS HOLD-1d 라키아 출생 · 거주 telskyura → 징집 후보 false
+PASS HOLD-1d 라키아 출생 · 거주 elven_forest → 징집 후보 false
+PASS HOLD-1d 라키아 출생 · 거주 unknown → 징집 후보 false
+PASS FB-0 효과 데이터
+PASS FB-1 거주·위치 melen · 이유 retirement · 사건 retire
+PASS FB-2 출생지 orario · 직업 retired · 소속·고용처 불변
+PASS FB-3 이미 melen 거주·위치 → 이력 추가 없음(같은 지역 이동 없음)
+PASS FB-4 retire[0](후배 교육)은 이주 없음
+PASS FD-0 조건 데이터
+PASS FD-1 Lv6 · 위치 orario → true
+PASS FD-1 Lv6 · 위치 rakia → false
+PASS FD-1 Lv6 · 위치 melen → false
+PASS FD-1 Lv6 · 위치 far_east → false
+PASS FD-1 Lv6 · 위치 telskyura → false
+PASS FD-1 Lv6 · 위치 elven_forest → false
+PASS FD-1 Lv6 · 위치 unknown → false
+PASS FD-2 Lv5 · 위치 orario → 아님(레벨 관문)
+PASS HS-1 healer_shift 조건 = 기존 + locationIn orario 만
+PASS HOLD-2 tavern 에 지역·시설 조건 키 없음
+PASS HOLD-2 lost_child 에 지역·시설 조건 키 없음
+PASS HOLD-2 city_disaster 에 지역·시설 조건 키 없음
+PASS HOLD-2 join_hard 에 지역·시설 조건 키 없음
+PASS HOLD-2 buy_dual_potion 에 지역·시설 조건 키 없음
+PASS HOLD-2 craft_drop_weapon 에 지역·시설 조건 키 없음
+PASS HOLD-2 buy_pyonkichi 에 지역·시설 조건 키 없음
+PASS HOLD-2 magic_sword_crozzo 에 지역·시설 조건 키 없음
+PASS HOLD-2 buy_elemental_cloth 에 지역·시설 조건 키 없음
+PASS EN-5
+RESULT: PASS 167/167 (region_p3_test)

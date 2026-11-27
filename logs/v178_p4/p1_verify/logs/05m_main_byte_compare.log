@@ -1,0 +1,11 @@
+seed 20261104
+  이번 실행  7534d98f7f999419d68e543857871b5f401c0b4bde641a65533b973a9a40c199  logs/02_tr_20261104.log
+  main 기준  549f54760d93a144f5f1ab5a278bc7a4bfdb778925d2ca7a19dba7f70aa9bee2  (저장소) logs/baseline_main_f63c851/tr_20261104.log
+/tmp/claude-0/-home-user-danmachi-life/d5ced5fa-2e51-537b-b440-6ffb6d38a3d3/scratchpad/p4_verify4/logs/02_tr_20261104.log logs/baseline_main_f63c851/tr_20261104.log differ: char 178, line 8
+  cmp: 다름
+seed 777
+  이번 실행  7d09a7d7f808e948ae545e77b61e46e8ab98edbf134d758d259876c783b1e2b4  logs/03_tr_777.log
+  main 기준  6c2696e784df3ffcd74448f51f0ea3e3d8b1f0b55b38da723b1f6fe4a26a99ed  (저장소) logs/baseline_main_f63c851/tr_777.log
+/tmp/claude-0/-home-user-danmachi-life/d5ced5fa-2e51-537b-b440-6ffb6d38a3d3/scratchpad/p4_verify4/logs/03_tr_777.log logs/baseline_main_f63c851/tr_777.log differ: char 173, line 8
+  cmp: 다름
+exit=1

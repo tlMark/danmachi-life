@@ -1,0 +1,9 @@
+FAILED_STEPS: 6 (등록 항목 33 개, 기록 실패 0 건)
+05_f1_byte_compare exit=1
+05m_main_byte_compare exit=1
+05p_p5_byte_compare exit=1
+06_digest10_strict exit=1
+06m_digest10_strict_main exit=1
+06p_digest10_strict_p5 exit=1
+exit=1
+2026-11-27T09:28:51Z

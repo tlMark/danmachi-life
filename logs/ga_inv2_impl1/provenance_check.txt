@@ -1,0 +1,29 @@
+# base_f639c05 와 git f639c05 의 바이트 대조(git show <커밋>:<경로> | sha256sum)
+SAME 4544c8be1bf76c74536c062818c6e075a22926e502bba7f16a4be2bfb6f34881 core/aging.js
+SAME 35d782a73f14feffd69c246826d399591f94e9acb65774a90ee2107344bb747b core/growth.js
+SAME 42ebf1d29c2b678675f17ac34db0529b024d6b5ecb7bc611182ef808f11a99f0 core/items.js
+SAME 729f3796b6c3150c08262870e52e34650e987ede3d8e599631192c8dea85a7c8 core/lineage.js
+SAME b897fb3a2488d6f40dc4b661d8ca39a1987ddc0f4ac9bc24e950413ba663485a core/recruit.js
+SAME 7aad574bded11fe03ed09c6c51036dc686d5d4c004049b849cb67e5caed990f6 core/relations.js
+SAME 4c856e75ad9060b7b73dd089cb64198b960df16672a925258e3dbfe6471cebf7 data.js
+SAME e5c1b042eaed234ef6bfc529ac8a776c58942aa580227b4874636e2f54abe520 events.js
+SAME bdfb603b9b2467b39ff6f222e8f5915a7b332e081b2964869bf835a48ea446b1 script.js
+SAME daab0ac428136ede217d3057f4991f2cbd2d7930501850c28c8b812304d90b1b test_runner.js
+SAME 595b9264be33b8ed8dbbd48555c29b8e94b4960b9c7b50b369d852ee3e29346e tests/lib/commit_queue.js
+SAME 7ae25e757c1f9c0ee3ae502119b15a89f0059782beba90e852085c4a8efa9578 tests/lib/compare_verdict.js
+SAME 7274fe4b0f82d8af8413e6501dbffbdaf1bbea404f44cdb695211265384edc51 tests/lib/driver_core.js
+SAME dd1ac888de47d4260c6c88fbf8c2966023d0227753bc532e45079920ab6ab443 tests/lib/mock_dom.js
+SAME 431aaafe3eee3f7cf773c094b9eff0ecd875a85e26d6930ad614f9a71ecec7c1 tests/lib/page_driver.js
+SAME 0a593b4116375b2efc0592af3a332d2375b40a8462dd5fdce2715ed0a3a6349d tests/lib/rng_core.js
+SAME fbf2b684c7b679385dac305208a31f91aab01e7f16e7220a83929fcf33ef1f6a tests/lib/rng_sites.js
+# measure_src 8개(script.js 제외) 대조
+SAME data.js
+SAME events.js
+SAME core/aging.js
+SAME core/growth.js
+SAME core/relations.js
+SAME core/items.js
+SAME core/recruit.js
+SAME core/lineage.js
+# measure_src/script.js sha256 f5ab42d6fed93e5223545522f48b11ece37decc9db51dce8e0baa93bee26f56c (러너 MEASURE_SCRIPT_SHA 와 같아야 함: 'f5ab42d6fed93e5223545522f48b11ece37decc9db51dce8e0baa93bee26f56c';   // 측정 사본)
+# base 러너와 측정 러너 diff 줄 수: 80

@@ -1,0 +1,12 @@
+F1D4A P4 시험 기록 — 작성자 실행(Claude Code). ChatGPT 1차·Codex 최종 QA 아님.
+기준 커밋: 819f8e8 (작업 트리 변경, 미커밋). 실행 환경: node v22.23.4, Ubuntu 24.04.5 LTS, Linux 6.18.44-fc-v880, vCPU 4, Chromium 153.0.8010.12(Playwright 1.63.0 번들).
+p1_verify/      : bash tests/p1_verify.sh <out> 최종 실행(4번째 전체 실행, 종료 2026-11-27T09:28:51Z). logs/·status/·compare/·p1_verify_stdout.txt
+                  05·05m·05p·06·06m·06p = 기준선 대비 결과 비교 — 의도적 변경이라 실패(기준선은 갱신하지 않음). 나머지 27항목 exit 0.
+unit/           : p1_verify 밖 단위 시험(p4_test 포함)과 Chromium N2 시험 2종의 출력.
+48k/            : run48k.js(logs/v178_f1/tools) 4시드×4모드×3000. tr_before/·tr_after/ = 일반 실행 출력 로그. *_SHA256SUMS.txt = 산출물(생애별 기록 포함) SHA.
+                  before(819f8e8 git archive 사본) 32/32 = logs/baseline_main_3859123/48k_SHA256SUMS.txt 와 동일.
+                  cmp48k_p4.md = 분석 사본(생애별 기록에 o·rf·lf·adv·dun·relo 필드만 추가, tools 의 패치 내용은 DEV_REPORT §2.3) 비교. 분석 사본 출력 로그는 일반 실행과 16/16(전후 각각) 바이트 동일.
+                  cmp48k_p4_plain.md = 일반 실행 비교(지역별 표 없음).
+                  after 일반 실행은 최종 정리 전 사본(driver_core 분리·relocate resolve 형태 정리 전)으로 돌렸고, 최종 코드의 분석 사본 실행과 출력 로그 16/16 동일 — 정리가 결과를 바꾸지 않았음을 확인.
+tools/compare48k_p4.js : 비교 도구(게임 코드 아님).
+생애별 기록 JSON 은 용량 때문에 저장소에 넣지 않았다(SHA 만 기록).

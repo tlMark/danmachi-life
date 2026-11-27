@@ -1,0 +1,1238 @@
+{
+ "ok": true,
+ "fails": [],
+ "anchors": {
+  "<top>|CallExpression|Object.freeze(['on','once','addListener','prependListener','prependOnceListener','off','removeListener','removeAllListeners','setMaxListeners'])": {
+   "count": 1,
+   "lines": [
+    6
+   ]
+  },
+  "<top>|CallExpression|Object.freeze(['on','once','addListener','prependListener','prependOnceListener','off','removeListener','removeAllListeners','setMaxListeners','emit','listeners','listenerCount'])": {
+   "count": 1,
+   "lines": [
+    7
+   ]
+  },
+  "<top>|CallExpression|Symbol.for('danmachi.measure.init')": {
+   "count": 1,
+   "lines": [
+    8
+   ]
+  },
+  "<top>|CallExpression|Object.freeze({brand:'danmachi.measure.v1'})": {
+   "count": 1,
+   "lines": [
+    10
+   ]
+  },
+  "<top>|CallExpression|Object.create(null)": {
+   "count": 1,
+   "lines": [
+    11
+   ]
+  },
+  "sameFns|MemberExpression|a[j]": {
+   "count": 1,
+   "lines": [
+    31
+   ]
+  },
+  "sameFns|MemberExpression|b[j]": {
+   "count": 1,
+   "lines": [
+    31
+   ]
+  },
+  "isData|Identifier|undefined": {
+   "count": 2,
+   "lines": [
+    37,
+    37
+   ]
+  },
+  "isData|CallExpression|RD_gopd(d,'value')": {
+   "count": 1,
+   "lines": [
+    37
+   ]
+  },
+  "makeWrapper|RestElement|...args": {
+   "count": 1,
+   "lines": [
+    42
+   ]
+  },
+  "makeWrapper|Identifier|WATCH_ON": {
+   "count": 1,
+   "lines": [
+    43
+   ]
+  },
+  "makeWrapper|CallExpression|RD_apply(orig,this,args)": {
+   "count": 2,
+   "lines": [
+    43,
+    47
+   ]
+  },
+  "makeWrapper|ThisExpression|this": {
+   "count": 3,
+   "lines": [
+    43,
+    44,
+    47
+   ]
+  },
+  "makeWrapper|VariableDeclarator|target=(this===PROC)": {
+   "count": 1,
+   "lines": [
+    44
+   ]
+  },
+  "markerGuard|CallExpression|RD_gopd(globalThis,INIT_KEY)": {
+   "count": 2,
+   "lines": [
+    54,
+    72
+   ]
+  },
+  "markerGuard|Identifier|undefined": {
+   "count": 1,
+   "lines": [
+    55
+   ]
+  },
+  "markerGuard|CallExpression|isData(pre)": {
+   "count": 1,
+   "lines": [
+    58
+   ]
+  },
+  "markerGuard|MemberExpression|pre.value": {
+   "count": 1,
+   "lines": [
+    59
+   ]
+  },
+  "markerGuard|CallExpression|RD_gopd(v,'brand')": {
+   "count": 1,
+   "lines": [
+    61
+   ]
+  },
+  "markerGuard|CallExpression|isData(b)": {
+   "count": 1,
+   "lines": [
+    62
+   ]
+  },
+  "markerGuard|MemberExpression|b.value": {
+   "count": 1,
+   "lines": [
+    62
+   ]
+  },
+  "markerGuard|CallExpression|Reflect.defineProperty(globalThis,INIT_KEY,{value:OWN_TOKEN,writable:false,enumerable:false,configurable:false})": {
+   "count": 1,
+   "lines": [
+    69
+   ]
+  },
+  "markerGuard|CallExpression|isData(mk)": {
+   "count": 1,
+   "lines": [
+    73
+   ]
+  },
+  "markerGuard|MemberExpression|mk.value": {
+   "count": 1,
+   "lines": [
+    74
+   ]
+  },
+  "markerGuard|Identifier|OWN_TOKEN": {
+   "count": 1,
+   "lines": [
+    74
+   ]
+  },
+  "markerGuard|MemberExpression|mk.writable": {
+   "count": 1,
+   "lines": [
+    74
+   ]
+  },
+  "markerGuard|MemberExpression|mk.configurable": {
+   "count": 1,
+   "lines": [
+    74
+   ]
+  },
+  "provenClean|Identifier|WATCH_ON": {
+   "count": 1,
+   "lines": [
+    82
+   ]
+  },
+  "provenClean|MemberExpression|ORIG_OF[name]": {
+   "count": 2,
+   "lines": [
+    84,
+    86
+   ]
+  },
+  "provenClean|CallExpression|RD_gopd(EE,name)": {
+   "count": 1,
+   "lines": [
+    85
+   ]
+  },
+  "provenClean|CallExpression|isData(d)": {
+   "count": 1,
+   "lines": [
+    86
+   ]
+  },
+  "provenClean|MemberExpression|d.value": {
+   "count": 1,
+   "lines": [
+    86
+   ]
+  },
+  "provenClean|CallExpression|RD_gopd(EE,WATCH[i])": {
+   "count": 1,
+   "lines": [
+    90
+   ]
+  },
+  "provenClean|MemberExpression|WATCH[i]": {
+   "count": 2,
+   "lines": [
+    90,
+    92
+   ]
+  },
+  "provenClean|CallExpression|RD_gopd(EE,WATCH[j])": {
+   "count": 1,
+   "lines": [
+    90
+   ]
+  },
+  "provenClean|MemberExpression|WATCH[j]": {
+   "count": 2,
+   "lines": [
+    90,
+    92
+   ]
+  },
+  "provenClean|CallExpression|isData(di)": {
+   "count": 1,
+   "lines": [
+    91
+   ]
+  },
+  "provenClean|CallExpression|isData(dj)": {
+   "count": 1,
+   "lines": [
+    91
+   ]
+  },
+  "provenClean|MemberExpression|di.value": {
+   "count": 1,
+   "lines": [
+    92
+   ]
+  },
+  "provenClean|MemberExpression|dj.value": {
+   "count": 1,
+   "lines": [
+    92
+   ]
+  },
+  "provenClean|MemberExpression|ORIG_OF[WATCH[i]]": {
+   "count": 1,
+   "lines": [
+    92
+   ]
+  },
+  "provenClean|MemberExpression|ORIG_OF[WATCH[j]]": {
+   "count": 1,
+   "lines": [
+    92
+   ]
+  },
+  "init|CallExpression|Object.create(null)": {
+   "count": 1,
+   "lines": [
+    101
+   ]
+  },
+  "init|CallExpression|Object.freeze({state:'inactive_unknown',reason:'reinit_rejected'})": {
+   "count": 1,
+   "lines": [
+    106
+   ]
+  },
+  "init|AssignmentExpression|RD_apply=Reflect.apply": {
+   "count": 1,
+   "lines": [
+    107
+   ]
+  },
+  "init|MemberExpression|Reflect.apply": {
+   "count": 1,
+   "lines": [
+    107
+   ]
+  },
+  "init|AssignmentExpression|RD_gopd=Reflect.getOwnPropertyDescriptor": {
+   "count": 1,
+   "lines": [
+    108
+   ]
+  },
+  "init|MemberExpression|Reflect.getOwnPropertyDescriptor": {
+   "count": 1,
+   "lines": [
+    108
+   ]
+  },
+  "init|AssignmentExpression|RD_gpo=Reflect.getPrototypeOf": {
+   "count": 1,
+   "lines": [
+    109
+   ]
+  },
+  "init|MemberExpression|Reflect.getPrototypeOf": {
+   "count": 1,
+   "lines": [
+    109
+   ]
+  },
+  "init|Identifier|RD_apply": {
+   "count": 1,
+   "lines": [
+    110
+   ]
+  },
+  "init|Identifier|RD_gopd": {
+   "count": 1,
+   "lines": [
+    110
+   ]
+  },
+  "init|Identifier|RD_gpo": {
+   "count": 1,
+   "lines": [
+    110
+   ]
+  },
+  "init|CallExpression|markerGuard()": {
+   "count": 1,
+   "lines": [
+    111
+   ]
+  },
+  "init|CallExpression|Object.freeze({state:'inactive_unknown',reason:g})": {
+   "count": 1,
+   "lines": [
+    112
+   ]
+  },
+  "init|Identifier|WATCH_ON": {
+   "count": 2,
+   "lines": [
+    113,
+    158
+   ]
+  },
+  "init|CallExpression|Object.freeze({state:'inactive_unknown',reason:'watch_on_unexpected'})": {
+   "count": 1,
+   "lines": [
+    113
+   ]
+  },
+  "init|AssignmentExpression|fs=require('fs')": {
+   "count": 1,
+   "lines": [
+    115
+   ]
+  },
+  "init|CallExpression|require('fs')": {
+   "count": 1,
+   "lines": [
+    115
+   ]
+  },
+  "init|AssignmentExpression|EE=require('events').EventEmitter.prototype": {
+   "count": 1,
+   "lines": [
+    116
+   ]
+  },
+  "init|MemberExpression|require('events').EventEmitter.prototype": {
+   "count": 1,
+   "lines": [
+    116
+   ]
+  },
+  "init|AssignmentExpression|PROC=process": {
+   "count": 1,
+   "lines": [
+    117
+   ]
+  },
+  "init|CallExpression|RD_gopd(EE,'listeners')": {
+   "count": 1,
+   "lines": [
+    118
+   ]
+  },
+  "init|CallExpression|RD_gopd(EE,'listenerCount')": {
+   "count": 1,
+   "lines": [
+    118
+   ]
+  },
+  "init|CallExpression|RD_gopd(EE,'emit')": {
+   "count": 1,
+   "lines": [
+    118
+   ]
+  },
+  "init|CallExpression|isData(dl)": {
+   "count": 1,
+   "lines": [
+    119
+   ]
+  },
+  "init|CallExpression|isData(dc)": {
+   "count": 1,
+   "lines": [
+    119
+   ]
+  },
+  "init|CallExpression|isData(de)": {
+   "count": 1,
+   "lines": [
+    119
+   ]
+  },
+  "init|AssignmentExpression|RD_listeners=dl.value": {
+   "count": 1,
+   "lines": [
+    120
+   ]
+  },
+  "init|MemberExpression|dl.value": {
+   "count": 1,
+   "lines": [
+    120
+   ]
+  },
+  "init|AssignmentExpression|RD_count=dc.value": {
+   "count": 1,
+   "lines": [
+    121
+   ]
+  },
+  "init|MemberExpression|dc.value": {
+   "count": 1,
+   "lines": [
+    121
+   ]
+  },
+  "init|AssignmentExpression|RD_emit=de.value": {
+   "count": 1,
+   "lines": [
+    122
+   ]
+  },
+  "init|MemberExpression|de.value": {
+   "count": 1,
+   "lines": [
+    122
+   ]
+  },
+  "init|AssignmentExpression|HOOK_NEW0=RD_apply(RD_listeners,PROC,['newListener'])": {
+   "count": 1,
+   "lines": [
+    123
+   ]
+  },
+  "init|CallExpression|RD_apply(RD_listeners,PROC,['newListener'])": {
+   "count": 1,
+   "lines": [
+    123
+   ]
+  },
+  "init|AssignmentExpression|HOOK_RM0=RD_apply(RD_listeners,PROC,['removeListener'])": {
+   "count": 1,
+   "lines": [
+    124
+   ]
+  },
+  "init|CallExpression|RD_apply(RD_listeners,PROC,['removeListener'])": {
+   "count": 1,
+   "lines": [
+    124
+   ]
+  },
+  "init|CallExpression|RD_gopd(EE,name)": {
+   "count": 4,
+   "lines": [
+    127,
+    137,
+    143,
+    152
+   ]
+  },
+  "init|CallExpression|isData(d)": {
+   "count": 3,
+   "lines": [
+    128,
+    138,
+    143
+   ]
+  },
+  "init|MemberExpression|d.value": {
+   "count": 4,
+   "lines": [
+    128,
+    129,
+    138,
+    143
+   ]
+  },
+  "init|AssignmentExpression|ORIG_OF[name]=d.value": {
+   "count": 1,
+   "lines": [
+    129
+   ]
+  },
+  "init|MemberExpression|ORIG_OF[name]": {
+   "count": 4,
+   "lines": [
+    129,
+    133,
+    153,
+    153
+   ]
+  },
+  "init|CallExpression|makeWrapper(ORIG_OF[name])": {
+   "count": 1,
+   "lines": [
+    133
+   ]
+  },
+  "init|AssignmentExpression|WRAPPERS[name]=w": {
+   "count": 1,
+   "lines": [
+    134
+   ]
+  },
+  "init|MemberExpression|WRAPPERS[name]": {
+   "count": 2,
+   "lines": [
+    134,
+    143
+   ]
+  },
+  "init|CallExpression|attempted.push(name)": {
+   "count": 1,
+   "lines": [
+    135
+   ]
+  },
+  "init|AssignmentExpression|EE[name]=w": {
+   "count": 1,
+   "lines": [
+    136
+   ]
+  },
+  "init|MemberExpression|EE[name]": {
+   "count": 2,
+   "lines": [
+    136,
+    153
+   ]
+  },
+  "init|CallExpression|installed.push(name)": {
+   "count": 1,
+   "lines": [
+    139
+   ]
+  },
+  "init|MemberExpression|newSet(WATCH.map(n=>WRAPPERS[n])).size": {
+   "count": 1,
+   "lines": [
+    142
+   ]
+  },
+  "init|CallExpression|WATCH.map(n=>WRAPPERS[n])": {
+   "count": 1,
+   "lines": [
+    142
+   ]
+  },
+  "init|MemberExpression|WRAPPERS[n]": {
+   "count": 1,
+   "lines": [
+    142
+   ]
+  },
+  "init|AssignmentExpression|WATCH_ON=true": {
+   "count": 1,
+   "lines": [
+    146
+   ]
+  },
+  "init|CallExpression|Object.freeze({state:'inactive_unknown',reason:(typeofe==='string')?e:'guard_exception'})": {
+   "count": 1,
+   "lines": [
+    148
+   ]
+  },
+  "init|CallExpression|isData(d0)": {
+   "count": 1,
+   "lines": [
+    153
+   ]
+  },
+  "init|MemberExpression|d0.value": {
+   "count": 1,
+   "lines": [
+    153
+   ]
+  },
+  "init|AssignmentExpression|EE[name]=ORIG_OF[name]": {
+   "count": 1,
+   "lines": [
+    153
+   ]
+  },
+  "init|CallExpression|provenClean(attempted,ORIG_OF,guardPassed)": {
+   "count": 1,
+   "lines": [
+    159
+   ]
+  },
+  "init|CallExpression|Object.freeze({state:state,reason:reason})": {
+   "count": 1,
+   "lines": [
+    160
+   ]
+  },
+  "envCheck|CallExpression|sameFns(RD_apply(RD_listeners,PROC,['newListener']),HOOK_NEW0)": {
+   "count": 1,
+   "lines": [
+    166
+   ]
+  },
+  "envCheck|CallExpression|RD_apply(RD_listeners,PROC,['newListener'])": {
+   "count": 1,
+   "lines": [
+    166
+   ]
+  },
+  "envCheck|CallExpression|sameFns(RD_apply(RD_listeners,PROC,['removeListener']),HOOK_RM0)": {
+   "count": 1,
+   "lines": [
+    166
+   ]
+  },
+  "envCheck|CallExpression|RD_apply(RD_listeners,PROC,['removeListener'])": {
+   "count": 1,
+   "lines": [
+    166
+   ]
+  },
+  "envCheck|VariableDeclarator|o=PROC": {
+   "count": 1,
+   "lines": [
+    168
+   ]
+  },
+  "envCheck|Identifier|EE": {
+   "count": 2,
+   "lines": [
+    169,
+    173
+   ]
+  },
+  "envCheck|CallExpression|RD_gopd(o,n)": {
+   "count": 1,
+   "lines": [
+    170
+   ]
+  },
+  "envCheck|Identifier|undefined": {
+   "count": 1,
+   "lines": [
+    170
+   ]
+  },
+  "envCheck|CallExpression|RD_gpo(o)": {
+   "count": 1,
+   "lines": [
+    171
+   ]
+  },
+  "envCheck|CallExpression|RD_gopd(EE,name)": {
+   "count": 1,
+   "lines": [
+    175
+   ]
+  },
+  "envCheck|CallExpression|isData(d)": {
+   "count": 1,
+   "lines": [
+    175
+   ]
+  },
+  "envCheck|MemberExpression|d.value": {
+   "count": 1,
+   "lines": [
+    175
+   ]
+  },
+  "envCheck|MemberExpression|WRAPPERS[name]": {
+   "count": 1,
+   "lines": [
+    175
+   ]
+  },
+  "envCheck|CallExpression|RD_gopd(EE,'listeners')": {
+   "count": 1,
+   "lines": [
+    176
+   ]
+  },
+  "envCheck|CallExpression|RD_gopd(EE,'listenerCount')": {
+   "count": 1,
+   "lines": [
+    176
+   ]
+  },
+  "envCheck|CallExpression|RD_gopd(EE,'emit')": {
+   "count": 1,
+   "lines": [
+    176
+   ]
+  },
+  "envCheck|CallExpression|isData(dl)": {
+   "count": 1,
+   "lines": [
+    177
+   ]
+  },
+  "envCheck|MemberExpression|dl.value": {
+   "count": 1,
+   "lines": [
+    177
+   ]
+  },
+  "envCheck|VariableDeclarator|readIntact=isData(dl)&&dl.value===RD_listeners&&isData(dc)&&dc.value===RD_count&&isData(de)&&de.value===RD_emit": {
+   "count": 1,
+   "lines": [
+    177
+   ]
+  },
+  "envCheck|CallExpression|isData(dc)": {
+   "count": 1,
+   "lines": [
+    177
+   ]
+  },
+  "envCheck|MemberExpression|dc.value": {
+   "count": 1,
+   "lines": [
+    177
+   ]
+  },
+  "envCheck|CallExpression|isData(de)": {
+   "count": 1,
+   "lines": [
+    177
+   ]
+  },
+  "envCheck|MemberExpression|de.value": {
+   "count": 1,
+   "lines": [
+    177
+   ]
+  },
+  "safeInc|MemberExpression|obj[key]": {
+   "count": 3,
+   "lines": [
+    186,
+    188,
+    189
+   ]
+  },
+  "safeInc|CallExpression|Number.isSafeInteger(before)": {
+   "count": 1,
+   "lines": [
+    187
+   ]
+  },
+  "safeInc|AssignmentExpression|obj[key]=before+1": {
+   "count": 1,
+   "lines": [
+    188
+   ]
+  },
+  "wrapEndLife|Identifier|WATCH_ON": {
+   "count": 1,
+   "lines": [
+    196
+   ]
+  },
+  "wrapEndLife|CallExpression|endLifeBody({outcome:null,xCode:null})": {
+   "count": 2,
+   "lines": [
+    196,
+    198
+   ]
+  },
+  "wrapEndLife|AssignmentExpression|call.parent.inflight=null": {
+   "count": 1,
+   "lines": [
+    201
+   ]
+  },
+  "wrapEndLife|AssignmentExpression|call.parent.inflightSet=false": {
+   "count": 1,
+   "lines": [
+    201
+   ]
+  },
+  "wrapEndLife|CallExpression|safeInc(M_,'C')": {
+   "count": 1,
+   "lines": [
+    205
+   ]
+  },
+  "wrapEndLife|CallExpression|endLifeBody(call)": {
+   "count": 1,
+   "lines": [
+    207
+   ]
+  },
+  "wrapEndLife|AssignmentExpression|call.returned=true": {
+   "count": 1,
+   "lines": [
+    208
+   ]
+  },
+  "wrapEndLife|CallExpression|safeInc(M_.E,call.outcome)": {
+   "count": 1,
+   "lines": [
+    211
+   ]
+  },
+  "wrapEndLife|MemberExpression|M_.E": {
+   "count": 1,
+   "lines": [
+    211
+   ]
+  },
+  "wrapEndLife|AssignmentExpression|call.aCode=(call.inflightSet&&e===call.inflight)?'nested_propagation':'origin'": {
+   "count": 1,
+   "lines": [
+    212
+   ]
+  },
+  "wrapEndLife|AssignmentExpression|call.parent.inflight=e": {
+   "count": 1,
+   "lines": [
+    213
+   ]
+  },
+  "wrapEndLife|AssignmentExpression|call.parent.inflightSet=true": {
+   "count": 1,
+   "lines": [
+    213
+   ]
+  },
+  "wrapEndLife|CallExpression|safeInc(M_,k)": {
+   "count": 1,
+   "lines": [
+    218
+   ]
+  },
+  "wrapEndLife|CallExpression|safeInc(M_.Acode,call.returned?'unmarked_return':(call.aCode==='nested_propagation'?'nested_propagation':'origin'))": {
+   "count": 1,
+   "lines": [
+    219
+   ]
+  },
+  "wrapEndLife|MemberExpression|M_.Acode": {
+   "count": 1,
+   "lines": [
+    219
+   ]
+  },
+  "wrapEndLife|CallExpression|safeInc(M_.Xcode,call.xCode)": {
+   "count": 1,
+   "lines": [
+    220
+   ]
+  },
+  "wrapEndLife|MemberExpression|M_.Xcode": {
+   "count": 1,
+   "lines": [
+    220
+   ]
+  },
+  "seal|MemberExpression|M_.C": {
+   "count": 1,
+   "lines": [
+    235
+   ]
+  },
+  "seal|MemberExpression|M_.H": {
+   "count": 1,
+   "lines": [
+    235
+   ]
+  },
+  "seal|MemberExpression|M_.P": {
+   "count": 1,
+   "lines": [
+    235
+   ]
+  },
+  "seal|MemberExpression|M_.F": {
+   "count": 1,
+   "lines": [
+    235
+   ]
+  },
+  "seal|MemberExpression|M_.X": {
+   "count": 1,
+   "lines": [
+    235
+   ]
+  },
+  "seal|MemberExpression|M_.A": {
+   "count": 1,
+   "lines": [
+    235
+   ]
+  },
+  "seal|MemberExpression|M_.Acode.origin": {
+   "count": 1,
+   "lines": [
+    235
+   ]
+  },
+  "seal|MemberExpression|M_.Acode.nested_propagation": {
+   "count": 1,
+   "lines": [
+    235
+   ]
+  },
+  "seal|MemberExpression|M_.Acode.unmarked_return": {
+   "count": 1,
+   "lines": [
+    235
+   ]
+  },
+  "seal|CallExpression|s.slice()": {
+   "count": 1,
+   "lines": [
+    236
+   ]
+  },
+  "seal|CallExpression|Number.isSafeInteger(v)": {
+   "count": 1,
+   "lines": [
+    238
+   ]
+  },
+  "seal|MemberExpression|s[0]": {
+   "count": 1,
+   "lines": [
+    241
+   ]
+  },
+  "seal|MemberExpression|s[1]": {
+   "count": 1,
+   "lines": [
+    241
+   ]
+  },
+  "seal|MemberExpression|s[2]": {
+   "count": 1,
+   "lines": [
+    241
+   ]
+  },
+  "seal|MemberExpression|s[3]": {
+   "count": 1,
+   "lines": [
+    241
+   ]
+  },
+  "seal|MemberExpression|s[4]": {
+   "count": 1,
+   "lines": [
+    241
+   ]
+  },
+  "seal|MemberExpression|s[5]": {
+   "count": 2,
+   "lines": [
+    241,
+    242
+   ]
+  },
+  "seal|MemberExpression|s[6]": {
+   "count": 1,
+   "lines": [
+    242
+   ]
+  },
+  "seal|MemberExpression|s[7]": {
+   "count": 1,
+   "lines": [
+    242
+   ]
+  },
+  "seal|MemberExpression|s[8]": {
+   "count": 2,
+   "lines": [
+    242,
+    243
+   ]
+  },
+  "finishMeasurement|Identifier|WATCH_ON": {
+   "count": 1,
+   "lines": [
+    254
+   ]
+  },
+  "finishMeasurement|CallExpression|envCheck()": {
+   "count": 1,
+   "lines": [
+    260
+   ]
+  },
+  "finishMeasurement|CallExpression|RD_apply(WRAPPERS.on,PROC,['exit',M])": {
+   "count": 1,
+   "lines": [
+    262
+   ]
+  },
+  "finishMeasurement|MemberExpression|WRAPPERS.on": {
+   "count": 1,
+   "lines": [
+    262
+   ]
+  },
+  "finishMeasurement|CallExpression|RD_apply(RD_listeners,PROC,['exit'])": {
+   "count": 1,
+   "lines": [
+    264
+   ]
+  },
+  "finishMeasurement|CallExpression|ls.indexOf(M)": {
+   "count": 1,
+   "lines": [
+    265
+   ]
+  },
+  "finishMeasurement|CallExpression|ls.lastIndexOf(M)": {
+   "count": 1,
+   "lines": [
+    266
+   ]
+  },
+  "finishMeasurement|CallExpression|ls.slice()": {
+   "count": 1,
+   "lines": [
+    267
+   ]
+  },
+  "finishMeasurement|CallExpression|seal()": {
+   "count": 1,
+   "lines": [
+    273
+   ]
+  },
+  "M|CallExpression|envCheck()": {
+   "count": 1,
+   "lines": [
+    284
+   ]
+  },
+  "M|CallExpression|RD_apply(RD_listeners,PROC,['exit'])": {
+   "count": 1,
+   "lines": [
+    285
+   ]
+  },
+  "M|CallExpression|sameFns(ls,p.Lseal)": {
+   "count": 1,
+   "lines": [
+    286
+   ]
+  },
+  "M|VariableDeclarator|checks=[{k:'C5g',ok:WATCH_ON===true,r:'invalid:init_incomplete'},{k:'L2',ok:!p.regThrew,r:'invalid:l2_register_failed'},{k:'C1',ok:p.regOK&&p.Lseal!==null&&p.Lseal[p.Lseal.length-1]===M,r:'invalid:l2_not_last'},{k:'C5a',ok:p.env0!==null&&p.env0.hookFree&&env.hookFree,r:'invalid:hook_present'},{k:'C5b',ok:p.env0!==null&&p.env0.chainClean&&env.chainClean,r:'invalid:shadowed_method'},{k:'C5c',ok:p.env0!==null&&p.env0.watchIntact&&env.watchIntact,r:'invalid:watch_tampered'},{k:'C5f',ok:p.env0!==null&&p.env0.readIntact&&env.readIntact,r:'invalid:read_api_tampered'},{k:'C4a',ok:p.a1===p.a0+1,r:'invalid:l2_reentry'},{k:'C4b',ok:p.r1===p.r0,r:'invalid:l2_reentry'},{k:'C4c',ok:p.d1===p.d0+1,r:'invalid:l2_reentry'},{k:'C4d',ok:p.m1===p.a1,r:'invalid:window_mutation'},{k:'C4e',ok:p.w1===0,r:'invalid:window_endlife_call'},{k:'C3',ok:mutTotal===p.m1,r:'invalid:post_seal_mutation'},{k:'C2',ok:sameList,r:'invalid:exit_listeners'}]": {
+   "count": 1,
+   "lines": [
+    287
+   ]
+  },
+  "M|MemberExpression|p.Lseal[p.Lseal.length-1]": {
+   "count": 1,
+   "lines": [
+    290
+   ]
+  },
+  "M|CallExpression|conds.push({k:c.k,ok:c.ok===true})": {
+   "count": 1,
+   "lines": [
+    306
+   ]
+  },
+  "M|CallExpression|fs.writeFileSync(REPORT_PATH,JSON.stringify({verdict:verdict,conditional:verdict==='valid'?'unconfirmed assumptions A-F':null,conds:conds,snap:SEAL!==null?SEAL.snap:null,counters:{C:M_.C,H:M_.H,P:M_.P,F:M_.F,X:M_.X,A:M_.A,Xcode:M_.Xcode,Acode:M_.Acode,E:M_.E},postSeal:postSeal,mutTotal:mutTotal,maxDepth:maxDepth,faultCount:faultCount}))": {
+   "count": 1,
+   "lines": [
+    310
+   ]
+  },
+  "M|CallExpression|JSON.stringify({verdict:verdict,conditional:verdict==='valid'?'unconfirmed assumptions A-F':null,conds:conds,snap:SEAL!==null?SEAL.snap:null,counters:{C:M_.C,H:M_.H,P:M_.P,F:M_.F,X:M_.X,A:M_.A,Xcode:M_.Xcode,Acode:M_.Acode,E:M_.E},postSeal:postSeal,mutTotal:mutTotal,maxDepth:maxDepth,faultCount:faultCount})": {
+   "count": 1,
+   "lines": [
+    310
+   ]
+  },
+  "M|MemberExpression|M_.C": {
+   "count": 1,
+   "lines": [
+    311
+   ]
+  },
+  "M|MemberExpression|M_.H": {
+   "count": 1,
+   "lines": [
+    311
+   ]
+  },
+  "M|MemberExpression|M_.P": {
+   "count": 1,
+   "lines": [
+    311
+   ]
+  },
+  "M|MemberExpression|M_.F": {
+   "count": 1,
+   "lines": [
+    311
+   ]
+  },
+  "M|MemberExpression|M_.X": {
+   "count": 1,
+   "lines": [
+    311
+   ]
+  },
+  "M|MemberExpression|M_.A": {
+   "count": 1,
+   "lines": [
+    311
+   ]
+  },
+  "M|MemberExpression|M_.Xcode": {
+   "count": 1,
+   "lines": [
+    311
+   ]
+  },
+  "M|MemberExpression|M_.Acode": {
+   "count": 1,
+   "lines": [
+    311
+   ]
+  },
+  "M|MemberExpression|M_.E": {
+   "count": 1,
+   "lines": [
+    311
+   ]
+  },
+  "<top>|AssignmentExpression|module.exports=Object.freeze({init:init,wrapEndLife:wrapEndLife,finishMeasurement:finishMeasurement})": {
+   "count": 1,
+   "lines": [
+    316
+   ]
+  },
+  "<top>|MemberExpression|module.exports": {
+   "count": 1,
+   "lines": [
+    316
+   ]
+  },
+  "<top>|CallExpression|Object.freeze({init:init,wrapEndLife:wrapEndLife,finishMeasurement:finishMeasurement})": {
+   "count": 1,
+   "lines": [
+    316
+   ]
+  }
+ },
+ "parser": "8.15.0",
+ "siteCount": 192,
+ "partsReport": [
+  {
+   "key": "init|CallExpression|RD_gopd(EE,name)",
+   "i": 0,
+   "line": 127,
+   "ctx": "stage1",
+   "part": "T7",
+   "want": "T7"
+  },
+  {
+   "key": "init|CallExpression|RD_gopd(EE,name)",
+   "i": 1,
+   "line": 137,
+   "ctx": "stage2",
+   "part": "T10",
+   "want": "T10"
+  },
+  {
+   "key": "init|CallExpression|RD_gopd(EE,name)",
+   "i": 2,
+   "line": 143,
+   "ctx": "stage3",
+   "part": "T10",
+   "want": "T10"
+  },
+  {
+   "key": "init|CallExpression|RD_gopd(EE,name)",
+   "i": 3,
+   "line": 152,
+   "ctx": "catch",
+   "part": "T9",
+   "want": "T9"
+  },
+  {
+   "key": "init|MemberExpression|EE[name]",
+   "i": 0,
+   "line": 136,
+   "ctx": "stage2",
+   "part": "T8",
+   "want": "T8"
+  },
+  {
+   "key": "init|MemberExpression|EE[name]",
+   "i": 1,
+   "line": 153,
+   "ctx": "catch",
+   "part": "T9",
+   "want": "T9"
+  }
+ ]
+}

@@ -1,0 +1,53 @@
+PASS POS 원문 통과 — []
+PASS N01 별칭 const d = Object.defineProperty → 검사기 실패 — P6-unlisted:허용 사이트 표 밖의 위치 sameFns|MemberExpression|Object.defineProperty ×1
+PASS N02 구조 분해 const { defineProperty } = Object → 검사기 실패 — P6-unlisted:허용 사이트 표 밖의 위치 sameFns|ObjectPattern|{defineProperty} ×1 / P6-unlisted:허용 사이트 표 밖의 위치 sameFns|VariableDeclarator|{defineProperty}=Object ×1
+PASS N03 Reflect[k] 계산된 접근 → 검사기 실패 — P6-unlisted:허용 사이트 표 밖의 위치 sameFns|CallExpression|Reflect[k](a,'x',1) ×1
+PASS N04 globalThis['ev'+'al'] → 검사기 실패 — P6-unlisted:허용 사이트 표 밖의 위치 sameFns|CallExpression|globalThis['ev'+'al']('1') ×1
+PASS N05 ({}).constructor → 검사기 실패 — P6-unlisted:허용 사이트 표 밖의 위치 sameFns|MemberExpression|({}).constructor ×1
+PASS N06 EE.on = f(점 접근 쓰기) → 검사기 실패 — P6-unlisted:허용 사이트 표 밖의 위치 init|AssignmentExpression|EE.on=function(){} ×1 / P6-unlisted:허용 사이트 표 밖의 위치 init|MemberExpression|EE.on ×1
+PASS N07 o.__proto__ → 검사기 실패 — P6-unlisted:허용 사이트 표 밖의 위치 envCheck|MemberExpression|o.__proto__ ×1
+PASS N08 최상위 foo() → 검사기 실패 — R1-top:허용되지 않은 최상위 문장 ExpressionStatement / P6-unlisted:허용 사이트 표 밖의 위치 <top>|CallExpression|sameFns([],[]) ×1
+PASS N09 최상위 Object.freeze(x) 비리터럴 인자 → 검사기 실패 — R1-top:허용되지 않은 최상위 초기화식 FZ=Object.freeze(WATCH) / P6-unlisted:허용 사이트 표 밖의 위치 <top>|CallExpression|Object.freeze(WATCH) ×1
+PASS N10 최상위 Symbol.for(v) 비문자열 인자 → 검사기 실패 — R1-top:허용되지 않은 최상위 초기화식 SY=Symbol.for(MARK_BRAND) / P6-unlisted:허용 사이트 표 밖의 위치 <top>|CallExpression|Symbol.for(MARK_BRAND) ×1
+PASS N11 R2 'value' in d → 검사기 실패 — P6-unlisted:허용 사이트 표 밖의 위치 markerGuard|BinaryExpression|'value'inpre ×1 / P6-missing:T31 표 항목이 코드에 없음(0 ≠ 1) markerGuard|isData(pre)
+PASS N12 R2 isData 판정 없이 pre.value 읽기 → 검사기 실패 — P6-missing:T31 표 항목이 코드에 없음(0 ≠ 1) markerGuard|isData(pre) / P7a:isData 판정 없이 서술자 속성 읽기 pre.value
+PASS N13 R2 mk.value 를 isData 앞에서 읽기 → 검사기 실패 — P6-count:T37 횟수 2 ≠ 표 1 (markerGuard|MemberExpression|mk.value) / P7a:isData 판정 없이 서술자 속성 읽기 mk.value
+PASS N14 R3 markerGuard 에 RD_gopd 1회 추가 → 검사기 실패 — P6-count:T5 횟수 3 ≠ 표 2 (markerGuard|CallExpression|RD_gopd(globalThis,INIT_KEY)
+PASS N15 R1 isData 내부 호출 형태 변경 → 검사기 실패 — P6-unlisted:허용 사이트 표 밖의 위치 isData|CallExpression|RD_gopd(d,'get') ×1 / P6-missing:T28 표 항목이 코드에 없음(0 ≠ 1) isData|RD_gopd(d,'value')
+PASS N16 R1·R4 isData 호출 추가 → 검사기 실패 — P6-unlisted:허용 사이트 표 밖의 위치 envCheck|CallExpression|isData(RD_gopd(EE,"on")) ×1 / P6-unlisted:허용 사이트 표 밖의 위치 envCheck|CallExpression|RD_gopd(EE,"on") ×1
+PASS N17 R4 표 밖 지역 함수 호출 → 검사기 실패 — P6-unlisted:허용 사이트 표 밖의 위치 envCheck|CallExpression|seal() ×1
+PASS N18 R5 PROC.on 직접 읽기 → 검사기 실패 — P6-unlisted:허용 사이트 표 밖의 위치 finishMeasurement|CallExpression|PROC.on('exit',M) ×1 / P6-missing:T14 표 항목이 코드에 없음(0 ≠ 1) finishMeasurement|RD_apply(WRAPPERS.on,PROC,['
+PASS N19 R5 process 속성 읽기 → 검사기 실패 — P6-unlisted:허용 사이트 표 밖의 위치 init|MemberExpression|process.env ×1
+PASS N20 R7 RD_gopd(EE,name) 1회 제거(미달) → 검사기 실패 — P6-missing:T10 표 항목이 코드에 없음(0 ≠ 1) envCheck|RD_gopd(EE,name) / P6-missing:T75 표 항목이 코드에 없음(0 ≠ 1) envCheck|isData(d)
+PASS N21 R7 T11 RD_apply 1회 추가(초과) → 검사기 실패 — P6-count:T11 횟수 3 ≠ 표 2 (makeWrapper|CallExpression|RD_apply(orig,this,args)) / P6-count:T11 횟수 4 ≠ 표 3 (makeWrapper|ThisExpression|this)
+PASS N22 P7b EE 계산된 키가 반복 변수 아님 → 검사기 실패 — P6-unlisted:허용 사이트 표 밖의 위치 init|AssignmentExpression|EE[kk]=null ×1 / P6-unlisted:허용 사이트 표 밖의 위치 init|MemberExpression|EE[kk] ×1
+PASS N23 P5 전역 이름 가림 const Object → 검사기 실패 — P5-shadow:전역 이름 가림 Object
+PASS N24 P5 민감 이름 안쪽 재선언 let EE → 검사기 실패 — P5-inner:민감 모듈 이름의 안쪽 선언 EE
+PASS N25 P5 출처 불명 식별자 setTimeout → 검사기 실패 — P5:출처 불명 식별자 setTimeout / P6-unlisted:허용 사이트 표 밖의 위치 sameFns|CallExpression|setTimeout('1') ×1
+PASS N26 접근자 정의 get → 검사기 실패 — P6-unlisted:허용 사이트 표 밖의 위치 sameFns|Property|getx(){return1;} ×1 / P7d:사이트 노드 안의 함수 sameFns|Property|getx(){return1;}
+PASS N27 스프레드 인자 → 검사기 실패 — P5:출처 불명 식별자 Math / P6-unlisted:허용 사이트 표 밖의 위치 sameFns|CallExpression|Math.max(...a) ×1
+PASS N28 선택적 호출 ?.() → 검사기 실패 — P6-unlisted:허용 사이트 표 밖의 위치 sameFns|ChainExpression|a.f?.() ×1 / P6-unlisted:허용 사이트 표 밖의 위치 sameFns|CallExpression|a.f?.() ×1
+PASS N29 T19 ORIG_OF 를 일반 객체로 → 검사기 실패 — P6-missing:T19 표 항목이 코드에 없음(0 ≠ 1) init|Object.create(null) / P7b:ORIG_OF 선언 위치·형태가 허용 밖
+PASS N30 require 추가(vm) → 검사기 실패 — P6-unlisted:허용 사이트 표 밖의 위치 init|CallExpression|require('vm') ×1
+PASS N31 태그된 템플릿 → 검사기 실패 — P5:출처 불명 식별자 String / P6-unlisted:허용 사이트 표 밖의 위치 sameFns|TaggedTemplateExpression|String.raw`x` ×1
+PASS N32 new Function → 검사기 실패 — P5:출처 불명 식별자 Function / P6-unlisted:허용 사이트 표 밖의 위치 sameFns|NewExpression|newFunction('return 1') ×1
+PASS N33 T17 화살표를 function 식으로 → 검사기 실패 — P6-unlisted:허용 사이트 표 밖의 위치 init|MemberExpression|newSet(WATCH.map(function(n){retu / P6-unlisted:허용 사이트 표 밖의 위치 init|CallExpression|WATCH.map(function(n){returnWRAPPER
+PASS N34 RD_apply.call 경유 → 검사기 실패 — P6-unlisted:허용 사이트 표 밖의 위치 envCheck|CallExpression|RD_apply.call(null,RD_gpo,null,
+PASS N35 T14 인자 형태 변경 → 검사기 실패 — P6-unlisted:허용 사이트 표 밖의 위치 finishMeasurement|CallExpression|RD_apply(WRAPPERS.on,P / P6-missing:T14 표 항목이 코드에 없음(0 ≠ 1) finishMeasurement|RD_apply(WRAPPERS.on,PROC,['
+PASS N36 T18 safeInc 대상 객체 변경 → 검사기 실패 — P6-unlisted:허용 사이트 표 밖의 위치 wrapEndLife|CallExpression|safeInc({},'C') ×1 / P6-missing:T18 표 항목이 코드에 없음(0 ≠ 1) wrapEndLife|safeInc(M_,'C')
+PASS N37 delete 연산자 → 검사기 실패 — P6-unlisted:허용 사이트 표 밖의 위치 sameFns|UnaryExpression|deletea.x ×1
+PASS N38 with 문(엄격 모드 파싱 실패) → 검사기 실패 — A1:파싱 실패: 'with' in strict mode (30:0)
+PASS N39 import() → 검사기 실패 — P6-unlisted:허용 사이트 표 밖의 위치 sameFns|ImportExpression|import('fs') ×1
+PASS N40 최상위 IIFE → 검사기 실패 — R1-top:허용되지 않은 최상위 문장 ExpressionStatement / P6-unlisted:허용 사이트 표 밖의 위치 <top>|CallExpression|(function(){})() ×1
+PASS N41 최상위 x.y = 대입 → 검사기 실패 — R1-top:허용되지 않은 최상위 문장 ExpressionStatement / P6-unlisted:허용 사이트 표 밖의 위치 <top>|AssignmentExpression|M_.C=1 ×1
+PASS N42 Reflect.set 참조(별칭) → 검사기 실패 — P6-unlisted:허용 사이트 표 밖의 위치 sameFns|MemberExpression|Reflect.set ×1
+PASS N43 globalThis 점 접근 → 검사기 실패 — P6-unlisted:허용 사이트 표 밖의 위치 sameFns|MemberExpression|globalThis.x ×1
+PASS N44 Object.prototype 접근 → 검사기 실패 — P6-unlisted:허용 사이트 표 밖의 위치 sameFns|MemberExpression|Object.prototype ×1
+PASS N45 EE 별칭 대입 → 검사기 실패 — P6-unlisted:허용 사이트 표 밖의 위치 init|VariableDeclarator|EE2=EE ×1
+PASS N46 T10 RD_gopd(o, n) 의 o 를 다른 객체로 → 검사기 실패 — P6-unlisted:허용 사이트 표 밖의 위치 envCheck|CallExpression|RD_gopd(PROC,n) ×1 / P6-missing:T10 표 항목이 코드에 없음(0 ≠ 1) envCheck|RD_gopd(o,n)
+PASS N47 T8 설치 대입 키를 attempted 원소 대신 상수로 → 검사기 실패 — P6-unlisted:허용 사이트 표 밖의 위치 init|AssignmentExpression|EE['on']=w ×1 / P6-unlisted:허용 사이트 표 밖의 위치 init|MemberExpression|EE['on'] ×1
+PASS N48 T6 defineProperty 3번째 인자 변경 → 검사기 실패 — P6-unlisted:허용 사이트 표 밖의 위치 markerGuard|CallExpression|Reflect.defineProperty(globa / P6-missing:T6 표 항목이 코드에 없음(0 ≠ 1) markerGuard|Reflect.defineProperty(globalThis,I
+PASS N49 B: 서술자 속성 쓰기 → 검사기 실패 — P6-unlisted:허용 사이트 표 밖의 위치 envCheck|CallExpression|RD_gopd(EE,"on") ×1 / P6-unlisted:허용 사이트 표 밖의 위치 envCheck|CallExpression|isData(dd) ×1
+PASS N50 함수 값 인자 전달(표 밖) → 검사기 실패 — P6-unlisted:허용 사이트 표 밖의 위치 sameFns|CallExpression|a.forEach(sameFns) ×1
+RESULT: PASS 51/51 (ast_neg_test, acorn 8.15.0)
+exit=0

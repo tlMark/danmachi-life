@@ -1,0 +1,42 @@
+PASS M0 원본 f1_transition_test exit=0 — RESULT: PASS 145/145 (f1_transition_test)
+PASS M0 원본 f1_joinhard_test exit=0 — RESULT: PASS 56/56 (f1_joinhard_test)
+PASS M0 원본 followup_pf_test exit=0 — RESULT: PASS 43/43 (followup_pf_test)
+PASS M0 원본 followup_halt_test exit=0 — RESULT: PASS 155/155 (followup_halt_test)
+PASS SV-M1 ④에서 J-4 를 S 기준으로 재계산 [f1_transition_test] — exit=1, 검출 45건: F1-T4b b 지급 = 시험 금액 1회(apply 1회, valis delta) / F1-T4b d L-2 연표 1건·문구 — []
+PASS SV-M2 스냅숏 생성을 E-1 해제 이후로 이동(지급액은 같음 → employerId assert 로 검출) [f1_transition_test] — exit=1, 검출 1건: F1-T6a 스냅숏 employerId = guild(SV-M2 검출 지점) — {"job":"guild_staff"
+PASS SV-M2b 스냅숏 생성을 setJob 이후로 이동 [f1_transition_test] — exit=1, 검출 49건: F1-T4b a 스냅숏 = 전직 전 값(job healer·근속 5·eligible) — {"job":"support / F1-T4b b 지급 = 시험 금액 1회(apply 1회, valis delta)
+PASS SV-M3 ③ 확인 실패에도 계속 진행(지급) [f1_transition_test] — exit=1, 검출 3건: RB-T1 c 예외 발생·정지 — "null" / RB-T2 c S 전체 = 스냅숏(제외: pending·currentEventId·syncBaseline)
+PASS SV-M4 대상 아님에도 apply({valis:0}) 호출 [f1_transition_test] — exit=1, 검출 16건: F1-T4b 발리스 변화 0·apply 0(J-6) / F1-T4c 4년 → eligible false·지급 0·apply 0·crafter 제거
+PASS SV-M5 액수 미결(null)인데 기본값 400 지급 [f1_transition_test] — exit=1, 검출 2건: SV-U1b 지급 0·apply 0·L-2 0 / SV-U1c 진단 severance_amount_undecided 1건
+PASS RB-M1 job·jobSince·flags 복원 제외 [f1_transition_test] — exit=1, 검출 23건: RB-T2 b S 전체 = 스냅숏(제외: pending·currentEventId·syncBaseline) / RB-T2 c S 전체 = 스냅숏(제외: pending·currentEventId·syncBaseline)
+PASS RB-M2 employer 복원 제외 [f1_transition_test] — exit=1, 검출 6건: RB-T2 a S 전체 = 스냅숏(제외: pending·currentEventId·syncBaseline) / RB-T2 b S 전체 = 스냅숏(제외: pending·currentEventId·syncBaseline)
+PASS RB-M3 valis 복원 제외 [f1_transition_test] — exit=1, 검출 20건: RB-T2 d S 전체 = 스냅숏(제외: pending·currentEventId·syncBaseline) / RB-T2 e S 전체 = 스냅숏(제외: pending·currentEventId·syncBaseline)
+PASS RB-M4 hp 복원 제외 [f1_transition_test] — exit=1, 검출 1건: RB-M4 c 예외(e) 후 S 전체 = 스냅숏
+PASS RB-M5 bond·feat·potential 복원 제외 [f1_transition_test] — exit=1, 검출 4건: RB-M5 c 예외(e) 후 S 전체 = 스냅숏 / RB-M7 c 예외(e) 후 S 전체 = 스냅숏
+PASS RB-M6 abil 복원 제외 [f1_transition_test] — exit=1, 검출 4건: RB-M6 c 예외(e) 후 S 전체 = 스냅숏 / RB-M7 c 예외(e) 후 S 전체 = 스냅숏
+PASS RB-M7 level·hidden·maxLevel·alias 복원 제외 [f1_transition_test] — exit=1, 검출 4건: RB-M7 c 예외(e) 후 S 전체 = 스냅숏 / RB-M8 c 예외(e) 후 S 전체 = 스냅숏
+PASS RB-M8 power 복원 제외 [f1_transition_test] — exit=1, 검출 6건: RB-M5 c 예외(e) 후 S 전체 = 스냅숏 / RB-M6 c 예외(e) 후 S 전체 = 스냅숏
+PASS RB-M10a logHistory 절단 누락 [f1_transition_test] — exit=1, 검출 39건: RB-T2 a S 전체 = 스냅숏(제외: pending·currentEventId·syncBaseline) / RB-T5 a logHistory·levelHistory 내용 동일
+PASS RB-M10b logHistory 절단 1 과다(원래 마지막 항목 삭제) [f1_transition_test] — exit=1, 검출 39건: RB-T2 a S 전체 = 스냅숏(제외: pending·currentEventId·syncBaseline) / RB-T5 a logHistory·levelHistory 내용 동일
+PASS RB-M10c levelHistory 원래 없음 → [] 로 남김 [f1_transition_test] — exit=1, 검출 2건: RB-M10c c 예외(e) 후 S 전체 = 스냅숏 / RB-M10c d 예외 후 logHistory·levelHistory 내용·존재 동일
+PASS RB-X catch 첫 문장 정지 누락(롤백 실패 시 정지 안 됨) [followup_halt_test] — exit=1, 검출 20건: RB-T10-0 resolve 단독 예외 b progressHalted true / RB-T10-0 resolve 단독 예외 h 정지 후 nextYear 진행 0
+PASS RB-X2 원래 예외 대신 정리 오류를 던짐 [followup_halt_test] — exit=1, 검출 23건: RB-T10-0 resolve 단독 예외 — 예외 game.js:3225 |         throw cleanupE / RB-T10-1 + clearAutoTimers 실패 — 예외 game.js:3225 |         throw c
+PASS F1-M1 fallback 재삽입(자동 서포터·400) [f1_joinhard_test] — exit=1, 검출 1건: F1-T13a events.js 에 fallback 속성 0
+PASS F1-M2 stay 선택 시 상태 변경 [f1_joinhard_test] — exit=1, 검출 3건: F1-T2 / CD-1·CD-4 cooldown 차단 [합성 상태 주입] g(F1-T3) stay: 후속 선택 직전  / F1-T2b / LC-1·LC-2 lifetime_cap 차단 [합성 상태 주입] g(F1-T3) stay: 후속 선
+PASS F1-M3 stay 선택 시 기존 직업 덮어쓰기 [f1_joinhard_test] — exit=1, 검출 4건: F1-T2 / CD-1·CD-4 cooldown 차단 [합성 상태 주입] g(F1-T3) stay: 후속 선택 직전  / F1-T2b / LC-1·LC-2 lifetime_cap 차단 [합성 상태 주입] g(F1-T3) stay: 후속 선
+PASS F1-M4 서포터 선택 시 팔나 부여 [f1_transition_test] — exit=1, 검출 14건: F1-T4c 팔나·소속 불변, application 추가 변경 0 / SV 팔나·능력치·레벨·소속·관계·application 불변
+PASS F1-M5 서포터 선택 시 소속 부여 [f1_transition_test] — exit=1, 검출 13건: F1-T4c 팔나·소속 불변, application 추가 변경 0 / SV 팔나·능력치·레벨·소속·관계·application 불변
+PASS F1-M6 후속 선택 시 application 추가 기록 [f1_joinhard_test] — exit=1, 검출 6건: F1-T2 / CD-1·CD-4 cooldown 차단 [합성 상태 주입] f(V-1) stay 후 applicatio / F1-T2 / CD-1·CD-4 cooldown 차단 [합성 상태 주입] g(F1-T3) stay: 후속 선택 직전 
+PASS F1-M7 거절 경로 후속 선택 누락 [f1_joinhard_test] — exit=1, 검출 12건: F1-T1c 후속 화면 표시(awaiting_choice)·다음 해 버튼 없음 — ["undefined:다음 해로"] / V-1 거절 경로 P0→P1→P2(stay) application [합성: 심사 결과 고정] — 예외 Error: 선
+PASS F1-M8 치환자 있어도 접미사 부착 [f1_joinhard_test] — exit=1, 검출 2건: F1-T11a join_hard 거절 문구 = {familia}의 심사에서 탈락했다. — "헤르메스 파밀리아의 심사에 / F1-T11b 접미사 생략·이름 1회·서포터 서술 없음
+PASS F1-M9 사망 판정 전 후속 화면(C27 위반) [f1_joinhard_test] — exit=1, 검출 2건: F1-T10a 사망 처리·보류 정리 / F1-T10b 후속 화면 미표시
+PASS F1-M10 이미 서포터인데 서포터 선택지 노출 [f1_joinhard_test] — exit=1, 검출 2건: F1-T7 / LC-7 이미 서포터: 서포터 선택지 비노출 / F1-T7b 비노출 선택지 직접 호출 거부(상태 불변)
+PASS PF-M1 nextYear 보류 가드 제거 [followup_pf_test] — exit=1, 검출 3건: PF-5a nextYear 차단 / PF-5b endLife 차단
+PASS PF-M2 endLife 대기 중 차단 제거 [followup_pf_test] — exit=1, 검출 2건: PF-5b endLife 차단 / PF-5 선택 대기 중 nextYear·endLife 차단(DOM·상태·난수 변경 0) — 예외 TypeError: 
+PASS PF-M3 중복 클릭 방지(phase 확정) 제거 [followup_pf_test] — exit=1, 검출 2건: PF-5c resolving_choice 중 nextYear·endLife 차단 — {"age":true,"cause / PF-11a resolve 중 currentEventId = sourceEventId — {"id":"stay","e
+PASS HT-M1 생애 세대 토큰 검사 제거 [followup_halt_test] — exit=1, 검출 14건: HT-7-T1 사건 자동 선택 / 예외 있음 a S 변경 0 / HT-7-T1 사건 자동 선택 / 예외 있음 b RNG 소비 0
+PASS HT-M2 H1 가드(nextYear) 제거 [followup_halt_test] — exit=1, 검출 9건: RB-T10-0 resolve 단독 예외 h 정지 후 nextYear 진행 0 / RB-T10-1 + clearAutoTimers 실패 h 정지 후 nextYear 진행 0
+PASS UI-M1 전직 후 상태창 갱신 누락(브라우저 검증에서 발견된 결함 재현) [f1_transition_test] — exit=1, 검출 1건: SV-U1e 상태창 갱신(직업 서포터·고용처 표시 없음) — "종족: 휴먼 · 직업: 치유사 · 소속: 없음 · 고용
+PASS HT-M3 R-E 대신 일반 렌더 [f1_transition_test] — exit=1, 검출 6건: RB-M9a itemUses 없음 + 실제 아이템 보유: 최종적으로도 원래 상태·S 전체 = 스냅숏 / RB-M9b2 itemsConsumed 없음 + 아이템 보유: 최종적으로도 원래 상태·S 전체 = 스냅숏
+RESULT: PASS 40/40
+exit=0

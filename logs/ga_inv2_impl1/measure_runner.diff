@@ -1,0 +1,95 @@
+2a3,5
+> // GA-INV-2 측정 사본 러너(측정 전용 사본). 원본: f639c05 test_runner.js(measure/base_f639c05/test_runner.js, 바이트 동일 사본).
+> // 바뀐 곳: ① 측정 모듈 상태 결정과 실행 허용 판단(vm 생성 전) ② 소스 확인 S1~S5·단일 TEXTS ③ 계측 모드에서만 endLife 래퍼 연결·finishMeasurement 호출
+> //          ④ 하네스 라이브러리·소스 경로를 measure/base_f639c05 로 고정. 측정 상태는 표준 오류에만 쓰고 표준 출력은 원본과 같게 둔다.
+9c12,59
+< const ROOT = __dirname;
+---
+> const ROOT = path.join(__dirname, 'base_f639c05');   // ORIGINAL_SRC_ROOT(f639c05 작업 트리의 9개 소스 + tests/lib)
+> 
+> // ===== GA-INV-2 측정 모듈 상태 결정(§4.2zr R2) — 러너의 첫 실행 문장들. 이 블록 앞에서는 process 리스너를 등록하지 않는다 =====
+> const crypto = require('crypto');
+> const HEX64 = /^[0-9a-f]{64}$/;
+> const shaHex = t => crypto.createHash('sha256').update(t, 'utf8').digest('hex');
+> const ORIGINAL_SRC_ROOT = ROOT;
+> const MEASURE_SRC_ROOT = path.join(__dirname, 'measure_src');
+> const MEASURE_MODULE_PATH = process.env.SIM_MEAS_MODULE ? path.resolve(process.env.SIM_MEAS_MODULE) : path.join(__dirname, 'measure_module.js');   // 시험(고장 주입)만 바꾼다
+> const FIXED_SOURCE_FILES = Object.freeze(['data.js', 'events.js', 'core/aging.js', 'core/growth.js', 'core/relations.js', 'core/items.js', 'core/recruit.js', 'core/lineage.js', 'script.js']);
+> const ORIGINAL_SHA = Object.freeze({
+>     'data.js': '4c856e75ad9060b7b73dd089cb64198b960df16672a925258e3dbfe6471cebf7',
+>     'events.js': 'e5c1b042eaed234ef6bfc529ac8a776c58942aa580227b4874636e2f54abe520',
+>     'core/aging.js': '4544c8be1bf76c74536c062818c6e075a22926e502bba7f16a4be2bfb6f34881',
+>     'core/growth.js': '35d782a73f14feffd69c246826d399591f94e9acb65774a90ee2107344bb747b',
+>     'core/relations.js': '7aad574bded11fe03ed09c6c51036dc686d5d4c004049b849cb67e5caed990f6',
+>     'core/items.js': '42ebf1d29c2b678675f17ac34db0529b024d6b5ecb7bc611182ef808f11a99f0',
+>     'core/recruit.js': 'b897fb3a2488d6f40dc4b661d8ca39a1987ddc0f4ac9bc24e950413ba663485a',
+>     'core/lineage.js': '729f3796b6c3150c08262870e52e34650e987ede3d8e599631192c8dea85a7c8',
+>     'script.js': 'bdfb603b9b2467b39ff6f222e8f5915a7b332e081b2964869bf835a48ea446b1' });
+> const MEASURE_SCRIPT_SHA = process.env.SIM_MEAS_SHA_UNDEFINED === '1' ? undefined : 'f5ab42d6fed93e5223545522f48b11ece37decc9db51dce8e0baa93bee26f56c';   // 측정 사본 script.js 의 SHA-256(시험 25n16 만 미정으로 둔다)
+> const MEASURE_SHA = Object.freeze(Object.assign({}, ORIGINAL_SHA, { 'script.js': MEASURE_SCRIPT_SHA }));
+> let MEAS_STATE = null, MEAS_REASON = null, MEAS = null;
+> if (typeof MEASURE_SCRIPT_SHA !== 'string' || !HEX64.test(MEASURE_SCRIPT_SHA)) {
+>     MEAS_STATE = 'unavailable'; MEAS_REASON = 'measure_sha_undefined';    // 모듈을 require 하지 않는다(코드 미실행)
+> } else {
+>     let loaded = false;
+>     try { MEAS = require(MEASURE_MODULE_PATH); loaded = true; }
+>     catch (_) { MEAS_STATE = 'inactive_unknown'; MEAS_REASON = 'module_load_failed'; }
+>     if (loaded) {
+>         try {
+>             const r = MEAS.init();                                           // 러너의 유일한 init 호출 위치(⑭)
+>             const s = (r !== null && typeof r === 'object') ? r.state : undefined;
+>             MEAS_STATE = (s === 'active' || s === 'inactive_clean' || s === 'inactive_residual' || s === 'inactive_unknown') ? s : 'inactive_unknown';
+>             MEAS_REASON = (r !== null && typeof r === 'object' && typeof r.reason === 'string') ? r.reason : (MEAS_STATE === s ? null : 'bad_init_result');
+>         } catch (_) { MEAS_STATE = 'inactive_unknown'; MEAS_REASON = 'init_threw'; }
+>     }
+> }
+> console.error('measurement: state=' + MEAS_STATE + ' reason=' + MEAS_REASON);
+> const RUN_ALLOWED_STATES = Object.freeze(['active', 'inactive_clean', 'unavailable']);
+> if (!RUN_ALLOWED_STATES.includes(MEAS_STATE)) {
+>     console.error('측정 모듈 상태 ' + MEAS_STATE + (MEAS_REASON ? '(' + MEAS_REASON + ')' : '') + ': 게임 실행을 거부합니다(vm 생성 전).');
+>     process.exitCode = 1;
+>     process.exit();
+> }
+> const ACTIVE = (MEAS_STATE === 'active');
+> const SRC_ROOT = ACTIVE ? MEASURE_SRC_ROOT : ORIGINAL_SRC_ROOT;
+> const EXPECT_SHA = ACTIVE ? MEASURE_SHA : ORIGINAL_SHA;
+14c64
+< const { createRng } = require('./tests/lib/rng_core.js');   // F1D4A P1: 같은 함수를 공통 소스로 옮김(Chromium 측정과 공유). 내용은 F1 과 같다
+---
+> const { createRng } = require(path.join(ROOT, 'tests', 'lib', 'rng_core.js'));   // F1D4A P1: 같은 함수를 공통 소스로 옮김(Chromium 측정과 공유). 내용은 F1 과 같다
+16c66
+< const { makeElement, makeDocument } = require('./tests/lib/mock_dom.js');   // F1D4A P1: 모의 DOM 을 공통 소스로 옮김. 내용은 F1 과 같다
+---
+> const { makeElement, makeDocument } = require(path.join(ROOT, 'tests', 'lib', 'mock_dom.js'));   // F1D4A P1: 모의 DOM 을 공통 소스로 옮김. 내용은 F1 과 같다
+71c121,137
+< const source = sourceFiles.map(file => fs.readFileSync(path.join(ROOT, file), 'utf8')).join('\n;\n');
+---
+> // ===== 소스 확인 S1~S5(§4.2zp R3): 실패하면 vm 생성 전 중단 =====
+> let TEXTS = null;
+> try {
+>     const sameList = Array.isArray(sourceFiles) && sourceFiles.length === FIXED_SOURCE_FILES.length && FIXED_SOURCE_FILES.every((f, i) => sourceFiles[i] === f);   // S1
+>     if (!sameList) throw new Error('sourceFiles differs from fixed list');
+>     const keys = Object.keys(EXPECT_SHA);
+>     if (!(keys.length === FIXED_SOURCE_FILES.length && FIXED_SOURCE_FILES.every(f => keys.includes(f)))) throw new Error('EXPECT_SHA keys differ');   // S2
+>     if (!FIXED_SOURCE_FILES.every(f => typeof EXPECT_SHA[f] === 'string' && HEX64.test(EXPECT_SHA[f]))) throw new Error('EXPECT_SHA value format');     // S3
+>     TEXTS = FIXED_SOURCE_FILES.map(file => fs.readFileSync(path.join(SRC_ROOT, file), 'utf8'));                                                        // S5 고정 순서
+>     const bad = FIXED_SOURCE_FILES.filter((file, i) => shaHex(TEXTS[i]) !== EXPECT_SHA[file]);                                                         // S4
+>     if (bad.length > 0) throw new Error('source sha mismatch: ' + bad.join(', '));
+> } catch (error) {
+>     console.error('측정 사본 소스 확인 실패(vm 생성 전 중단):', error && error.message);
+>     process.exitCode = 1;
+>     process.exit();
+> }
+> const source = TEXTS.join('\n;\n');   // 기존 71 과 같은 순서·구분자
+1221c1287
+<     const RngSites = require('./tests/lib/rng_sites.js');
+---
+>     const RngSites = require(path.join(ROOT, 'tests', 'lib', 'rng_sites.js'));
+1223c1289
+<     const texts = sourceFiles.map(file => fs.readFileSync(path.join(ROOT, file), 'utf8'));
+---
+>     const texts = TEXTS;   // 다시 읽지 않는다(단일 TEXTS)
+1250a1317
+> if (ACTIVE) sandbox.__MEAS_WRAP_ENDLIFE = MEAS.wrapEndLife;   // 계측 모드에서만 연결(측정 사본 script.js 가 첫 endLife 에서 감싼다)
+1261a1329
+> if (ACTIVE) MEAS.finishMeasurement(process.env.SIM_MEAS_REPORT || path.join(process.cwd(), 'meas_report.json'));   // vm 실행 직후·결과 출력 전 1회(F0~F4, M 등록)

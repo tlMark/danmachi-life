@@ -1,0 +1,4 @@
+OK      calendar/20261104: node=lives 3000 digest 373739463 rng 3389998929 UNKNOWN 0 seq 2963619151 | file=lives 3000 digest 373739463 rng 3389998929 UNKNOWN 0 seq 2963619151 | inline=lives 3000 digest 373739463 rng 3389998929 UNKNOWN 0 seq 2963619151 | 일치 {"node=file":true,"node=inline":true,"file=inline":true}
+OK      newborn_parent_familia/20261104: node=lives 3000 digest 2984699544 rng 433671019 UNKNOWN 0 seq 1659645680 | file=lives 3000 digest 2984699544 rng 433671019 UNKNOWN 0 seq 1659645680 | inline=lives 3000 digest 2984699544 rng 433671019 UNKNOWN 0 seq 1659645680 | 일치 {"node=file":true,"node=inline":true,"file=inline":true}
+SUMMARY: PASS 2/2 · PARTIAL(부분 실행, 합격 아님) 0 · FAIL 0 (실행 환경: node, file, inline; 미실행 환경: 없음) → 완전 검수 통과
+exit=0

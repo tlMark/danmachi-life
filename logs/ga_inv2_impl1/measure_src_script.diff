@@ -1,0 +1,27 @@
+1791,1792c1791,1794
+< function endLife() {
+<     if (haltedEntry('endLife')) return;   // H1 정지 가드
+---
+> // ── GA-INV-2 측정 사본(게임 동작 불변): 원래 endLife 본문을 endLifeBody(call)로 옮기고, 반환·화면 확정 지점에서 call 의 결말 필드만 쓴다. ──
+> //   call 은 측정 모듈 wrapEndLife 가 호출마다 만드는 지역 객체다. 본문은 그 밖의 측정 상태를 읽거나 쓰지 않는다.
+> function endLifeBody(call) {
+>     if (haltedEntry('endLife')) { call.outcome = 'H'; return; }   // H1 정지 가드
+1796c1798
+<       if (p && p.phase !== 'resolving_event') { followupDiag('endlife_blocked'); return; }
+---
+>       if (p && p.phase !== 'resolving_event') { followupDiag('endlife_blocked'); call.outcome = 'P'; return; }
+1840a1843,1849
+>     try {   // 측정 코드: 화면 상태 확인(이 확인의 자기 예외만 삼킨다). F 는 확인이 끝난 뒤에만 정한다
+>         const ids = ['screen-start', 'screen-loading', 'screen-play', 'screen-result'];
+>         let activeCount = 0;
+>         for (const id of ids) if ($(id).classList.contains('active')) activeCount += 1;
+>         if (activeCount === 1 && $('screen-result').classList.contains('active')) call.outcome = 'F';
+>         else { call.outcome = 'X'; call.xCode = 'screen_state_mismatch'; }
+>     } catch (_) { call.outcome = 'X'; call.xCode = 'screen_state_check_exception'; }
+1841a1851,1856
+> }
+> // 측정 사본 연결: 러너가 계측 모드(active)일 때만 샌드박스에 __MEAS_WRAP_ENDLIFE 를 넣는다. 첫 호출에서 한 번만 감싼다.
+> let __measEndLife = null;
+> function endLife() {
+>     if (__measEndLife === null) __measEndLife = __MEAS_WRAP_ENDLIFE(endLifeBody);
+>     return __measEndLife();

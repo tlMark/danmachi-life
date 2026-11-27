@@ -1,0 +1,25 @@
+ENV  chromium=153.0.8010.12 node=v22.23.4 load=file://
+PASS A (전제) 예외 직전 S 가 실제로 바뀌었고 연표 노드가 추가됨
+PASS A 원래 예외 같은 객체로 전파·정지
+PASS A S 전체 = 스냅숏(pendingFollowup·currentEventId 제외)
+PASS A 롤백 보고 ok·input normal
+PASS A 주요 컨테이너·이력 원래 참조
+PASS A 연표: 스냅숏 뒤 노드 = 정지 안내 1건(롤백될 문구 제거)
+PASS A pendingFollowup 정리·실패 기록 없음
+PASS A 상태창이 복원된 발리스를 표시
+PASS B (전제) 예외 직전 S 가 실제로 바뀌었고 연표 노드가 추가됨
+PASS B 원래 예외 같은 객체로 전파·정지
+PASS B S 전체 = 스냅숏(pendingFollowup·currentEventId 제외)
+PASS B 롤백 보고 ok·input normal
+PASS B 주요 컨테이너·이력 원래 참조
+PASS B 연표: 스냅숏 뒤 노드 = 정지 안내 1건(롤백될 문구 제거)
+PASS B pendingFollowup 정리·실패 기록 없음
+PASS B 상태창이 복원된 발리스를 표시
+PASS A (전제) 예외 직전 입단으로 소속이 생김·복원 뒤 소속 없음
+PASS B (전제) 예외 직전 탈퇴로 소속 없음·복원 뒤 loki
+PASS C 원래 예외 같은 객체로 전파·정지
+PASS C 부분 복원 보고(partial(failed)), 성공으로 보지 않음
+PASS C 실패 기록 남음(rollbackFailureUnrecorded false)
+PASS C 연표: 정지 안내 1건
+PASS 페이지 오류 0(의도한 예외는 시험 코드가 잡음)
+RESULT: PASS 23/23 (n2_browser_rollback_test, file)

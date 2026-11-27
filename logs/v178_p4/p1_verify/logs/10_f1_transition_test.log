@@ -1,0 +1,147 @@
+PASS F1-T4a job supporter·플래그·jobSince = 나이
+PASS F1-T4b 발리스 변화 0·apply 0(J-6)
+PASS F1-T4c 팔나·소속 불변, application 추가 변경 0
+PASS F1-T4d '다음 해로' 1개·보류 정리
+PASS F1-T4b a 스냅숏 = 전직 전 값(job healer·근속 5·eligible)
+PASS F1-T4b b 지급 = 시험 금액 1회(apply 1회, valis delta)
+PASS F1-T4b c jobSince = 전직 나이
+PASS F1-T4b d L-2 연표 1건·문구
+PASS SV RNG 0
+PASS SV 팔나·능력치·레벨·소속·관계·application 불변
+PASS SV syncDepth 0·동기화 로그 추가 0
+PASS SV-U1a 실제 소스의 SEVERANCE_AMOUNT === null
+PASS SV-U1b 지급 0·apply 0·L-2 0
+PASS SV-U1c 진단 severance_amount_undecided 1건
+PASS SV-U1d E-1·전직 정상 완료
+PASS SV-U1e 상태창 갱신(직업 서포터·고용처 표시 없음)
+PASS F1-T4c 4년 → eligible false·지급 0·apply 0·crafter 제거
+PASS F1-T4d farmer 10년 → merchant 2년: 지급 0
+PASS F1-T4g retired 6년 → eligible false·지급 0·apply 0
+PASS F1-T5 플래그 재설정(crafter 제거·supporter 추가)·jobSince·직업 변경 연표
+PASS F1-T6a 스냅숏 employerId = guild(SV-M2 검출 지점)
+PASS F1-T6b employer null·employerHistory 미생성
+PASS F1-T6c 연표 순서: L-1 → 직업 변경 → L-2
+PASS F1-T6d 지급 1회·application 불변
+PASS RB-T1 a 예외 발생·정지
+PASS RB-T2 a S 전체 = 스냅숏(제외: pending·currentEventId·syncBaseline)
+PASS RB-T5 a logHistory·levelHistory 내용 동일
+PASS RB-T6 a 아이템 컨테이너 내용 동일
+PASS RB-T3 a 2-i 상태 불변·syncDepth 0·기준값 = 스냅숏 시점 값(RB-1a)
+PASS RB-T4 a 렌더된 발리스 = 원복된 S.valis
+PASS RB-T1 b 예외 발생·정지
+PASS RB-T2 b S 전체 = 스냅숏(제외: pending·currentEventId·syncBaseline)
+PASS RB-T5 b logHistory·levelHistory 내용 동일
+PASS RB-T6 b 아이템 컨테이너 내용 동일
+PASS RB-T3 b 2-i 상태 불변·syncDepth 0·기준값 = 스냅숏 시점 값(RB-1a)
+PASS RB-T4 b 렌더된 발리스 = 원복된 S.valis
+PASS RB-T1 c 예외 발생·정지
+PASS RB-T2 c S 전체 = 스냅숏(제외: pending·currentEventId·syncBaseline)
+PASS RB-T5 c logHistory·levelHistory 내용 동일
+PASS RB-T6 c 아이템 컨테이너 내용 동일
+PASS RB-T3 c 2-i 상태 불변·syncDepth 0·기준값 = 스냅숏 시점 값(RB-1a)
+PASS RB-T4 c 렌더된 발리스 = 원복된 S.valis
+PASS RB-T1 d 예외 발생·정지
+PASS RB-T2 d S 전체 = 스냅숏(제외: pending·currentEventId·syncBaseline)
+PASS RB-T5 d logHistory·levelHistory 내용 동일
+PASS RB-T6 d 아이템 컨테이너 내용 동일
+PASS RB-T3 d 2-i 상태 불변·syncDepth 0·기준값 = 스냅숏 시점 값(RB-1a)
+PASS RB-T4 d 렌더된 발리스 = 원복된 S.valis
+PASS RB-T1 e 예외 발생·정지
+PASS RB-T2 e S 전체 = 스냅숏(제외: pending·currentEventId·syncBaseline)
+PASS RB-T5 e logHistory·levelHistory 내용 동일
+PASS RB-T6 e 아이템 컨테이너 내용 동일
+PASS RB-T3 e 2-i 상태 불변·syncDepth 0·기준값 = 스냅숏 시점 값(RB-1a)
+PASS RB-T4 e 렌더된 발리스 = 원복된 S.valis
+PASS RB-T3b 새 생애 정상 시작·recovered 전이 0
+PASS RB-M1 a 정상 실행에서 대상 필드가 실제로 바뀜(job,jobSince,flags)
+PASS RB-M1 c 예외(b) 후 S 전체 = 스냅숏
+PASS RB-M1 d 예외 후 logHistory·levelHistory 내용·존재 동일
+PASS RB-M2 a 정상 실행에서 대상 필드가 실제로 바뀜(employer)
+PASS RB-M2 c 예외(a) 후 S 전체 = 스냅숏
+PASS RB-M2 d 예외 후 logHistory·levelHistory 내용·존재 동일
+PASS RB-M3 a 정상 실행에서 대상 필드가 실제로 바뀜(valis)
+PASS RB-M3 c 예외(e) 후 S 전체 = 스냅숏
+PASS RB-M3 d 예외 후 logHistory·levelHistory 내용·존재 동일
+PASS RB-M4 a 정상 실행에서 대상 필드가 실제로 바뀜(hp)
+PASS RB-M4 c 예외(e) 후 S 전체 = 스냅숏
+PASS RB-M4 d 예외 후 logHistory·levelHistory 내용·존재 동일
+PASS RB-M5 a 정상 실행에서 대상 필드가 실제로 바뀜(bond,feat,potential,excelia)
+PASS RB-M5 c 예외(e) 후 S 전체 = 스냅숏
+PASS RB-M5 d 예외 후 logHistory·levelHistory 내용·존재 동일
+PASS RB-M6 a 정상 실행에서 대상 필드가 실제로 바뀜(abil,excelia)
+PASS RB-M6 c 예외(e) 후 S 전체 = 스냅숏
+PASS RB-M6 d 예외 후 logHistory·levelHistory 내용·존재 동일
+PASS RB-M7 a 정상 실행에서 대상 필드가 실제로 바뀜(level,hidden,maxLevel,alias,levelHistory,feat)
+PASS RB-M7 b 실측: level 1→2, maxLevel 1→2, hidden 0→60, alias none→rookie, power 15→28, logHistory +2(레벨업·이명) + 전직 1 + L-2 1
+PASS RB-M7 c 예외(e) 후 S 전체 = 스냅숏
+PASS RB-M7 d 예외 후 logHistory·levelHistory 내용·존재 동일
+PASS RB-M8 a 정상 실행에서 대상 필드가 실제로 바뀜(power)
+PASS RB-M8 b 실측: level 1→2, maxLevel 1→2, hidden 0→60, alias none→rookie, power 15→28, logHistory +2(레벨업·이명) + 전직 1 + L-2 1
+PASS RB-M8 c 예외(e) 후 S 전체 = 스냅숏
+PASS RB-M8 d 예외 후 logHistory·levelHistory 내용·존재 동일
+PASS RB-M10c a 정상 실행에서 대상 필드가 실제로 바뀜(levelHistory)
+PASS RB-M10c c 예외(e) 후 S 전체 = 스냅숏
+PASS RB-M10c d 예외 후 logHistory·levelHistory 내용·존재 동일
+PASS RB-M9a itemUses 없음 + 실제 아이템 보유: 최종적으로도 원래 상태·S 전체 = 스냅숏
+PASS RB-M9b1 items 없음: 최종적으로도 원래 상태·S 전체 = 스냅숏
+PASS RB-M9b2 itemsConsumed 없음 + 아이템 보유: 최종적으로도 원래 상태·S 전체 = 스냅숏
+PASS RB-M9c relations·nextRelationId 없음: 최종적으로도 원래 상태·S 전체 = 스냅숏
+PASS RB-M9d nextRelationId = 0: 최종적으로도 원래 상태·S 전체 = 스냅숏
+PASS RB-M9e relations = null(존재하지만 배열 아님): 최종적으로도 원래 상태·S 전체 = 스냅숏
+PASS RB-M9-mut1 변이 실패 사례 = 예상(a,b2,c,d,e)
+PASS RB-M9-mut2 변이 실패 사례 = 예상(c,d,e)
+PASS RB-M9-mut3 변이 실패 사례 = 예상(a,b2)
+PASS RB-M9-mut4 변이 실패 사례 = 예상(b1)
+PASS RB-M9-mut5 변이 실패 사례 = 예상(b2)
+PASS RT-1 전직·jobSince·지급 0·apply 0
+PASS RT-1 팔나·소속·능력치·레벨·관계·이력 전부 불변
+PASS RT-1 그 밖의 S 전체 불변(전체 비교)
+PASS RT-1 기존 연표 항목 내용 동일
+PASS RT-1 sealed 유지·falna 플래그 없음 유지(자동 복구 없음)
+PASS RT-2 전직·jobSince·지급 0·apply 0
+PASS RT-2 팔나·소속·능력치·레벨·관계·이력 전부 불변
+PASS RT-2 그 밖의 S 전체 불변(전체 비교)
+PASS RT-2 기존 연표 항목 내용 동일
+PASS RT-2 falna 플래그·unbound 유지
+PASS RT-3 전직·jobSince·지급 0·apply 0
+PASS RT-3 팔나·소속·능력치·레벨·관계·이력 전부 불변
+PASS RT-3 그 밖의 S 전체 불변(전체 비교)
+PASS RT-3 기존 연표 항목 내용 동일
+PASS RT-3 falnaHistory 0 유지
+PASS RT-4 E-1 연표 1건·employer null·지급 0·고용처 문구 노출
+PASS RT-4 전직·jobSince·지급 0·apply 0
+PASS RT-4 팔나·소속·능력치·레벨·관계·이력 전부 불변
+PASS RT-4 그 밖의 S 전체 불변(전체 비교)
+PASS RT-4 기존 연표 항목 내용 동일
+PASS RT-5 F1
+PASS RT-5 F2
+PASS RT-5 F3
+PASS RT-5 F4
+PASS RT-5 F5
+PASS RT-5 RT5F
+PASS RT-5 지급 0(retired)
+PASS RT-M1 실패 = [F1, RT5F]
+PASS RT-M2 실패 = [F2, RT5F]
+PASS RT-M3 실패 = [F3, RT5F]
+PASS RT-M4 실패 = [F4, RT5F]
+PASS RT-M5 실패 = [F5, RT5F]
+PASS RT-MI1 sealByGodReturn 실패 = [F1, F2, F5, RT5F]
+PASS RT-MI2 leaveFamilia 실패 = [F1, F2, F5, RT5F]
+PASS RT-MI3 apply 오호출 실패 = [F3, RT5F]
+PASS RT-6 sealed·무소속·valis≤3000 → true
+PASS RT-6b valis 3001 → false
+PASS RT-6c once 발생 후 사건 풀 제외
+PASS RT-7 unbound(falna 플래그) → false
+PASS RT-8 소속 유지 → false
+PASS 조건 원문 무변경
+PASS RT-9
+PASS RT-10 active: excelia→능력치 경로(potential 0 유지)
+PASS RT-10 active: Math.random 1회·팔나 상태·이력·플래그 불변
+PASS RT-10 unbound: excelia→능력치 경로(potential 0 유지)
+PASS RT-10 unbound: Math.random 1회·팔나 상태·이력·플래그 불변
+PASS RT-10 sealed: potential 증가·excelia 0
+PASS RT-10 sealed: Math.random 1회·팔나 상태·이력·플래그 불변
+PASS RT-10 none: potential 증가·excelia 0
+PASS RT-10 none: Math.random 1회·팔나 상태·이력·플래그 불변
+RESULT: PASS 145/145 (f1_transition_test)
+exit=0
