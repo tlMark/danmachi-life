@@ -1,0 +1,54 @@
+# Windows 호환성 검증(수동 실행 전용, 사용자 결정 2026-11-28 "Node 판 검증 후에 윈도우스 검증도 합시다"). 게임 코드를 바꾸지 않는다.
+# 대상: G1 기준선(logs/baseline_main_605fdf4)과의 게임 결과 바이트 비교, 단위 시험, Chromium file://·inline, 측정 사본 시험.
+# crlf=false: 줄바꿈 변환 없이 받은 경우(ZIP 다운로드와 같은 LF). crlf=true: Windows Git 기본 설정(core.autocrlf=true)으로 받은 경우.
+name: windows-verify
+on:
+  workflow_dispatch:
+jobs:
+  verify:
+    strategy:
+      fail-fast: false
+      matrix:
+        crlf: ['false', 'true']
+    runs-on: windows-latest
+    timeout-minutes: 180
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: git line endings
+        run: git config --global core.autocrlf ${{ matrix.crlf }}
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.4'
+      - name: install playwright (tests only, no save)
+        run: |
+          npm install --no-save --no-package-lock playwright@1.63.0
+          npx playwright install chromium
+      - name: run checks
+        run: |
+          mkdir -p wout
+          S=wout/summary.txt; : > $S
+          echo "node $(node --version) · $(uname -a) · crlf=${{ matrix.crlf }} · $(date -u +%FT%TZ)" | tee -a $S
+          BL=logs/baseline_main_605fdf4
+          step() { n=$1; shift; "$@" > "wout/$n.log" 2>&1; rc=$?; echo "exit=$rc" >> "wout/$n.log"; echo "$n exit=$rc" | tee -a $S; }
+          for s in 20261104 777; do
+            SIM_SEED=$s node test_runner.js > wout/tr_$s.log 2>&1; printf 'exit=%s\n' $? >> wout/tr_$s.log
+            if cmp -s wout/tr_$s.log $BL/tr_$s.log; then echo "A tr_$s: G1 기준선과 바이트 동일" | tee -a $S; else echo "A tr_$s: 다름 ($(grep '^lifeDigest' wout/tr_$s.log | tr -d '\r'))" | tee -a $S; fi
+          done
+          step A_digest10 node logs/v178_f1/tools/digest10.js "$(pwd)" wout/digest10.json
+          step A_digest10_strict node tests/digest10_strict.js wout/digest10.json $BL/digest10.json "G1 605fdf4 기준"
+          for t in p4_test fsr_g1_test engine_p2_test region_p3_test eventcond_test devabil_test n2_rollback_test followup_pf_test followup_halt_test f1_joinhard_test f1_transition_test god_gone_2ba_test residence_ri_test sync_2i_test jobsince_test recruit_2bb_test feat_p5_test rng_sites_test; do step B_$t node tests/$t.js; done
+          step C_browser_file node tests/browser_test.js 24
+          BROWSER_LOAD=inline step C_browser_inline node tests/browser_test.js 24
+          step D_ast_check node measure/ast_check.js
+          step D_ast_neg node measure/tests/ast_neg_test.js
+          step D_meas_fault node measure/tests/meas_fault_test.js "$RUNNER_TEMP/meas_fault"
+          step D_meas_noninterf node measure/tests/meas_noninterf.js "$RUNNER_TEMP/noninterf" 3000 20261104,777
+          echo "end $(date -u +%FT%TZ)" | tee -a $S
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-verify-crlf-${{ matrix.crlf }}
+          path: wout/
