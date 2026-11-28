@@ -1,0 +1,102 @@
+[
+ {
+  "key": "physical/777",
+  "exit": 0,
+  "lifeDigest": "3640313501",
+  "rngCallDigest": "2619091017",
+  "completed": "3000",
+  "allInv": "true",
+  "exc": "0",
+  "vsRef": "n/a"
+ },
+ {
+  "key": "physical/314159",
+  "exit": 0,
+  "lifeDigest": "2354554544",
+  "rngCallDigest": "2100819340",
+  "completed": "3000",
+  "allInv": "true",
+  "exc": "0",
+  "vsRef": "n/a"
+ },
+ {
+  "key": "physical/8675309",
+  "exit": 0,
+  "lifeDigest": "210939761",
+  "rngCallDigest": "545107101",
+  "completed": "3000",
+  "allInv": "true",
+  "exc": "0",
+  "vsRef": "n/a"
+ },
+ {
+  "key": "physical/20261104",
+  "exit": 0,
+  "lifeDigest": "780928835",
+  "rngCallDigest": "2187010721",
+  "completed": "3000",
+  "allInv": "true",
+  "exc": "0",
+  "vsRef": "n/a"
+ },
+ {
+  "key": "calendar/20261104",
+  "exit": 0,
+  "lifeDigest": "988406346",
+  "rngCallDigest": "1239289394",
+  "completed": "3000",
+  "allInv": "true",
+  "exc": "0",
+  "vsRef": "n/a"
+ },
+ {
+  "key": "newborn_parent_familia/20261104",
+  "exit": 0,
+  "lifeDigest": "1029559938",
+  "rngCallDigest": "3484114229",
+  "completed": "3000",
+  "allInv": "true",
+  "exc": "0",
+  "vsRef": "n/a"
+ },
+ {
+  "key": "off/777",
+  "exit": 0,
+  "lifeDigest": "2767838513",
+  "rngCallDigest": "2766822083",
+  "completed": "3000",
+  "allInv": "true",
+  "exc": "0",
+  "vsRef": "n/a"
+ },
+ {
+  "key": "off/314159",
+  "exit": 0,
+  "lifeDigest": "4181606804",
+  "rngCallDigest": "3551207515",
+  "completed": "3000",
+  "allInv": "true",
+  "exc": "0",
+  "vsRef": "n/a"
+ },
+ {
+  "key": "off/8675309",
+  "exit": 0,
+  "lifeDigest": "2387677858",
+  "rngCallDigest": "2054853508",
+  "completed": "3000",
+  "allInv": "true",
+  "exc": "0",
+  "vsRef": "n/a"
+ },
+ {
+  "key": "off/20261104",
+  "exit": 0,
+  "lifeDigest": "3460328982",
+  "rngCallDigest": "495146276",
+  "completed": "3000",
+  "allInv": "true",
+  "exc": "0",
+  "vsRef": "n/a"
+ }
+]

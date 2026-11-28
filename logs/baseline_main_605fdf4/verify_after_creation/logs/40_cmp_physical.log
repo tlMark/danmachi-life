@@ -1,0 +1,6 @@
+OK      physical/20261104: node=lives 3000 digest 780928835 rng 2187010721 UNKNOWN 0 seq 1968298362 | file=lives 3000 digest 780928835 rng 2187010721 UNKNOWN 0 seq 1968298362 | inline=lives 3000 digest 780928835 rng 2187010721 UNKNOWN 0 seq 1968298362 | 일치 {"node=file":true,"node=inline":true,"file=inline":true}
+OK      physical/777: node=lives 3000 digest 3640313501 rng 2619091017 UNKNOWN 0 seq 2139363760 | file=lives 3000 digest 3640313501 rng 2619091017 UNKNOWN 0 seq 2139363760 | inline=lives 3000 digest 3640313501 rng 2619091017 UNKNOWN 0 seq 2139363760 | 일치 {"node=file":true,"node=inline":true,"file=inline":true}
+OK      physical/314159: node=lives 3000 digest 2354554544 rng 2100819340 UNKNOWN 0 seq 2405272250 | file=lives 3000 digest 2354554544 rng 2100819340 UNKNOWN 0 seq 2405272250 | inline=lives 3000 digest 2354554544 rng 2100819340 UNKNOWN 0 seq 2405272250 | 일치 {"node=file":true,"node=inline":true,"file=inline":true}
+OK      physical/8675309: node=lives 3000 digest 210939761 rng 545107101 UNKNOWN 0 seq 345434233 | file=lives 3000 digest 210939761 rng 545107101 UNKNOWN 0 seq 345434233 | inline=lives 3000 digest 210939761 rng 545107101 UNKNOWN 0 seq 345434233 | 일치 {"node=file":true,"node=inline":true,"file=inline":true}
+SUMMARY: PASS 4/4 · PARTIAL(부분 실행, 합격 아님) 0 · FAIL 0 (실행 환경: node, file, inline; 미실행 환경: 없음) → 완전 검수 통과
+exit=0

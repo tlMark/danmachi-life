@@ -1,0 +1,13 @@
+G1 기준선 — 605fdf4 (F1D4A P4 + G1-가, 사용자 승인 2026-11-28 "인정하고 함께 생성")
+기준 커밋: 605fdf430071da3fe7d556b6bfa82bd5bd6ad338   (G1-가 코드 커밋. 이후 커밋 b38f2be·c3ea4ce·8d61a0a·6d6167f·3521193·4dd05e4·5e309d4 는 문서·기록만 바꾸므로 이 기준의 tr·digest 결과에 영향이 없다)
+포함된 의도적 변경: P4(F-A dungeonReach 17건 O1 · F-A2 입단 이주 선택 · HS-1 · 규칙 D), G1-가(free_supporter_route 지상 재설계). N2 팔나 연결(관문 OFF, 결과 불변) 포함.
+기존 기준선 logs/v178_f1(F1 역사적 기준)·logs/baseline_main_f63c851·logs/baseline_main_3859123(P5)은 이 기준과 별개이며 삭제·덮어쓰기하지 않았다. 기준을 섞지 않는다.
+생성 방법: 저장소에서 "git archive 605fdf4 | tar -x" 로 꺼낸 깨끗한 사본에서 실행.
+  tr_20261104.log : cd <사본> && env SIM_SEED=20261104 node test_runner.js > tr_20261104.log 2>&1; printf 'exit=%s\n' $? >> tr_20261104.log
+  tr_777.log      : 같은 명령, SIM_SEED=777
+  digest10.json   : node <사본>/logs/v178_f1/tools/digest10.js <사본> digest10.json (10구성 각 3000생애, 모두 exit=0·completed=3000·inv=true·exc=0 — digest10_run.log)
+  48k_SHA256SUMS.txt: 같은 사본에서 MAX_PARALLEL=3 node logs/v178_f1/tools/run48k.js 로 만든 32개 산출물 해시와 16구성 lifeDigest·rngCallDigest
+실행 환경: node v22.23.4, Linux 6.18.44-fc-v880, Ubuntu 24.04.5 LTS, vCPU 4. 실행자 Claude Code(작성자 실행). Codex 독립 재실행 아님(사용자 결정: Codex 최종 QA 미요청). Windows·다른 Node 판 미실행.
+재현 확인: tr 두 로그는 G1-가 p1_verify 02·03(logs/v178_g1/p1_verify/logs)과 바이트 동일. digest10 10구성은 같은 p1_verify 04 와 lifeDigest·rngCallDigest 동일. 48k 출력 로그 16개는 G1-가 48k(logs/v178_g1/48k/tr_after)와 16/16 동일.
+사용처: tests/p1_verify.sh 의 05g_g1_byte_compare(로그 바이트 비교), 06g_digest10_strict_g1(digest 엄격 대조). 05·06·05m·06m·05p·06p 는 재정의하지 않는다.
+갱신 규칙: 이 기준은 사용자 승인 없이 바꾸지 않는다. 결과가 바뀌는 의도적 변경이 승인되면 새 커밋 기준으로 새 폴더를 만든다(이 폴더는 덮어쓰지 않음).
