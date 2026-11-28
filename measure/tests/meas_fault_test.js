@@ -169,9 +169,11 @@ for (const [id, refExpr, why] of [['ref-undefined', 'undefined', '기준 미전�
 { let runner; try { runner = copyMeasure('reffail', editRunner("function cleanHookReference() {\n    try {", "function cleanHookReference() {\n    return null;   // 합성: 기준 확보 실패\n    try {")); } catch (e) { rec('C5a-ref-fail 사본', false, e.message); }
   if (runner) { const r = runRunner('reffail', { runner }); rec('C5a-ref-fail: 러너가 깨끗한 기준을 얻지 못함(합성 사본) → hook_reference_failed · 모듈 미적재 · 거부', r.state === 'inactive_unknown' && r.reason === 'hook_reference_failed' && refused(r), { state: r.state, reason: r.reason }); } }
 // 남는 한계(D-1 (가) 가정): 같은 개수·같은 이름으로 위장한 선점은 잡지 못한다
-const PRE_DISGUISE = W('pre_hook_disguise.js', "{ const ls = process.listeners('newListener'); const first = ls[0]; process.removeListener('newListener', first); process.prependListener('newListener', function () { return first.apply(this, arguments); }); }\n");
+// r3(Node 판 검증에서 발견): 내장 리스너 구성이 판마다 다르다(v20·v22·v24 = ['', 'startListeningIfSignal'], v26 = ['startListeningIfSignal']).
+//   위장은 바꿔치기하는 원래 리스너의 이름을 그대로 복사해야 판과 무관하게 "같은 개수·같은 이름"이 된다(원래 사본은 익명 대리 함수라 v26 에서 이름이 달라졌음).
+const PRE_DISGUISE = W('pre_hook_disguise.js', "{ const ls = process.listeners('newListener'); const first = ls[0]; process.removeListener('newListener', first); const proxy = function () { return first.apply(this, arguments); }; Object.defineProperty(proxy, 'name', { value: first.name }); process.prependListener('newListener', proxy); }\n");
 { const r = child('lim_disguise', HARN_PRE, [PRE_DISGUISE]);
-  limRec('C5a-disguise: 내장 익명 리스너를 같은 이름(익명)의 대리 함수로 바꿔치기 → 개수·이름 같음 → 미검출(보고 valid)', r.res && r.res.st.state === 'active' && r.rep && r.rep.verdict === 'valid', { st: r.res && r.res.st, verdict: r.rep && r.rep.verdict }); }
+  limRec('C5a-disguise: 내장 리스너(첫 번째)를 같은 이름의 대리 함수로 바꿔치기 → 개수·이름 같음 → 미검출(보고 valid)', r.res && r.res.st.state === 'active' && r.rep && r.rep.verdict === 'valid', { st: r.res && r.res.st, verdict: r.rep && r.rep.verdict }); }
 { const r = child('lim_post', HARN_PRE.replace('const end =', "process.on('newListener', function postHook() {}); const end ="));   // 대조: init 뒤 추가는 검출
   rec('C5a-post 대조: init 이후 추가된 리스너는 검출(invalid:hook_present)', r.rep && r.rep.verdict === 'invalid:hook_present', { verdict: r.rep && r.rep.verdict }); }
 // 설계 원안(개수 0) 재현: 합성 사본에서 C5a 를 "두 이벤트 리스너 수 0" 으로 되돌렸을 때의 판정
