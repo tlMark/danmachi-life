@@ -23,6 +23,8 @@ jobs:
       - name: git line endings
         run: git config --global core.autocrlf ${{ matrix.crlf }}
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # fsr_g1_test·rng_timer 등이 git 이력의 F1 커밋을 꺼낸다(얕은 clone 이면 '미실행' 처리로 실패)
       - uses: actions/setup-node@v4
         with:
           node-version: '22.23.4'
@@ -32,11 +34,12 @@ jobs:
           npx playwright install chromium
       - name: run checks
         run: |
+          set +e   # 시험 하나가 실패해도 나머지를 끝까지 실행한다(판정은 summary 에서)
           mkdir -p wout
           S=wout/summary.txt; : > $S
           echo "node $(node --version) · $(uname -a) · crlf=${{ matrix.crlf }} · $(date -u +%FT%TZ)" | tee -a $S
           BL=logs/baseline_main_605fdf4
-          step() { n=$1; shift; "$@" > "wout/$n.log" 2>&1; rc=$?; echo "exit=$rc" >> "wout/$n.log"; echo "$n exit=$rc" | tee -a $S; }
+          step() { n=$1; shift; "$@" > "wout/$n.log" 2>&1; rc=$?; echo "exit=$rc" >> "wout/$n.log"; echo "$n exit=$rc" | tee -a $S; if [ $rc -ne 0 ]; then echo "----- $n 실패 로그(FAIL 줄·끝 25줄) -----"; grep -a -E '^FAIL|RESULT|Error|error' "wout/$n.log" | head -40; tail -25 "wout/$n.log"; echo "----- 끝 -----"; fi; }
           for s in 20261104 777; do
             SIM_SEED=$s node test_runner.js > wout/tr_$s.log 2>&1; printf 'exit=%s\n' $? >> wout/tr_$s.log
             if cmp -s wout/tr_$s.log $BL/tr_$s.log; then echo "A tr_$s: G1 기준선과 바이트 동일" | tee -a $S; else echo "A tr_$s: 다름 ($(grep '^lifeDigest' wout/tr_$s.log | tr -d '\r'))" | tee -a $S; fi
@@ -51,6 +54,8 @@ jobs:
           step D_meas_fault node measure/tests/meas_fault_test.js "$RUNNER_TEMP/meas_fault"
           step D_meas_noninterf node measure/tests/meas_noninterf.js "$RUNNER_TEMP/noninterf" 3000 20261104,777
           echo "end $(date -u +%FT%TZ)" | tee -a $S
+          echo "===== summary ====="; cat $S
+          if grep -q 'exit=[1-9]' $S; then exit 1; fi
       - uses: actions/upload-artifact@v4
         if: always()
         with:
