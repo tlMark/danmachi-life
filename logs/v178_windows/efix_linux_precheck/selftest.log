@@ -1,0 +1,10 @@
+PASS ST-1 양성: CRLF 텍스트 1개를 검출 — {"crTextFiles":1,"list":["crlf.txt"]}
+PASS ST-2 바이너리 판정 제외: 0x0D 바이트는 따로 셈 — {"binaryFiles":1,"binaryCrBytes":2}
+PASS ST-3 공백·한글·특수문자 경로가 입력 집합에 그대로 포함 — {"files":4}
+PASS ST-4 입력 순서와 무관한 묶음(역순 입력 → 같은 값) — {"a":"eaea9115993e2a35","b":"eaea9115993e2a35"}
+PASS ST-5 정렬 = UTF-8 바이트 순서
+PASS ST-6 묶음 = 규칙대로 독립 계산한 값
+PASS ST-7 음성: CR 없는 저장소 → 0 — {"crTextFiles":0}
+PASS ST-8 내용 변경 → 묶음 변경
+SELFTEST: PASS 8/8 · work=/tmp/claude-0/-home-user-danmachi-life/d5ced5fa-2e51-537b-b440-6ffb6d38a3d3/scratchpad/win/est2/e_selftest_rXSC4p
+exit=0

@@ -55,9 +55,10 @@ jobs:
           step D_meas_noninterf node measure/tests/meas_noninterf.js "$RUNNER_TEMP/noninterf" 3000 20261104,777
           # E·F(3회차 추가, 읽기 전용 확인): 체크아웃 줄바꿈 상태와 CRLF 진단 도구(logs/v178_windows/tools, 게임·시험 코드 아님)
           echo "E autocrlf=$(git config core.autocrlf) · ls-files --eol 작업 트리: $(git ls-files --eol | awk '{print $2}' | sort | uniq -c | tr -s ' ' | tr '\n' ';')" | tee -a $S
-          ncr=$(git ls-files -z | xargs -0 grep -l $'\r' 2>/dev/null | wc -l); echo "E CR 포함 추적 파일 수=$ncr" | tee -a $S
-          echo "E 추적 파일 전체 SHA-256 묶음=$(git ls-files -z | xargs -0 sha256sum | sha256sum | cut -c1-16) · git status 변경 수=$(git status --porcelain | grep -v '^?? wout/' | wc -l)" | tee -a $S
-          step E_crlf_zero test "$ncr" -eq 0
+          # E-fix(4회차, 사용자 승인 2026-11-28): CR 계수·SHA 묶음을 Node 도구로 계산(3회차의 grep $'\r'·sha256sum 은 Windows Git Bash 에서 오작동)
+          step E_check_selftest node logs/v178_windows/tools/e_check.js --selftest "$RUNNER_TEMP/e_selftest"; grep -a -E '^(PASS|FAIL|SELFTEST)' wout/E_check_selftest.log
+          step E_check node logs/v178_windows/tools/e_check.js . wout/E_manifest.tsv; grep -a '^E ' wout/E_check.log | tee -a $S
+          echo "E git status 변경 수=$(git status --porcelain | grep -v '^?? wout/' | wc -l) · 목록: $(git status --porcelain | grep -v '^?? wout/' | tr '\n' ';')" | tee -a $S
           node logs/v178_windows/tools/crlf_diag.js . > wout/F_crlf_diag.json 2>&1; echo "F crlf_diag: $(tr -d '\n ' < wout/F_crlf_diag.json | cut -c1-400)"
           step F_mf_diag bash logs/v178_windows/tools/mf_diag.sh . "$RUNNER_TEMP/mf_diag"; cat wout/F_mf_diag.log
           echo "end $(date -u +%FT%TZ)" | tee -a $S
