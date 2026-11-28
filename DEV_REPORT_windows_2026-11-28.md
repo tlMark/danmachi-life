@@ -282,3 +282,73 @@ meas_fault 세 갈래
 | 실제 Windows PC 수동 플레이 | 미실행 |
 | Windows 의 RNG 3환경 대조 · 변이 시험 · 48k | 미실행 |
 | macOS · ARM | 미실행 |
+
+## 10. Windows 4회차 — E-fix(사용자 승인 2026-11-28, 커밋 11bac47)
+
+### 10.1 변경
+
+| 대상 | 변경 |
+|---|---|
+| `logs/v178_windows/tools/e_check.js` | 신규. SHA-256 780398d74ad925ee118f4c917f4f8fa296c11eccc5811ce0602c218b7a018aa2 |
+| `.github/workflows/windows-verify.yml` | E 의 CR 계수 · SHA 묶음 줄만 바꿨다(3줄 삭제, 4줄 추가). diff: `logs/v178_windows/efix_linux_precheck/workflow_E_only.diff` |
+| 변경 없음 | E 밖 단계 · F 단계 · 기존 진단 도구 2개 · 게임 · 시험 코드 · 기준선 · digest |
+
+계산 규칙(도구 머리 주석에 고정)
+- 입력 집합: `git ls-files -z --eol` 의 경로 전체. NUL 로 구분하므로 공백·특수문자 경로가 안전하다. 작업 트리 파일은 바이트 그대로 읽는다.
+- 텍스트·바이너리: git 판정(`i/-text`·`attr/-text`)을 따른다.
+- CR 판정: 텍스트 파일만 판정한다. 바이너리는 0x0D 바이트 수만 따로 센다.
+- 정렬: 경로의 UTF-8 바이트 순서(`Buffer.compare`)
+- SHA 묶음: 정렬 순서대로 `"<sha256>\t<경로>\n"` 줄을 이은 텍스트의 SHA-256. 그 텍스트 자체를 manifest(`wout/E_manifest.tsv`)로 남긴다.
+- 양성 자기 확인(`--selftest`): 임시 git 저장소로 ST-1~ST-8 을 확인한다. 1건이라도 실패하면 exit 1.
+
+### 10.2 Linux 사전 확인(`logs/v178_windows/efix_linux_precheck/`)
+
+| 확인 | 결과 |
+|---|---|
+| 자기 확인 ST-1~ST-8 | 8/8 |
+| 자기 확인 세부 | CRLF 텍스트 검출 · 바이너리 판정 제외(0x0D 2바이트 따로 셈) · 공백·한글·특수문자 경로 포함 · 역순 입력에도 같은 묶음 · 바이트 순 정렬 · 독립 계산값과 일치 · CR 없으면 0 · 내용이 바뀌면 묶음 변경 |
+| 저장소 5d4702e, autocrlf false · true | 둘 다 CR 0. manifest 바이트 동일 |
+| 양성 실제 사례: W-1 이전 CRLF 사본 | CR 포함 1,108개, exit 1. 당시 i/lf 파일 수와 같다 |
+| 대조용 Linux 묶음(11bac47) | 214ad9070b9366bc85554a2c5343d5e653b758648effe2e2980c2395665503cd, 추적 파일 1,215개 |
+
+### 10.3 Windows 결과
+
+- run: https://github.com/tlMark/danmachi-life/actions/runs/46166286320 — conclusion **success**
+- 환경: windows-latest(MINGW64_NT-10.0-26100), Git 2.56.1.windows.1, Node v22.23.4, Playwright 1.63.0
+
+| 검사 | crlf=false(job 141044432689) | crlf=true(job 141044432453) |
+|---|---|---|
+| run checks 종료 코드 | 0 | 0 |
+| A 두 시드 출력, G1 기준선과 바이트 비교 | 동일 · 동일 | 동일 · 동일 |
+| A digest10 · 엄격 대조 | exit 0 · 0 | exit 0 · 0 |
+| B 단위 시험 18종 | 전부 exit 0 | 전부 exit 0 |
+| C Chromium file:// · inline | exit 0 · 0 | exit 0 · 0 |
+| D ⑫ · ⑫-neg · 고장 주입 · 비간섭 | 전부 exit 0 | 전부 exit 0 |
+| E 작업 트리 줄바꿈 | w/lf 1,163 · w/none 52 | w/lf 1,163 · w/none 52 |
+| E_check_selftest | exit 0(ST 8건 중 실패가 있으면 1) | exit 0 |
+| E_check | CR 포함 0 · 추적 1,215(텍스트 1,215 · 바이너리 0) | 같음 |
+| E SHA 묶음 | 214ad907…65503cd | 214ad907…65503cd |
+| E git status | 1건: `?? node_modules/` | 같음 |
+| F mf_diag | meas_fault 51/51. R0 active, 25n11 · K1′ · T4 · 25n10a 는 LF 기준과 같은 상태·이유. 다섯 사례 exit 0 · 게임 y · vm y | 같음 |
+
+- **SHA 묶음이 Windows 두 설정과 Linux 11bac47 에서 64자 전부 같다.** 즉 추적 파일 1,215개의 바이트 내용이 세 환경에서 같다.
+- 3회차에서 추론으로 둔 status 변경 1건은 `?? node_modules/`(워크플로가 설치한 Playwright)로 **확인**했다.
+- CR 이 빈 패턴으로 바뀐 3회차 grep 의 정확한 셸 인자 처리 경로는 계속 **추론**이다.
+
+### 10.4 결론
+
+- Windows(GitHub Actions)에서 autocrlf false · true 모두 전체 워크플로가 성공했다.
+  - 게임 결과: G1 기준선과 바이트 동일
+  - 단위 시험 · Chromium · 측정 사본 시험: 통과
+  - 체크아웃 LF(CR 0) · 추적 파일 바이트: Linux 와 동일
+- 범위: Node v22.23.4 · windows-latest 한 조합이다. Windows 전반의 호환성으로 확대 해석하지 않는다.
+
+### 10.5 미실행 · 제한
+
+| 항목 | 상태 |
+|---|---|
+| artifact 직접 확인(manifest 파일 등) | 미실행(프록시 403). job 로그로 대신함 |
+| 실제 바이너리 파일 처리 | 저장소에 해당 파일이 0개라 자기 확인의 합성 파일로만 확인 |
+| 실제 Windows PC 수동 플레이 | 미실행 |
+| Windows 의 RNG 3환경 대조 · 변이 시험 · 48k · 다른 Node 판 | 미실행 |
+| macOS · ARM | 미실행 |
