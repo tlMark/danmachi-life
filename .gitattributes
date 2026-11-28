@@ -1,0 +1,29 @@
+# 저장소 줄바꿈 정책(W-1, 사용자 승인 2026-11-28)
+# - 텍스트 파일은 core.autocrlf 설정과 상관없이 LF 로 체크아웃한다.
+#   이유: 측정 사본의 SHA-256 고정 검사(acorn·고정 소스 9개)와 기준선 바이트 비교는 LF 바이트를 전제로 한다.
+# - 저장소 색인의 텍스트 파일은 이미 모두 LF 다(이 파일 추가 시 재정규화 변경 0건 확인).
+* text=auto eol=lf
+
+# 바이너리: 줄바꿈 변환·diff 제외. 2026-11-28 기준 저장소에 이 유형의 파일은 없다(git ls-files --eol 에서 -text 0건).
+# 앞으로 추가될 때를 위해 흔한 유형을 명시한다.
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.webp binary
+*.ico  binary
+*.bmp  binary
+*.mp3  binary
+*.ogg  binary
+*.wav  binary
+*.mp4  binary
+*.webm binary
+*.woff binary
+*.woff2 binary
+*.ttf  binary
+*.otf  binary
+*.zip  binary
+*.gz   binary
+*.tgz  binary
+*.7z   binary
+*.pdf  binary
