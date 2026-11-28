@@ -1,0 +1,59 @@
+PASS R0 정상: active · 실행 · 보고 valid — {"state":"active","code":0,"verdict":"valid"}
+PASS 25n16 SHA 미정 → unavailable(measure_sha_undefined) · 원본 소스 비계측 실행 · 보고 없음 — {"code":0,"state":"unavailable","reason":"measure_sha_undefined","game":true,"vm":true,"rep":null,"stderr":"measurement: state=unavailable reason=measure_sha_undefined\nVM_CREATED\n","getter":false}
+PASS 25n22 모듈 최상위 예외 → inactive_unknown(module_load_failed) · vm 생성 전 거부 — {"state":"inactive_unknown","reason":"module_load_failed","code":1,"vm":false}
+PASS 25n22b 모듈 파일 없음 → module_load_failed · 거부
+PASS 25n21a 비정상 init → inactive_unknown(bad_init_result) · 거부 — {"state":"inactive_unknown","reason":"bad_init_result","code":1}
+PASS 25n21b 비정상 init → inactive_unknown(bad_init_result) · 거부 — {"state":"inactive_unknown","reason":"bad_init_result","code":1}
+PASS 25n21c 비정상 init → inactive_unknown(init_threw) · 거부 — {"state":"inactive_unknown","reason":"init_threw","code":1}
+PASS 25n23 같은 형식 표지 선점 → other_instance_likely · 거부 — {"state":"inactive_unknown","reason":"other_instance_likely"}
+PASS 25n24 값 true 표지 선점 → foreign_marker_unknown · 거부 — {"state":"inactive_unknown","reason":"foreign_marker_unknown"}
+PASS 25n24g 접근자 표지 선점 → foreign_marker_unknown · getter 미실행 · 거부 — {"state":"inactive_unknown","reason":"foreign_marker_unknown","getter":false}
+PASS 25n25 globalThis 확장 불가 → marker_define_failed · 거부 — {"state":"inactive_unknown","reason":"marker_define_failed"}
+PASS 25n26 defineProperty 가 true 를 반환하나 정의 안 됨 → marker_ownership_unconfirmed · 거부 — {"state":"inactive_unknown","reason":"marker_ownership_unconfirmed"}
+PASS 25n27 외부의 brand 흉내 표지 → other_instance_likely(오추정)이지만 판정은 inactive_unknown·거부(진단 사유가 판정을 바꾸지 않음) — {"state":"inactive_unknown","reason":"other_instance_likely"}
+PASS 25n11 EE.on 쓰기 불가(동결 대용) → 첫 대입 실패 · 복원 쓰기 없음 · inactive_clean · 원본 실행 허용 — {"state":"inactive_clean","reason":"exception_at_stage_2","code":0}
+PASS K1′ 1단계 실패(on 접근자) → orig_invalid:on · attempted 0 · inactive_clean · 원본 실행 — {"state":"inactive_clean","reason":"orig_invalid:on"}
+PASS T4 읽기 API 접근자(emit) → read_api_not_data · inactive_clean · 원본 실행 — {"state":"inactive_clean","reason":"read_api_not_data"}
+PASS 25n10a 5번째 설치 확인 예외 1회 → 5번째까지 복원 · K2·K3 참 · inactive_clean · 원본 실행 — {"state":"inactive_clean","reason":"exception_at_stage_2"}
+PASS 25n10b 확인 예외 지속 → provenClean 거짓 · inactive_residual · 거부 — {"state":"inactive_residual","reason":"exception_at_stage_2"}
+PASS 25n12 복원 대입 실패로 래퍼 잔존 → inactive_residual · 거부(25n6) — {"state":"inactive_residual","reason":"exception_at_stage_2"}
+PASS 25n13 복원 뒤 on 이 원본과 다름 → K2 거짓 · inactive_residual · 거부 — {"state":"inactive_residual","reason":"exception_at_stage_2"}
+FAIL 25n14a — 사본 준비 실패 runner edit 일치 실패     'core/lineage.js',
+    'script.js'
+];
+FAIL 25n14b — 사본 준비 실패 runner edit 일치 실패     'data.js',
+    'events.js',
+
+PASS 25n15 소스 확인 위반 → EXPECT_SHA keys differ · vm 생성 전 중단 — {"code":1,"vm":false,"err":"측정 사본 소스 확인 실패(vm 생성 전 중단): EXPECT_SHA keys differ"}
+PASS S4 소스 확인 위반 → source sha mismatch: events.js · vm 생성 전 중단 — {"code":1,"vm":false,"err":"측정 사본 소스 확인 실패(vm 생성 전 중단): source sha mismatch: events.js"}
+PASS 25n17 같은 인스턴스 두 번째 init → reinit_rejected · 첫 호출 active 유지 — {"a":{"state":"active","reason":null},"b":{"state":"inactive_unknown","reason":"reinit_rejected"},"still":true}
+PASS 25n18 첫 호출 1단계 실패(clean) 뒤 두 번째 → reinit_rejected — {"a":{"state":"inactive_clean","reason":"orig_invalid:on"},"b":{"state":"inactive_unknown","reason":"reinit_rejected"}}
+PASS 25n19 require 캐시 제거 → 두 번째 인스턴스 init → other_instance_likely — {"a":{"state":"active","reason":null},"b":{"state":"inactive_unknown","reason":"other_instance_likely"},"diff":true}
+PASS G4 WATCH_ON 초기값 변이(합성 사본) → watch_on_unexpected · 설치 없음 — {"state":"inactive_unknown","reason":"watch_on_unexpected"}
+PASS G0 참조 확보 실패(합성 사본) → inactive_unknown(ref_capture_failed) — {"state":"inactive_unknown","reason":"ref_capture_failed"}
+PASS C0 고장 → 보고 판정 valid — {"verdict":"valid","counters":[2,2,0,{"origin":0,"nested_propagation":0,"unmarked_return":0},{"F":0,"X":0}],"err":""}
+PASS C5a 고장 → 보고 판정 invalid:hook_present — {"verdict":"invalid:hook_present","counters":[2,2,0,{"origin":0,"nested_propagation":0,"unmarked_return":0},{"F":0,"X":0}],"err":""}
+PASS C5b 고장 → 보고 판정 invalid:shadowed_method — {"verdict":"invalid:shadowed_method","counters":[2,2,0,{"origin":0,"nested_propagation":0,"unmarked_return":0},{"F":0,"X":0}],"err":""}
+PASS C5c 고장 → 보고 판정 invalid:watch_tampered — {"verdict":"invalid:watch_tampered","counters":[2,2,0,{"origin":0,"nested_propagation":0,"unmarked_return":0},{"F":0,"X":0}],"err":""}
+PASS C5f 고장 → 보고 판정 invalid:read_api_tampered — {"verdict":"invalid:read_api_tampered","counters":[2,2,0,{"origin":0,"nested_propagation":0,"unmarked_return":0},{"F":0,"X":0}],"err":""}
+PASS C3 고장 → 보고 판정 invalid:post_seal_mutation — {"verdict":"invalid:post_seal_mutation","counters":[2,2,0,{"origin":0,"nested_propagation":0,"unmarked_return":0},{"F":0,"X":0}],"err":""}
+PASS C2p 고장 → 보고 판정 valid — {"verdict":"valid","counters":[2,2,0,{"origin":0,"nested_propagation":0,"unmarked_return":0},{"F":0,"X":0}],"err":""}
+PASS C2 고장 → 보고 판정 invalid:exit_listeners — {"verdict":"invalid:exit_listeners","counters":[2,2,0,{"origin":0,"nested_propagation":0,"unmarked_return":0},{"F":0,"X":0}],"err":""}
+PASS ID-A 고장 → 보고 판정 valid — {"verdict":"valid","counters":[3,2,1,{"origin":1,"nested_propagation":0,"unmarked_return":0},{"F":0,"X":0}],"err":""}
+PASS ID-U 고장 → 보고 판정 invalid:unmarked_return — {"verdict":"invalid:unmarked_return","counters":[3,2,1,{"origin":0,"nested_propagation":0,"unmarked_return":1},{"F":0,"X":0}],"err":""}
+PASS ID-E 고장 → 보고 판정 valid — {"verdict":"valid","counters":[3,3,0,{"origin":0,"nested_propagation":0,"unmarked_return":0},{"F":1,"X":0}],"err":""}
+PASS C5a-pre-newListener: init 이전 외부 리스너 선점 → init 이 hook_baseline_mismatch(inactive_unknown) · 설치 없음 — {"st":{"state":"inactive_unknown","reason":"hook_baseline_mismatch"},"countsAtFinish":{"n":3,"r":2},"ref":{"n":["","startListeningIfSignal"],"r":["","stopListeningIfSignal"]}}
+PASS C5a-pre-removeListener: init 이전 외부 리스너 선점 → init 이 hook_baseline_mismatch(inactive_unknown) · 설치 없음 — {"st":{"state":"inactive_unknown","reason":"hook_baseline_mismatch"},"countsAtFinish":{"n":2,"r":3},"ref":{"n":["","startListeningIfSignal"],"r":["","stopListeningIfSignal"]}}
+PASS C5a-pre-runner: -r 사전 적재 선점 → hook_baseline_mismatch · vm 생성 전 거부 — {"state":"inactive_unknown","reason":"hook_baseline_mismatch","code":1}
+PASS C5a-pre-NODE_OPTIONS: NODE_OPTIONS 사전 적재 선점 → 기준 자식에는 없음 → hook_baseline_mismatch · 거부 — {"state":"inactive_unknown","reason":"hook_baseline_mismatch","code":1}
+PASS C5a-ref-undefined: init 기준 기준 미전달 → hook_baseline_mismatch — {"state":"inactive_unknown","reason":"hook_baseline_mismatch"}
+PASS C5a-ref-null: init 기준 null → hook_baseline_mismatch — {"state":"inactive_unknown","reason":"hook_baseline_mismatch"}
+PASS C5a-ref-short: init 기준 이름 수 다름 → hook_baseline_mismatch — {"state":"inactive_unknown","reason":"hook_baseline_mismatch"}
+PASS C5a-ref-name: init 기준 이름 다름 → hook_baseline_mismatch — {"state":"inactive_unknown","reason":"hook_baseline_mismatch"}
+PASS C5a-ref-shape: init 기준 형식 다름 → hook_baseline_mismatch — {"state":"inactive_unknown","reason":"hook_baseline_mismatch"}
+FAIL C5a-ref-fail 사본 — runner edit 일치 실패 function cleanHookReference() {
+    try {
+PASS C5a-post 대조: init 이후 추가된 리스너는 검출(invalid:hook_present) — {"verdict":"invalid:hook_present"}
+LIMIT C5a-disguise: 내장 리스너(첫 번째)를 같은 이름의 대리 함수로 바꿔치기 → 개수·이름 같음 → 미검출(보고 valid) — {"st":{"state":"active","reason":null},"verdict":"valid"}
+LIMIT C5a-design0: 설계 원안(개수 0)은 외부 선점이 없어도 Node 내장 리스너 때문에 항상 invalid:hook_present(측정 불가). 선점이 있으면 (나) 대조가 init 에서 먼저 거부 — {"clean":"invalid:hook_present","withPreHook":{"state":"inactive_unknown","reason":"hook_baseline_mismatch"}}
+RESULT: FAIL 48/51 (meas_fault_test, work=/tmp/claude-0/-home-user-danmachi-life/d5ced5fa-2e51-537b-b440-6ffb6d38a3d3/scratchpad/win/d_crlf_lfsrc/mf) · LIMIT 2건(미검출 관측, PASS 집계 제외)

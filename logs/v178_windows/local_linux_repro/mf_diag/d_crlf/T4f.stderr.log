@@ -1,0 +1,2 @@
+measurement: state=inactive_clean reason=read_api_not_data
+측정 사본 소스 확인 실패(vm 생성 전 중단): source sha mismatch: data.js, events.js, core/aging.js, core/growth.js, core/relations.js, core/items.js, core/recruit.js, core/lineage.js, script.js

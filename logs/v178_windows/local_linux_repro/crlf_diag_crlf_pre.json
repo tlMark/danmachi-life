@@ -1,0 +1,45 @@
+{
+ "rng_sites_grep": {
+  "asIs": {
+   "n": 28,
+   "commentLinesCounted": [
+    "core/recruit.js:4",
+    "core/recruit.js:33",
+    "core/recruit.js:50",
+    "core/lineage.js:2",
+    "script.js:1166",
+    "script.js:1576",
+    "script.js:1864"
+   ]
+  },
+  "crStripped": {
+   "n": 21,
+   "commentLinesCounted": []
+  },
+  "crCount": {
+   "data.js": 95,
+   "events.js": 415,
+   "core/aging.js": 82,
+   "core/growth.js": 124,
+   "core/relations.js": 299,
+   "core/items.js": 122,
+   "core/recruit.js": 99,
+   "core/lineage.js": 70,
+   "script.js": 1981
+  }
+ },
+ "devabil_DA3f": {
+  "asIs": {
+   "len": 9491,
+   "hasMathRandom": true
+  },
+  "crStripped": {
+   "len": 7219,
+   "hasMathRandom": false
+  }
+ },
+ "sync_2i_body": {
+  "asIsLen": 0,
+  "crStrippedLen": 1164
+ }
+}

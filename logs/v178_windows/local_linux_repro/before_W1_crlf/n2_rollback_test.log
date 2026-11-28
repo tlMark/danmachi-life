@@ -1,0 +1,192 @@
+PASS RBT-5a 예외 전파·정지
+PASS RBT-5a S 전체 = 스냅숏(EXC 제외)
+PASS RBT-5a 롤백 보고 ok·input normal
+PASS RBT-5a lastRollbackFailure 없음(정상 복원)
+PASS RBT-5a syncDepth 0
+PASS RBT-5a familiaHistory 참조 유지
+PASS RBT-5b 예외 전파·정지
+PASS RBT-5b S 전체 = 스냅숏(EXC 제외)
+PASS RBT-5b 롤백 보고 ok·input normal
+PASS RBT-5b lastRollbackFailure 없음(정상 복원)
+PASS RBT-5b syncDepth 0
+PASS RBT-5b 기존 소속 항목 정체성·leftAt 원복
+PASS RBT-5c 예외 전파·정지
+PASS RBT-5c S 전체 = 스냅숏(EXC 제외)
+PASS RBT-5c 롤백 보고 ok·input normal
+PASS RBT-5c lastRollbackFailure 없음(정상 복원)
+PASS RBT-5c syncDepth 0
+PASS RBT-5c falnaTransitions 참조·길이 원복
+PASS RBT-5d 예외 전파·정지
+PASS RBT-5d S 전체 = 스냅숏(EXC 제외)
+PASS RBT-5d 롤백 보고 ok·input normal
+PASS RBT-5d lastRollbackFailure 없음(정상 복원)
+PASS RBT-5d syncDepth 0
+PASS RBT-5d 팔나 플래그·falnaState 원복
+PASS RBT-5e 예외 전파·정지
+PASS RBT-5e S 전체 = 스냅숏(EXC 제외)
+PASS RBT-5e 롤백 보고 ok·input normal
+PASS RBT-5e lastRollbackFailure 없음(정상 복원)
+PASS RBT-5e syncDepth 0
+PASS RBT-5e levelHistory 참조 유지
+PASS RBT-10b 예외 전파·정지
+PASS RBT-10b S 전체 = 스냅숏(EXC 제외)
+PASS RBT-10b 롤백 보고 ok·input normal
+PASS RBT-10b lastRollbackFailure 없음(정상 복원)
+PASS RBT-10b syncDepth 0
+PASS RBT-10b 객체 정체성 유지·attemptSeq·blocked 키 없음
+PASS RBT-10c-1·2 예외 전파·정지
+PASS RBT-10c-1·2 S 전체 = 스냅숏(EXC 제외)
+PASS RBT-10c-1·2 롤백 보고 ok·input normal
+PASS RBT-10c-1·2 lastRollbackFailure 없음(정상 복원)
+PASS RBT-10c-1·2 syncDepth 0
+PASS RBT-10c items 원래 배열 참조
+PASS RBT-10c-3 S 전체 = 스냅숏
+PASS RBT-10c-3 NaN·문자열 원래 값, 추가 키 없음
+PASS RBT-10c-3 보고 ok
+PASS RBT-10c-5 예외 전파·정지
+PASS RBT-10c-5 S 전체 = 스냅숏(EXC 제외)
+PASS RBT-10c-5 롤백 보고 ok·input normal
+PASS RBT-10c-5 lastRollbackFailure 없음(정상 복원)
+PASS RBT-10c-5 syncDepth 0
+PASS RBT-10c-5 relations 배열 참조 유지
+PASS RBT-10c-12 예외 전파·정지
+PASS RBT-10c-12 S 전체 = 스냅숏(EXC 제외)
+PASS RBT-10c-12 롤백 보고 ok·input normal
+PASS RBT-10c-12 lastRollbackFailure 없음(정상 복원)
+PASS RBT-10c-12 syncDepth 0
+PASS RBT-10c-12 familia 원래 참조·추가 키 없음
+PASS RBT-10a 기준값 = 스냅숏 시점(null)
+PASS RBT-10c-13-1 확장 스냅숏·복원의 getter 호출 0
+PASS RBT-10c-13-1 보고 partial(unverified)·input damaged(schema)
+PASS RBT-10c-13-1 lastRollbackFailure 기록(gen 일치)
+PASS RBT-10c-13-4 보고 partial(failed)
+PASS RBT-10c-13-3 예외 전파·정지
+PASS RBT-10c-13-3 S 전체 = 스냅숏(EXC 제외)
+PASS RBT-10c-13-3 롤백 보고 ok·input normal
+PASS RBT-10c-13-3 lastRollbackFailure 없음(정상 복원)
+PASS RBT-10c-13-3 syncDepth 0
+PASS RBT-10c-11 S 전체 = 스냅숏
+PASS RBT-10c-11 rollback ok, input damaged(dup)
+PASS RBT-10c-11 partner_link ok
+PASS RBT-14a 이전 생애에 기록 있음
+PASS RBT-14a 새 생애: lastRollbackFailure null·rollbackFailureUnrecorded false·progressHalted false
+PASS RBT-13 스냅숏 뒤 노드 = 정지 안내 1건
+PASS RBT-13 logHistory 원복(S 전체 = 스냅숏)
+PASS RB-1A-1 보고 partial(unverified)·schema:application
+PASS RB-1A-1 history·blocked 는 선행 미검증이라 unverified
+PASS RB-1A-1 확장 스냅숏·복원의 application getter 호출 0
+PASS RB-1A-2a non-enumerable 키 → partial(unverified)
+PASS RB-1A-2b 예외 뒤 non-configurable 속성 → application failed·전체 partial(failed)
+PASS RB-1A-2c 예외 뒤 접근자(configurable) → 저장본 데이터 속성으로 복원 예외 전파·정지
+PASS RB-1A-2c 예외 뒤 접근자(configurable) → 저장본 데이터 속성으로 복원 S 전체 = 스냅숏(EXC 제외)
+PASS RB-1A-2c 예외 뒤 접근자(configurable) → 저장본 데이터 속성으로 복원 롤백 보고 ok·input normal
+PASS RB-1A-2c 예외 뒤 접근자(configurable) → 저장본 데이터 속성으로 복원 lastRollbackFailure 없음(정상 복원)
+PASS RB-1A-2c 예외 뒤 접근자(configurable) → 저장본 데이터 속성으로 복원 syncDepth 0
+PASS RB-1A-2c attemptSeq 데이터 속성·값 2
+PASS RB-1B-1 예외 전파·정지
+PASS RB-1B-1 S 전체 = 스냅숏(EXC 제외)
+PASS RB-1B-1 롤백 보고 ok·input normal
+PASS RB-1B-1 lastRollbackFailure 없음(정상 복원)
+PASS RB-1B-1 syncDepth 0
+PASS RB-1B-1 history 원래 참조·내용, blocked 원래 참조·내용
+PASS RB-1B-1 보고: history 교체 감지(replaced)·원래 참조 복원, blocked 원소 변경 감지(changed)
+PASS RB-1B-2 application.history failed·전체 partial(failed)·실패 기록
+PASS RB-1B-2 정지·원래 예외
+PASS RB-1B-3 application.history unverified·schema 표시
+PASS RB-1B-3 확장 스냅숏·복원 getter 호출 0
+PASS RB-1B-4 예외 전파·정지
+PASS RB-1B-4 S 전체 = 스냅숏(EXC 제외)
+PASS RB-1B-4 롤백 보고 ok·input normal
+PASS RB-1B-4 lastRollbackFailure 없음(정상 복원)
+PASS RB-1B-4 syncDepth 0
+PASS RB-1B-4 blocked 키 없음
+PASS RB-1C 롤백 결과 partial(failed)(기록 실패와 별개)
+PASS RB-1C 기록 실패: lastRollbackFailure null·rollbackFailureUnrecorded true
+PASS RB-1C cleanupErrors 에 recordFailure 1건·원래 예외 같은 객체 재전파·정지
+PASS RB-1C 진단: failureRecorded false(성공으로 오인하지 않음)
+PASS RB-1C 새 생애: rollbackFailureUnrecorded false·lastRollbackFailure null·정지 해제
+PASS RB-1C ok: cleanupErrors 없음·failureRecorded null
+PASS RB-2A-1 history
+PASS RB-2A-1 blocked 무변경: replaced false·changed false
+PASS RB-2A-2
+PASS RB-2A-3
+PASS RB-2A-4 changed null·replaced false
+PASS RB-2A-4 관찰·복원 중 getter 호출 0
+PASS RB-2A-5 replaced null·changed null
+PASS RB-2A-5 getter 호출 0·복원 뒤 원래 참조(데이터 속성)
+PASS RB-2A-6 관찰값 = 복원 전후 동일·보고값과 일치
+PASS RB-2B-1 현재 realm 일반 배열 → 지원
+PASS RB-2B-2 다른 realm(시험 host·세 번째 vm) 일반 배열 → 지원
+PASS RB-2B-3 사용자 정의 하위 클래스 → 거부
+PASS RB-2B-4 프로토타입 교체(Object.create(Array.prototype)) → 거부
+PASS RB-2B-4b 프로토타입 null → 거부
+PASS RB-2B-5a 생성자 교체: 이름만 Array 인 함수 → 거부
+PASS RB-2B-5b 생성자 교체: bind 된 Array → 거부
+PASS RB-2B-5c 생성자 교체: Proxy(Array) → 거부
+PASS RB-2B-5d 인스턴스 own constructor 추가 → 거부
+PASS RB-2B-6 빈 칸·접근자 원소·length 고정 → 거부
+PASS RB-2B-7a constructor 가 바뀐 게임 realm 의 배열 → 거부(fail-closed)
+PASS RB-2B-7b 같은 상황에서 정상인 별도 realm(시험 host·별도 vm)의 배열 → 지원(정책)
+PASS RB-2B-7c constructor 가 바뀐 게임 realm 에서 롤백 → partial(unverified)·schema(성공으로 보지 않음)
+PASS RB-2C-1 items S 전체 = 스냅숏·원래 참조
+PASS RB-2C-1 items 묶음 array:items ok
+PASS RB-2C-1 itemsConsumed S 전체 = 스냅숏·원래 참조
+PASS RB-2C-1 itemsConsumed 묶음 array:itemsConsumed ok
+PASS RB-2C-1 relations S 전체 = 스냅숏·원래 참조
+PASS RB-2C-1 relations 묶음 array:relations ok
+PASS RB-2C-1 familiaHistory S 전체 = 스냅숏·원래 참조
+PASS RB-2C-1 familiaHistory 묶음 array:familiaHistory ok
+PASS RB-2C-1 falnaHistory S 전체 = 스냅숏·원래 참조
+PASS RB-2C-1 falnaHistory 묶음 array:falnaHistory ok
+PASS RB-2C-1 falnaTransitions S 전체 = 스냅숏·원래 참조
+PASS RB-2C-1 falnaTransitions 묶음 array:falnaTransitions ok
+PASS RB-2C-1 aspirationHistory S 전체 = 스냅숏·원래 참조
+PASS RB-2C-1 aspirationHistory 묶음 array:aspirationHistory ok
+PASS RB-2C-1 residenceHistory S 전체 = 스냅숏·원래 참조
+PASS RB-2C-1 residenceHistory 묶음 array:residenceHistory ok
+PASS RB-2C-1 locationHistory S 전체 = 스냅숏·원래 참조
+PASS RB-2C-1 locationHistory 묶음 array:locationHistory ok
+PASS RB-2C-1 levelHistory S 전체 = 스냅숏·원래 참조
+PASS RB-2C-1 levelHistory 묶음 array:levelHistory ok
+PASS RB-2C-2 familiaHistory 기존 스냅숏·복원에 없음
+PASS RB-2C-2 familiaHistory 삭제 → 원래 참조
+PASS RB-2C-2 familiaHistory 교체 → 원래 참조
+PASS RB-2C-2 falnaHistory 기존 스냅숏·복원에 없음
+PASS RB-2C-2 falnaHistory 삭제 → 원래 참조
+PASS RB-2C-2 falnaHistory 교체 → 원래 참조
+PASS RB-2C-2 falnaTransitions 기존 스냅숏·복원에 없음
+PASS RB-2C-2 falnaTransitions 삭제 → 원래 참조
+PASS RB-2C-2 falnaTransitions 교체 → 원래 참조
+PASS RB-2C-2 aspirationHistory 기존 스냅숏·복원에 없음
+PASS RB-2C-2 aspirationHistory 삭제 → 원래 참조
+PASS RB-2C-2 aspirationHistory 교체 → 원래 참조
+PASS RB-2C-2 residenceHistory 기존 스냅숏·복원에 없음
+PASS RB-2C-2 residenceHistory 삭제 → 원래 참조
+PASS RB-2C-2 residenceHistory 교체 → 원래 참조
+PASS RB-2C-2 locationHistory 기존 스냅숏·복원에 없음
+PASS RB-2C-2 locationHistory 삭제 → 원래 참조
+PASS RB-2C-2 locationHistory 교체 → 원래 참조
+PASS RB-2C-3 items 원본: 기존 복원이 원래 참조로 되돌림·V1 ok
+PASS RB-2C-3 items 변이: 확장이 L1 을 고치지 않음(참조 그대로 다름)·V1 failed·전체 partial(failed)
+PASS RB-2C-3 itemsConsumed 원본: 기존 복원이 원래 참조로 되돌림·V1 ok
+PASS RB-2C-3 itemsConsumed 변이: 확장이 L1 을 고치지 않음(참조 그대로 다름)·V1 failed·전체 partial(failed)
+PASS RB-2C-3 relations 원본: 기존 복원이 원래 참조로 되돌림·V1 ok
+PASS RB-2C-3 relations 변이: 확장이 L1 을 고치지 않음(참조 그대로 다름)·V1 failed·전체 partial(failed)
+PASS RB-2C-3 levelHistory 원본: 기존 복원이 원래 참조로 되돌림·V1 ok
+FAIL RB-2C-3 기존 전담 L1(4종): 기존 복원을 빼는 변이에서 확장이 L1 을 고치지 않고 V1 failed 로 보고(중복 없음) — 예외 Error: patch #0 (script.js) 일치 0회:     if (!lh.has) delete S.levelHistory; |     else if (S.level |     at /tmp/claude-0/-home-user-danmachi-life/d5ced5fa-2e51-537b-b440-6ffb6d38a3d3/scratchpad/win/crlf_pre/tests/lib_f1_ctx.js:36:127 |     at Array.forEach (<anonymous>)
+PASS RB-2C-4 items unverified·schema
+PASS RB-2C-4 itemsConsumed unverified·schema
+PASS RB-2C-4 relations unverified·schema
+PASS RB-2C-4 familiaHistory unverified·schema
+PASS RB-2C-4 falnaHistory unverified·schema
+PASS RB-2C-4 falnaTransitions unverified·schema
+PASS RB-2C-4 aspirationHistory unverified·schema
+PASS RB-2C-4 residenceHistory unverified·schema
+PASS RB-2C-4 locationHistory unverified·schema
+PASS RB-2C-4 levelHistory unverified·schema
+PASS RB-2A-7 history·blocked replaced null·changed null
+PASS RB-2A-7 롤백 전체 getter·setter 호출 0
+PASS RB-2A-7 복원 뒤 S.application 은 원래 객체의 데이터 속성·묶음 ok
+PASS RB-2A-8 history·blocked replaced null·changed null
+PASS RB-2A-8 원래 예외 전파·정지
+RESULT: FAIL 190/191 (n2_rollback_test)

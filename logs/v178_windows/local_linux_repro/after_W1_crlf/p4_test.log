@@ -1,0 +1,168 @@
+PASS FA-T2a EVENT_AREA dungeon = 설계 17건(순서 무관)
+PASS FA-T2b 17건 모두 cond.dungeonReach === true(own)
+PASS FA-T2c 17건 중 locationIn 0건
+PASS FA-T2d 17건 밖 사건 조건·선택지 조건에 dungeonReach 0건
+PASS FA-T2e locationIn:[orario] 사건 = 승인 목록(healer_shift HS-1, hero_sacrifice F-D, clash·festival P3 §3.3)
+PASS HS-1 healer_shift 조건 = {age,job,locationIn:[orario]}
+PASS RD-1 conscript 조건 = 출생 rakia + 거주 rakia(규칙 D)
+PASS FA-T2f MATCH_KEYS 에 dungeonReach, CHOICE_COND_KEYS 에는 없음
+PASS FA-T1 출생 orario · 거주 orario · 위치 orario → true
+PASS FA-T1 출생 orario · 거주 orario · 위치 rakia → false
+PASS FA-T1 출생 orario · 거주 orario · 위치 melen → false
+PASS FA-T1 출생 orario · 거주 orario · 위치 far_east → false
+PASS FA-T1 출생 orario · 거주 orario · 위치 telskyura → false
+PASS FA-T1 출생 orario · 거주 orario · 위치 elven_forest → false
+PASS FA-T1 출생 orario · 거주 orario · 위치 unknown → false
+PASS FA-T1 출생 orario · 거주 melen · 위치 orario → true
+PASS FA-T1 출생 orario · 거주 melen · 위치 rakia → false
+PASS FA-T1 출생 orario · 거주 melen · 위치 melen → false
+PASS FA-T1 출생 orario · 거주 melen · 위치 far_east → false
+PASS FA-T1 출생 orario · 거주 melen · 위치 telskyura → false
+PASS FA-T1 출생 orario · 거주 melen · 위치 elven_forest → false
+PASS FA-T1 출생 orario · 거주 melen · 위치 unknown → false
+PASS FA-T1 출생 rakia · 거주 orario · 위치 orario → true
+PASS FA-T1 출생 rakia · 거주 orario · 위치 rakia → false
+PASS FA-T1 출생 rakia · 거주 orario · 위치 melen → false
+PASS FA-T1 출생 rakia · 거주 orario · 위치 far_east → false
+PASS FA-T1 출생 rakia · 거주 orario · 위치 telskyura → false
+PASS FA-T1 출생 rakia · 거주 orario · 위치 elven_forest → false
+PASS FA-T1 출생 rakia · 거주 orario · 위치 unknown → false
+PASS FA-T1 출생 rakia · 거주 melen · 위치 orario → true
+PASS FA-T1 출생 rakia · 거주 melen · 위치 rakia → false
+PASS FA-T1 출생 rakia · 거주 melen · 위치 melen → false
+PASS FA-T1 출생 rakia · 거주 melen · 위치 far_east → false
+PASS FA-T1 출생 rakia · 거주 melen · 위치 telskyura → false
+PASS FA-T1 출생 rakia · 거주 melen · 위치 elven_forest → false
+PASS FA-T1 출생 rakia · 거주 melen · 위치 unknown → false
+PASS FA-T1z 위치 필드 null → 거짓(fail-closed)
+PASS DR-T6 dungeonReach='true' → 거짓(위치 orario)
+PASS DR-T6 dungeonReach=1 → 거짓(위치 orario)
+PASS DR-T6 dungeonReach=false → 거짓(위치 orario)
+PASS DR-T6 dungeonReach=null → 거짓(위치 orario)
+PASS DR-T6 dungeonReach={} → 거짓(위치 orario)
+PASS DR-T6 dungeonReach=undefined → 거짓(위치 orario)
+PASS DR-T6 dungeonReach=[] → 거짓(위치 orario)
+PASS DR-T6t dungeonReach=true → 참(위치 orario)
+PASS DR-T6p 상속 키는 판정하지 않음(own-key 규칙)
+PASS DR-T7a 위치 orario · match(c) 인자 1개 → 참
+PASS DR-T7b 위치 melen · 유효 접근(합성) · 인자 1개 → 거짓
+PASS DR-T1 sealed · 위치 orario → 17건 모두 참
+PASS DR-T1 destroyed · 위치 orario → 17건 모두 참
+PASS DR-T2a 3건만 참
+PASS DR-T2b 판정 중 S 불변·난수 0·진단 0
+PASS DR-T2c hp 60 → dive1(61) 거짓 · routine(21) 참(상수 최소 hp)
+PASS DR-T2d 실제 생애 상태(dungeonAccess null, S.world 없음) → 17건 모두 거짓
+PASS DR-T3 scope expedition minHp -1 → 거짓·진단·S 불변·getter 호출 0
+PASS DR-T3 minHp 상수와 다름(0) → 거짓·진단·S 불변·getter 호출 0
+PASS DR-T3 minHp 음수 → 거짓·진단·S 불변·getter 호출 0
+PASS DR-T3 minHp NaN → 거짓·진단·S 불변·getter 호출 0
+PASS DR-T3 minHp Infinity → 거짓·진단·S 불변·getter 호출 0
+PASS DR-T3 minHp 문자열 → 거짓·진단·S 불변·getter 호출 0
+PASS DR-T3 eventId 중복 → 거짓·진단·S 불변·getter 호출 0
+PASS DR-T3 항목 여분 키 → 거짓·진단·S 불변·getter 호출 0
+PASS DR-T3 항목 배열 → 거짓·진단·S 불변·getter 호출 0
+PASS DR-T3 항목 null → 거짓·진단·S 불변·getter 호출 0
+PASS DR-T3 cyclesLeft 0 → 거짓·진단·S 불변·getter 호출 0
+PASS DR-T3 cyclesLeft 3 → 거짓·진단·S 불변·getter 호출 0
+PASS DR-T3 cyclesLeft 1.5 → 거짓·진단·S 불변·getter 호출 0
+PASS DR-T3 cyclesLeft NaN → 거짓·진단·S 불변·getter 호출 0
+PASS DR-T3 cyclesLeft 문자열 → 거짓·진단·S 불변·getter 호출 0
+PASS DR-T3 routeId knossos → 거짓·진단·S 불변·getter 호출 0
+PASS DR-T3 모르는 경로 → 거짓·진단·S 불변·getter 호출 0
+PASS DR-T3 via 다름 → 거짓·진단·S 불변·getter 호출 0
+PASS DR-T3 grantedAge > age → 거짓·진단·S 불변·getter 호출 0
+PASS DR-T3 grantedAge 정수 아님 → 거짓·진단·S 불변·getter 호출 0
+PASS DR-T3 grantedAge -1 → 거짓·진단·S 불변·getter 호출 0
+PASS DR-T3 scope 빈 배열 → 거짓·진단·S 불변·getter 호출 0
+PASS DR-T3 scope 배열 아님 → 거짓·진단·S 불변·getter 호출 0
+PASS DR-T3 scope 4건 → 거짓·진단·S 불변·getter 호출 0
+PASS DR-T3 통로 sealed → 거짓·진단·S 불변·getter 호출 0
+PASS DR-T3 통로 destroyed → 거짓·진단·S 불변·getter 호출 0
+PASS DR-T3 세계 상태 없음 → 거짓·진단·S 불변·getter 호출 0
+PASS DR-T3 inUse routine(판정 dive1) → 거짓·진단·S 불변·getter 호출 0
+PASS DR-T3 inUse 범위 밖 → 거짓·진단·S 불변·getter 호출 0
+PASS DR-T3 inUse 숫자 → 거짓·진단·S 불변·getter 호출 0
+PASS DR-T3 inUse 객체 → 거짓·진단·S 불변·getter 호출 0
+PASS DR-T3 항목 eventId toString → 거짓·진단·S 불변·getter 호출 0
+PASS DR-T3 항목 eventId __proto__ → 거짓·진단·S 불변·getter 호출 0
+PASS DR-T3 여분 바깥 키 → 거짓·진단·S 불변·getter 호출 0
+PASS DR-T3 핵심 필드 getter → 거짓·진단·S 불변·getter 호출 0
+PASS DR-T3 항목 getter → 거짓·진단·S 불변·getter 호출 0
+PASS DR-T3 scope 만 상속 → 거짓·진단·S 불변·getter 호출 0
+PASS DR-T3 클래스 인스턴스 → 거짓·진단·S 불변·getter 호출 0
+PASS DR-T3 접근 객체 대신 원시값 → 거짓
+PASS DR-T3 접근 객체 대신 배열 → 거짓
+PASS DR-T3 접근 객체 대신 상속 필드만 → 거짓
+PASS DR-T3n Object.create(null) + 자기 데이터 속성 6개 → 참(기준 허용)
+PASS DR-T3u inUse dive1 · 판정 dive1 → 참
+PASS DR-T4 변이 사본에서 17건 모두 참(= DR-T2a 실패로 검출됨)
+PASS FA2-T0a S.familia 대입 = null 대입(탈퇴·송환) + rollFamiliaBody 2(무효 예외·성공) + completeConversion 1
+PASS FA2-T0b noteFamiliaJoined: 정의 1 + 호출 2(rollFamiliaBody 끝·completeConversion 끝)
+PASS FA2-T0c rollFamiliaBody 마지막 문장이 noteFamiliaJoined
+PASS FA2-T0d completeConversion 성공 return 직전 noteFamiliaJoined
+PASS FA2-T0e 신생아 대조군은 newborn_control 로 호출되고 함수에서 제외
+PASS FA2-T1a 입단 성공·이주 후속 선택 표시(awaiting_choice)·제안 표시 소비
+PASS FA2-T1b 선택지 2개(문구 B2 가)
+PASS FA2-T1c 프롬프트 문구
+PASS FA2-T1d 거주·위치 모두 orario
+PASS FA2-T1e 이력 증가 거주 +1 · 위치 +1(필요한 쪽만, 이유 relocation)
+PASS FA2-T1f FA2-T7 origin·직업·소속·팔나·고용처·가족·연애 불변 · 수동 선택 난수 0
+PASS FA2-T1g 보류 정리·'다음 해로' 1개
+PASS FA2-T2a 입단 성공·이주 후속 선택 표시(awaiting_choice)·제안 표시 소비
+PASS FA2-T2b 선택지 2개(문구 B2 가)
+PASS FA2-T2c 프롬프트 문구
+PASS FA2-T2d 거주·위치 모두 orario
+PASS FA2-T2e 이력 증가 거주 +1 · 위치 +0(필요한 쪽만, 이유 relocation)
+PASS FA2-T2f FA2-T7 origin·직업·소속·팔나·고용처·가족·연애 불변 · 수동 선택 난수 0
+PASS FA2-T2g 보류 정리·'다음 해로' 1개
+PASS FA2-T3a 입단 성공·이주 후속 선택 표시(awaiting_choice)·제안 표시 소비
+PASS FA2-T3b 선택지 2개(문구 B2 가)
+PASS FA2-T3c 프롬프트 문구
+PASS FA2-T3d 거주·위치 모두 orario
+PASS FA2-T3e 이력 증가 거주 +0 · 위치 +1(필요한 쪽만, 이유 relocation)
+PASS FA2-T3f FA2-T7 origin·직업·소속·팔나·고용처·가족·연애 불변 · 수동 선택 난수 0
+PASS FA2-T3g 보류 정리·'다음 해로' 1개
+PASS FA2-T4 입단 성공 · 보류 0 · 제안 0 · 다음 해로
+PASS FA2-T4b ares
+PASS FA2-T4b kali
+PASS FA2-T4b astraea
+PASS FA2-T6 stay → S 불변(보류·문맥 필드 제외)·난수 0·보류 정리
+PASS FA2-T5a 이미 소속 상태에서 initial_join 거부 → false · 제안 0
+PASS FA2-T5b 실제 join_hard 거절(난수 0.999 강제) 관측 3건(1건 이상 요구) · 이주 제안 0
+PASS FA2-T8 P1 실제 join 수락(오라리오 소재 ganesha) → relocate(path initial_join, 출처 join)
+PASS FA2-T8 P2 fx.familia → relocate
+PASS FA2-T8 P3 실제 god_gone 재수여(ganesha, 오라리오 소재) → relocate(path god_return_regrant)
+PASS FA2-T8 P4 newborn_control → 제안 0
+PASS FA2-T9a 게임 자동: 타이머 1개(800ms) · R2-relocate 난수 1회 · 난수 0 → relocate
+PASS FA2-T9a2 선택 뒤 다음 해로 자동 타이머 1개(600ms)
+PASS FA2-T9a 게임 자동: 타이머 1개(800ms) · R2-relocate 난수 1회 · 난수 0.999 → stay
+PASS FA2-T9a2 선택 뒤 다음 해로 자동 타이머 1개(600ms)
+PASS FA2-T9d 기존 후속 종류: 타이머 1개 · stay 실행 · 난수 0
+PASS FA2-T9e 수동: 타이머 0 · 난수 0
+PASS FA2-T9b 드라이버 relocate: HARNESS-relocate 1회 · 난수 0 → relocate
+PASS FA2-T9b 드라이버 relocate: HARNESS-relocate 1회 · 난수 0.999 → stay
+PASS FA2-T9d 드라이버 기존 종류: stay 고정 · 난수 0
+PASS FA2-T9f 드라이버 relocate 선택지 누락 → error
+PASS FA2-RB a 원래 예외 재전파 · 진행 정지
+PASS FA2-RB b 거주·위치·두 이력 깊은 동등(마지막 항목 to=null 복원)
+PASS FA2-RB c 참조 복원(residence·location 원래 객체, 이력 배열 원래 참조)
+PASS FA2-RB d 롤백 보고 ok
+PASS FA2-D1a
+PASS FA2-D1b
+PASS FA2-D2 정상 종료 → null · null
+PASS FA2-D2b endlife_blocked · 생애 미종료 · 제안 값 그대로(기록: {"familiaId":"loki","path":"initial_join","at":16})
+PASS FA2-D3
+PASS FA2-D4 기준(입단 효과 포함)과 정리 직후 동일
+PASS FA2-D5 변이 사본에서 제안이 남음(= FA2-D2 실패로 검출됨)
+PASS FA2-C
+PASS FA-T3 이주 전 0건 · 이주 뒤 1건 이상(dive1 포함)
+PASS FA-T3b 머묾 선택 → 던전 후보 0 유지
+PASS RD-2 거주 orario → false
+PASS RD-2 거주 rakia → true
+PASS RD-2 거주 melen → false
+PASS RD-2 거주 far_east → false
+PASS RD-2 거주 telskyura → false
+PASS RD-2 거주 elven_forest → false
+PASS RD-2 거주 unknown → false
+PASS RD-2b 라키아 거주라도 출생 melen → 거짓(출생 조건 유지)
+RESULT: PASS 167/167 (p4_test)

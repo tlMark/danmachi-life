@@ -68,3 +68,149 @@
 | crlf=true 의 비교 대상 파일 바이트 직접 확인(artifact) | 미실행(프록시 403) |
 | Windows 의 RNG 3환경 대조(p1_verify 40~42) · 변이 시험(11~14) · 48k | 미실행 |
 | macOS · ARM | 미실행 |
+
+---
+
+# r1 추가 (ChatGPT 1차 QA "조건부 통과" 반영, W-1 승인 2026-11-28)
+
+- 위 §1~§4 는 2회차 시점 기록으로 그대로 둔다. 아래 §5 가 §2 의 분류를 보완·정정한다.
+- 이번 변경 범위
+  - `.gitattributes` 신규: 저장소 줄바꿈 정책(W-1 승인 범위)
+  - 검증 도구(게임·시험 코드 아님): `logs/v178_windows/tools/crlf_diag.js`, `logs/v178_windows/tools/mf_diag.sh`
+  - Windows 워크플로: 읽기 전용 확인 E·F 단계 추가
+  - 게임 코드·시험 코드(`tests/`, `measure/tests/`)·기준선·digest: 변경 0
+- QA 요청 "별도 시험 추가"와 W-1 지시 "시험 코드 변경 금지"가 겹친다. 그래서 최소 재현은 시험 폴더 밖의 진단 도구로 만들었다. 시험 묶음에 넣을지는 별도 승인 사항이다.
+
+## 5. CRLF 실패 원인 재확인 — 로컬 재현(Linux, Node v22.23.4)
+
+재현 방법
+- 이 컨테이너에서 `git -c core.autocrlf=true clone` 으로 받으면 Windows 와 같은 CRLF 작업 트리가 된다.
+  - script.js CR 1,981개, 소스별 CR 수가 Windows 로그와 같다.
+- 같은 시험을 실행하면 Windows crlf=true 의 실패가 그대로 재현된다.
+  - meas_fault 41/51, FAIL 10건 목록이 같다.
+  - 기록: `logs/v178_windows/local_linux_repro/before_W1_crlf/`
+- 따라서 이 실패들은 **Windows Node 의 동작 차이가 아니라 CRLF 작업 트리에서 생긴다**. 근거는 운영체제를 바꿔도 같은 실패가 나는 실행 결과다.
+
+### 5.1 정적 검사 3건 — 기제 확인(`crlf_diag.js`, 시험과 같은 식으로 중간값 계산)
+
+| 항목 | LF 사본 | CRLF 사본 | CRLF 사본에서 CR 만 지운 텍스트 | 기제 |
+|---|---|---|---|---|
+| rng_sites 독립 grep | 21 | **28**: 주석 줄 7개가 셈에 들어감(recruit.js 4·33·50, lineage.js 2, script.js 1166·1576·1864) | 21 | 주석 제거식 `/\/\/.*$/` 에서 `.` 은 `\r` 과 맞지 않는다. 그래서 `$`(입력 끝)에 닿지 못해 주석이 지워지지 않는다 |
+| devabil DA-3f 블록 | 7,219자, Math.random 없음 | 9,491자, **있음** | 7,219자, 없음 | 위와 같은 주석 제거식. 블록 안 주석의 `Math.random` 이 남는다 |
+| sync_2i applyGodReturn 본문 | 1,164자 | **0자** | 1,164자 | 본문 추출식 `/…\n}\n/` 이 `}\r\n` 과 맞지 않아 빈 본문이 된다. 그래서 `inside:false` 가 나온다 |
+
+- 등급: §2 에서 "추론"으로 둔 세 항목은 위 실행으로 **기제 확인**이다.
+- rng_sites 의 CR 0 검사(①)와 grep 28≠21(②)은 서로 다른 검사다. ②의 원인은 주석 제거식으로 따로 확인했다.
+- 기록: `logs/v178_windows/local_linux_repro/crlf_diag_*.json`
+
+### 5.2 meas_fault R0·25n11·K1′·T4·25n10a — 동작 판정 분리(`mf_diag.sh`)
+
+세 사본에서 같은 사전 적재로 측정 러너를 직접 실행했다.
+
+| 사례 | LF 사본 | CRLF 사본 | CRLF 사본 + 고정 소스 9개만 LF |
+|---|---|---|---|
+| R0 | active · exit 0 · 게임 y · vm y | active · **exit 1 · 게임 n · vm n** | active · exit 0 · y · y |
+| 25n11 | inactive_clean / exception_at_stage_2 · exit 0 · y · y | 같은 상태·이유 · **exit 1 · n · n** | 같은 상태·이유 · exit 0 · y · y |
+| K1′ | inactive_clean / orig_invalid:on · exit 0 · y · y | 같은 상태·이유 · **exit 1 · n · n** | 같은 상태·이유 · exit 0 · y · y |
+| T4 | inactive_clean / read_api_not_data · exit 0 · y · y | 같은 상태·이유 · **exit 1 · n · n** | 같은 상태·이유 · exit 0 · y · y |
+| 25n10a | inactive_clean / exception_at_stage_2 · exit 0 · y · y | 같은 상태·이유 · **exit 1 · n · n** | 같은 상태·이유 · exit 0 · y · y |
+
+- 세 번째 열의 고정 소스는 `measure/base_f639c05/`·`measure/measure_src/` 의 9개다. 그 밖의 러너·모듈·시험·하네스는 CRLF 그대로 두었다.
+- 판정
+  1. **상태·이유 판정은 세 사본에서 모두 같다.** CRLF 에서 달라진 것은 실행 허용 여부뿐이다.
+  2. CRLF 사본의 표준 오류는 다섯 사례 모두 `source sha mismatch`(vm 생성 전 중단)다. 러너는 활성·비활성 모두 고정 소스 SHA 를 확인하므로 원본 실행도 거부된다. 설계대로의 안전한 실패다.
+  3. 고정 소스만 LF 로 바꾸면 다섯 사례 모두 LF 사본과 같다. 그 밖의 CRLF 파일은 이 판정에 영향이 없다.
+  4. 고장 주입 사전 적재 파일은 시험이 실행 중에 LF 로 새로 쓴다. 따라서 체크아웃의 영향을 받지 않는다.
+- 그 사본의 meas_fault 전체 결과는 48/51 이다. 남은 3건은 시험 안의 러너 편집 앵커 불일치다(`runner edit 일치 실패`: 25n14a·25n14b·C5a-ref-fail). 여러 줄 앵커가 CRLF 러너와 맞지 않아 **fixture 구성이 실패**한 것이다.
+- Windows 에서 같은 판정이 같은지는 2회차 crlf=false job(51/51)과 3회차 F 단계로 확인한다(§7).
+- 기록: `logs/v178_windows/local_linux_repro/mf_diag/`(사례별 stderr·전체 로그)
+
+### 5.3 §2 분류 정정
+
+| 항목 | §2 | r1 |
+|---|---|---|
+| devabil · sync_2i | 추론 | 기제 확인(§5.1) |
+| rng_sites ② grep | 추론 | 기제 확인(§5.1), ①과 분리 |
+| meas_fault | "SHA·편집 앵커" 한 묶음 | 셋으로 나눔(§5.2) |
+| meas_noninterf | 연쇄 | 연쇄(선행 측정 실행이 SHA 불일치로 중단) — 그대로 |
+| A tr 바이트 비교 | 추론 | 추론 그대로(파일 바이트 직접 확인 미실행). W-1 뒤 3회차 결과로 대신 확인(§7) |
+
+meas_fault 세 갈래
+- (가) 고정 SHA 확인: 25n16, S4
+- (나) 동작 판정은 같고 실행만 거부: R0, 25n11, K1′, T4, 25n10a
+- (다) fixture 앵커: 25n14a, 25n14b, C5a-ref-fail
+
+## 6. W-1 구현과 확인
+
+### 6.1 `.gitattributes` 전체 diff(신규 파일, 커밋 `29edc5c`)
+
+```diff
++# 저장소 줄바꿈 정책(W-1, 사용자 승인 2026-11-28)
++# - 텍스트 파일은 core.autocrlf 설정과 상관없이 LF 로 체크아웃한다.
++#   이유: 측정 사본의 SHA-256 고정 검사(acorn·고정 소스 9개)와 기준선 바이트 비교는 LF 바이트를 전제로 한다.
++# - 저장소 색인의 텍스트 파일은 이미 모두 LF 다(이 파일 추가 시 재정규화 변경 0건 확인).
++* text=auto eol=lf
++
++# 바이너리: 줄바꿈 변환·diff 제외. 2026-11-28 기준 저장소에 이 유형의 파일은 없다(git ls-files --eol 에서 -text 0건).
++# 앞으로 추가될 때를 위해 흔한 유형을 명시한다.
++*.png  binary
++*.jpg  binary
++*.jpeg binary
++*.gif  binary
++*.webp binary
++*.ico  binary
++*.bmp  binary
++*.mp3  binary
++*.ogg  binary
++*.wav  binary
++*.mp4  binary
++*.webm binary
++*.woff binary
++*.woff2 binary
++*.ttf  binary
++*.otf  binary
++*.zip  binary
++*.gz   binary
++*.tgz  binary
++*.7z   binary
++*.pdf  binary
+```
+
+- `text=auto` 를 쓴 이유
+  - `* text` 는 git 이 바이너리로 판정한 파일까지 강제로 텍스트로 취급한다.
+  - `text=auto` 는 git 의 바이너리 판정을 따르면서, 텍스트는 `eol=lf` 로 체크아웃한다.
+- 저장소 파일 유형 조사
+  - 추적 파일 1,160개: log 744 · status 103 · js 91 · json 70 · md 57 · txt 51 · diff 26 · 그 밖 소수
+  - 색인 상태: `i/lf` 1,108, `i/none`(줄바꿈 없는 한 줄 파일) 52
+  - git 이 바이너리로 판정한 파일(`-text`): 0개
+
+### 6.2 확인 결과(로컬 Linux, 커밋 `29edc5c`)
+
+| 확인 | autocrlf=false | autocrlf=true |
+|---|---|---|
+| 작업 트리 줄바꿈(`ls-files --eol`) | w/lf 1,109 · w/none 52 | w/lf 1,109 · w/none 52 |
+| CR 포함 추적 파일 | 0 | 0 |
+| 추적 파일 전체 SHA-256 묶음 | f3a71d366797bc0f | f3a71d366797bc0f(원 작업 트리와 같음) |
+| `git status` 변경 | 0 | 0 |
+
+- 재정규화(`git add --renormalize .`): `.gitattributes` 밖의 변경은 0건이다. 커밋 `29edc5c` 의 변경 파일은 `.gitattributes` 1개뿐이다.
+- 바이너리 손상: 해당 유형 파일이 없다. 모든 추적 파일의 SHA 묶음이 두 설정에서 같다.
+- autocrlf=true 사본에서 2회차 실패 시험을 다시 돌렸다.
+  - 결과: devabil 133/133, sync_2i 108/108, p4 167/167, n2_rollback 191/191, f1_transition 145/145, feat_p5 222/222, rng_sites 139/139, ast_check exit 0, ast_neg 57/57, meas_fault 51/51
+  - mf_diag 다섯 사례: LF 사본과 같은 상태·이유, exit 0
+  - 기록: `logs/v178_windows/local_linux_repro/after_W1_crlf/`, `checkout_autocrlf_*.log`
+- 이 결과는 Linux 에서 재현한 것이다. Windows 에서의 확인은 §7 이다.
+
+### 6.3 변경 파일 SHA-256
+
+| 파일 | SHA-256 |
+|---|---|
+| `.gitattributes` | 8cf4908490ea9576dfcf983d054c3366671a90a7df7fd259cb49b8b735394f18 |
+| `logs/v178_windows/tools/crlf_diag.js` | 999c51a8366e6063c7735369cb61df2ef56227f2218d832f8bd6feec78cbe62e |
+| `logs/v178_windows/tools/mf_diag.sh` | 1335afe02427dfb9071271bb74a13752aafab03fff1b5acfab5eae44f631038e |
+
+- 커밋 `3ce68ce` 의 Linux 추적 파일 SHA 묶음: a9cb8244e094ff55. 3회차 E 단계 값과 대조한다.
+
+## 7. Windows 3회차(커밋 3ce68ce)
+
+(결과 대기 중 — 확인 뒤 채운다)

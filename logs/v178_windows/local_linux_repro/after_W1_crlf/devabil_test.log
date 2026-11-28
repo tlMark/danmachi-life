@@ -1,0 +1,134 @@
+PASS DA-0a 빈 배열·동결
+PASS DA-0b 새 생애는 초기화(습득 상태 승계 없음)
+PASS DA-1a 기본 비활성
+PASS DA-1b 레벨업은 그대로(Lv.2) · 습득 0 · 이력 0 · 진단 0 · 난수 0
+PASS DA-1c 실제 정의 데이터는 수치 미정이라 검증 실패(활성화해도 fail-closed 될 상태)
+PASS DA-1d
+PASS DA-1e 포괄적 craft 없음
+PASS DA-2a 1개·형식
+PASS DA-14 age 는 달력 나이(S.age), 육체 나이와 다름
+PASS DA-2b 이력 acquire 1
+PASS DA-2c Lv.3 에서 추가 습득, 중복 id 없음
+PASS DA-3a 최초 팔나 → Lv.1, 습득 0
+PASS DA-3b 팔나 재취득(Lv.3 유지) → 습득 0
+PASS DA-3d 호출 1곳(tryLevelUp)
+PASS DA-3e checkFalnaBody·completeConversion 본문에 습득 호출 없음
+PASS DA-3f 메인 RNG 지점 없음: 발전 어빌리티 블록(주석 제외)에 Math.random 없음
+PASS DA-4a Lv.2 후보(정렬, minLevel 3 제외)
+PASS DA-4b 순수: S·난수·진단 불변
+PASS DA-4c 보유 id 제외
+PASS DA-4d
+PASS DA-10a 수작업 버킷 계산과 300 시드 일치
+PASS DA-5 Math.random 호출 0
+PASS DA-10b 정의 데이터 순서를 뒤집어도 결과 동일
+PASS DA-10c 모든 후보가 선택될 수 있음(합성 가중치)
+PASS DA-10d 후보 0 → null
+PASS DA-6
+PASS DA-12a 새 배열, 이전 배열 길이·내용·레코드 불변
+PASS DA-12b 동결 배열 push·레코드 대입 차단
+PASS DA-12c 정적: devAbilities 에 push·원소 대입·length 대입 없음
+PASS DA-15
+PASS DA-16 없음 → 습득 0, 이력 불변, 진단 seed_invalid
+PASS DA-16 접근자 → 습득 0, 이력 불변, 진단 seed_invalid
+PASS DA-16 비정수 → 습득 0, 이력 불변, 진단 seed_invalid
+PASS DA-16 NaN → 습득 0, 이력 불변, 진단 seed_invalid
+PASS DA-16 음수 → 습득 0, 이력 불변, 진단 seed_invalid
+PASS DA-16 2^32 → 습득 0, 이력 불변, 진단 seed_invalid
+PASS DA-16 문자열 → 습득 0, 이력 불변, 진단 seed_invalid
+PASS DA-16b 시드 0 은 유효(정상 습득)
+PASS DA-20 가중치 비정수
+PASS DA-20 가중치 0
+PASS DA-20 가중치 음수
+PASS DA-20 가중치 null
+PASS DA-20 id 중복
+PASS DA-20 id 없음
+PASS DA-20 자격 없음
+PASS DA-20 자격 minLevel 1
+PASS DA-20 일부만 오류(유효 후보 있음)
+PASS DA-20 W 초과
+PASS DEV-15a 같은 참조 → 같은 결과 객체
+PASS DEV-15b 새 참조 → 다시 검증
+PASS 이력 push 실패(동결 이력) 예외 재던짐 · 레벨업 유지(Lv.2) · 정지
+PASS 이력 push 실패(동결 이력) 하위 트랜잭션 복원(devAbilities 참조·이력 참조/길이·연표 길이와 기존 항목)
+PASS 이력 push 실패(동결 이력) 진단 commit_failed 1(전용 배열), 다른 진단 배열 무변화
+PASS 이력 push 실패(동결 이력) 정지 후 진행 재개·자동 재시도 없음
+PASS 이력 push 실패(동결 이력) 새 생애는 정지 해제·습득 상태 승계 없음
+PASS 연표 기록 실패(say 예외) 예외 재던짐 · 레벨업 유지(Lv.2) · 정지
+PASS 연표 기록 실패(say 예외) 하위 트랜잭션 복원(devAbilities 참조·이력 참조/길이·연표 길이와 기존 항목)
+PASS 연표 기록 실패(say 예외) 진단 commit_failed 1(전용 배열), 다른 진단 배열 무변화
+PASS 연표 기록 실패(say 예외) 정지 후 진행 재개·자동 재시도 없음
+PASS 연표 기록 실패(say 예외) 새 생애는 정지 해제·습득 상태 승계 없음
+PASS 보유 배열 대입 실패(쓰기 불가 속성) 예외 재던짐 · 레벨업 유지(Lv.2) · 정지
+PASS 보유 배열 대입 실패(쓰기 불가 속성) 하위 트랜잭션 복원(devAbilities 참조·이력 참조/길이·연표 길이와 기존 항목)
+PASS 보유 배열 대입 실패(쓰기 불가 속성) 진단 commit_failed 1(전용 배열), 다른 진단 배열 무변화
+PASS 보유 배열 대입 실패(쓰기 불가 속성) 정지 후 진행 재개·자동 재시도 없음
+PASS 보유 배열 대입 실패(쓰기 불가 속성) 새 생애는 정지 해제·습득 상태 승계 없음
+PASS 이력 push 실패 예외 재던짐 · 레벨업 유지(Lv.2) · 정지
+PASS 이력 push 실패 하위 트랜잭션 복원(devAbilities 참조·이력 참조/길이·연표 길이와 기존 항목)
+PASS 이력 push 실패 진단 commit_failed 1(전용 배열), 다른 진단 배열 무변화
+PASS 이력 push 실패 정지 후 진행 재개·자동 재시도 없음
+PASS 이력 push 실패 새 생애는 정지 해제·습득 상태 승계 없음
+PASS 이력 push 실패 예외 재던짐 · 레벨업 유지(Lv.2) · 정지
+PASS 이력 push 실패 하위 트랜잭션 복원(devAbilities 참조·이력 참조/길이·연표 길이와 기존 항목)
+PASS 이력 push 실패 진단 commit_failed 1(전용 배열), 다른 진단 배열 무변화
+PASS 이력 push 실패 정지 후 진행 재개·자동 재시도 없음
+PASS 이력 push 실패 새 생애는 정지 해제·습득 상태 승계 없음
+PASS RB-DA 준비: 레벨업·습득 발생
+PASS RB-DA 복원: 모두 함께 원래대로(한쪽만 복원 0)
+PASS DA-17
+PASS DA-19
+PASS DA-dup
+PASS DEV-17a 이력 항목 동결(수정 차단)
+PASS DEV-17b 실패 뒤 이력 = 같은 배열·길이 1·첫 항목 같은 참조·같은 내용
+PASS DEV-17c 정적: 커밋 함수는 이력에 push 외의 쓰기(원소 대입·splice·shift·unshift·pop) 없음
+PASS DOM 삽입 뒤 logHistory.push 실패 예외 재던짐 · 레벨업 유지(Lv.2) · 정지
+PASS DOM 삽입 뒤 logHistory.push 실패 화면에 습득 문구 요소 없음(삽입 뒤 제거)
+PASS DOM 삽입 뒤 logHistory.push 실패 레벨업 문구는 화면·연표에 그대로(레벨업 미복원)
+PASS DOM 삽입 뒤 logHistory.push 실패 logHistory 에 습득 문구 없음·레벨업 뒤 길이
+PASS DOM 삽입 뒤 logHistory.push 실패 습득 상태·이력 복원
+PASS DOM 삽입 뒤 logHistory.push 실패 정지 안내 화면 1건(logHistory 미기록)
+PASS DOM 삽입 뒤 logHistory.push 실패 진단 commit_failed 1
+PASS DOM 삽입·logHistory 기록 뒤 스크롤 실패 예외 재던짐 · 레벨업 유지(Lv.2) · 정지
+PASS DOM 삽입·logHistory 기록 뒤 스크롤 실패 화면에 습득 문구 요소 없음(삽입 뒤 제거)
+PASS DOM 삽입·logHistory 기록 뒤 스크롤 실패 레벨업 문구는 화면·연표에 그대로(레벨업 미복원)
+PASS DOM 삽입·logHistory 기록 뒤 스크롤 실패 logHistory 에 습득 문구 없음·레벨업 뒤 길이
+PASS DOM 삽입·logHistory 기록 뒤 스크롤 실패 습득 상태·이력 복원
+PASS DOM 삽입·logHistory 기록 뒤 스크롤 실패 정지 안내 화면 1건(logHistory 미기록)
+PASS DOM 삽입·logHistory 기록 뒤 스크롤 실패 진단 commit_failed 1
+PASS DEV-18c
+PASS DEV-19a 예약 타이머 모두 취소(autoTimers 비움, clearTimeout 호출)
+PASS DEV-19b 정지 안내 1건
+PASS DEV-19c 레벨업 유지·정지
+PASS DEV-19d 정지 뒤 진행·재시도 없음(타이머 미실행, 레벨·습득·진단 불변)
+PASS DEV-19e 같은 생애의 중복 안내 없음(후속 선택 안 중첩 정지 대비)
+PASS DEV-19f 새 생애: 정지 해제·승계 없음
+PASS DEV-19g
+PASS active(flag·소속·기록 일치) 레벨업은 그대로(Lv.2)·예외 없음·정지 없음·난수 0
+PASS active(flag·소속·기록 일치) 팔나 기록·flag 불변(독립성)
+PASS active(flag·소속·기록 일치) 습득 1
+PASS unbound(flag·무소속·기록 일치) 레벨업은 그대로(Lv.2)·예외 없음·정지 없음·난수 0
+PASS unbound(flag·무소속·기록 일치) 팔나 기록·flag 불변(독립성)
+PASS unbound(flag·무소속·기록 일치) 습득 1
+PASS 범위 안 소속 변경 지연(기록 active / 원천 unbound) 레벨업은 그대로(Lv.2)·예외 없음·정지 없음·난수 0
+PASS 범위 안 소속 변경 지연(기록 active / 원천 unbound) 팔나 기록·flag 불변(독립성)
+PASS 범위 안 소속 변경 지연(기록 active / 원천 unbound) 습득 1
+PASS 기록 sealed / flag 있음(불일치) 레벨업은 그대로(Lv.2)·예외 없음·정지 없음·난수 0
+PASS 기록 sealed / flag 있음(불일치) 팔나 기록·flag 불변(독립성)
+PASS 기록 sealed / flag 있음(불일치) 습득 0·이력 0·진단 falna_blocked 1
+PASS 기록 none / flag 있음(불일치) 레벨업은 그대로(Lv.2)·예외 없음·정지 없음·난수 0
+PASS 기록 none / flag 있음(불일치) 팔나 기록·flag 불변(독립성)
+PASS 기록 none / flag 있음(불일치) 습득 0·이력 0·진단 falna_blocked 1
+PASS 기록 active / flag 없음(불일치, 원천 none) 레벨업은 그대로(Lv.2)·예외 없음·정지 없음·난수 0
+PASS 기록 active / flag 없음(불일치, 원천 none) 팔나 기록·flag 불변(독립성)
+PASS 기록 active / flag 없음(불일치, 원천 none) 습득 0·이력 0·진단 falna_blocked 1
+PASS 기록 unbound / flag 없음·팔나 이력 있음(불일치, 원천 sealed) 레벨업은 그대로(Lv.2)·예외 없음·정지 없음·난수 0
+PASS 기록 unbound / flag 없음·팔나 이력 있음(불일치, 원천 sealed) 팔나 기록·flag 불변(독립성)
+PASS 기록 unbound / flag 없음·팔나 이력 있음(불일치, 원천 sealed) 습득 0·이력 0·진단 falna_blocked 1
+PASS sealed 일치(flag 없음·이력 있음) 레벨업은 그대로(Lv.2)·예외 없음·정지 없음·난수 0
+PASS sealed 일치(flag 없음·이력 있음) 팔나 기록·flag 불변(독립성)
+PASS sealed 일치(flag 없음·이력 있음) 습득 0·이력 0·진단 falna_blocked 1
+PASS none 일치(flag 없음·이력 없음) 레벨업은 그대로(Lv.2)·예외 없음·정지 없음·난수 0
+PASS none 일치(flag 없음·이력 없음) 팔나 기록·flag 불변(독립성)
+PASS none 일치(flag 없음·이력 없음) 습득 0·이력 0·진단 falna_blocked 1
+PASS DEV-21z
+RESULT: PASS 133/133 (devabil_test)
