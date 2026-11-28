@@ -1,0 +1,641 @@
+PASS E3-1 seed 1
+PASS E3-1 seed 777
+PASS E3-1 seed 20261104
+PASS E3-2
+PASS E3-3 반환 true·위치 변경
+PASS E3-3b 이력 반열린 구간
+PASS E3-3c 거주지·출생지·연표·난수 불변
+PASS E3-4 같은 지역 → false, 무변화
+PASS E3-5 알 수 없는 지역 → false, 진단 1, 무변화
+PASS E3-6 이력 없음 → false, 진단 location_missing_state
+PASS E3-7 정지 중 → undefined, 무변화, 진단 halted_entry
+PASS E3-8 fx.location → 위치만 변경(이유 기록)
+PASS E3-9 fx.residence → 거주지만 변경
+PASS E3-10 fx.location 기본 이유 event
+PASS E3-11
+PASS EN-4 (12가지 상태·목록)
+PASS EN-5a locationIn
+PASS EN-5b residenceIn
+PASS EN-5c origin(기존 키) 은 출생지만
+PASS EN-5d 위치 필드 없음 → locationIn 거짓(fail-closed)
+PASS E2-1 고용처 없음
+PASS E2-2 고용처 guild
+PASS E2-3 81개 사건 모두 같음
+PASS EN-10 hp=NaN min
+PASS EN-10 hp=NaN max
+PASS EN-10 hp=Infinity min
+PASS EN-10 hp=Infinity max
+PASS EN-10 hp=-Infinity min
+PASS EN-10 hp=-Infinity max
+PASS EN-10 hp=undefined min
+PASS EN-10 hp=undefined max
+PASS EN-10 hp=50 min
+PASS EN-10 hp=50 max
+PASS EN-10 hp=50 min
+PASS EN-10 hp=50 max
+PASS EN-10b 사건 조건 match 는 기존 판정 유지(NaN 통과 — 현행 동작, 선택지 조건에만 규칙 추가)
+PASS E1-1 hasPartner → 숨김
+PASS E1-1 relative → 숨김
+PASS E1-1 noRelative → 숨김
+PASS E1-1 __unknown → 숨김
+PASS E1-1 atSiteOf → 숨김
+PASS E1-1 inRecruitAreaOf → 숨김
+PASS E1-2 빈 조건 → match 와 같음(보임)
+PASS E1-3 허용 키 목록 = 설계 E-1.1 표
+PASS EN-8 seed 1
+PASS EN-8 seed 777
+PASS EN-8 seed 20261104
+PASS EN-9 (선택지 조건 6건)
+PASS EN-12 MATCH_KEYS 의 모든 키가 match 본문에서 c.<키> 로 판정됨
+PASS EN-12 형식 표가 MATCH_KEYS 전체를 덮음
+PASS EN-12a 모든 사건·선택지 조건 키가 match 판정 키(사건 81, 선택지 6)
+PASS EN-12b 값 형식
+PASS EN-12c dungeonReach: P4 판정 키 — 던전 사건 17건에만 정확히 true, 선택지 조건 허용 목록 밖
+PASS EN-2a 5시드 200회 nextYear: S·난수 호출 수·버튼 수가 사건 없는 빌드와 같음
+PASS EN-2b 0개 사건은 표시·소비되지 않음(done·eventCounts·currentEventId)
+PASS EN-2c 숨김 상태에서 미표시 → 플래그 뒤 표시(가중치 1e7)
+PASS EN-2d 버튼은 보이는 선택지 1개만
+PASS EN-2b 진단 1(where nextYear, part choices, 사건 id)
+PASS EN-2b showEvent 에 0개 사건이 전달되지 않음·소비 없음
+PASS EN-2b-cond
+PASS EN-2c(a)
+PASS EN-2c(a2)
+PASS EN-2c(b)
+PASS EN-2c(d)
+PASS E1-4
+PASS EN-3a showEvent true·버튼 1(보이는 것만)
+PASS EN-3b chooseBody(숨김) → 거부, 상태·난수 불변, 진단 hidden_choice_rejected
+PASS EN-3c 거부 시 버튼을 지우지 않음(choices 비우기 전)
+PASS EN-6a 자동 진행: 보이는 1개여도 R2 1회 — 보이는 선택지가 골라짐
+PASS EN-6b 보이는 2개: 버튼 2, R2 1
+PASS EN-6d 직접 클릭(chance 없음): 난수 0
+PASS EN-6f 직접 클릭(chance 있음): R3 1
+PASS EN-6e choiceMatch 난수 0
+PASS PF-1 0 → 숨김
+PASS PF-1b 0 choiceMatch = false
+PASS PF-1 1 → 숨김
+PASS PF-1b 1 choiceMatch = false
+PASS PF-1 없음 → 보임
+PASS PF-1 {} → 보임
+PASS PF-1b {} choiceMatch = true
+PASS PF-1 min 유효 → 보임
+PASS PF-1b min 유효 choiceMatch = true
+PASS PF-1 max 유효 → 보임
+PASS PF-1b max 유효 choiceMatch = true
+PASS PF-1 min·max 유효 → 보임
+PASS PF-1b min·max 유효 choiceMatch = true
+PASS PF-1 null → 숨김
+PASS PF-1b null choiceMatch = false
+PASS PF-1 false → 숨김
+PASS PF-1b false choiceMatch = false
+PASS PF-1 '' → 숨김
+PASS PF-1b '' choiceMatch = false
+PASS PF-1 [] → 숨김
+PASS PF-1b [] choiceMatch = false
+PASS PF-1 undefined(속성 있음) → 숨김
+PASS PF-1b undefined(속성 있음) choiceMatch = false
+PASS PF-1 [{}] → 숨김
+PASS PF-1b [{}] choiceMatch = false
+PASS PF-1 Date → 숨김
+PASS PF-1b Date choiceMatch = false
+PASS PF-1 "x" → 숨김
+PASS PF-1b "x" choiceMatch = false
+PASS PF-1 true → 숨김
+PASS PF-1b true choiceMatch = false
+PASS PF-1 min:null → 숨김
+PASS PF-1b min:null choiceMatch = false
+PASS PF-1 min:false → 숨김
+PASS PF-1b min:false choiceMatch = false
+PASS PF-1 min:0 → 숨김
+PASS PF-1b min:0 choiceMatch = false
+PASS PF-1 min:5 → 숨김
+PASS PF-1b min:5 choiceMatch = false
+PASS PF-1 min:[] → 숨김
+PASS PF-1b min:[] choiceMatch = false
+PASS PF-1 min:{} → 숨김
+PASS PF-1b min:{} choiceMatch = false
+PASS PF-1 min:[1] → 숨김
+PASS PF-1b min:[1] choiceMatch = false
+PASS PF-1 min:NaN → 숨김
+PASS PF-1b min:NaN choiceMatch = false
+PASS PF-1 min:+Inf → 숨김
+PASS PF-1b min:+Inf choiceMatch = false
+PASS PF-1 min:-Inf → 숨김
+PASS PF-1b min:-Inf choiceMatch = false
+PASS PF-1 min:'1' → 숨김
+PASS PF-1b min:'1' choiceMatch = false
+PASS PF-1 min:undefined → 숨김
+PASS PF-1b min:undefined choiceMatch = false
+PASS PF-1 min:null값 → 숨김
+PASS PF-1b min:null값 choiceMatch = false
+PASS PF-1 max:null → 숨김
+PASS PF-1b max:null choiceMatch = false
+PASS PF-1 max:false → 숨김
+PASS PF-1b max:false choiceMatch = false
+PASS PF-1 max:0 → 숨김
+PASS PF-1b max:0 choiceMatch = false
+PASS PF-1 max:5 → 숨김
+PASS PF-1b max:5 choiceMatch = false
+PASS PF-1 max:[] → 숨김
+PASS PF-1b max:[] choiceMatch = false
+PASS PF-1 max:{} → 숨김
+PASS PF-1b max:{} choiceMatch = false
+PASS PF-1 max:NaN → 숨김
+PASS PF-1b max:NaN choiceMatch = false
+PASS PF-1 max:+Inf → 숨김
+PASS PF-1b max:+Inf choiceMatch = false
+PASS PF-1 max:-Inf → 숨김
+PASS PF-1b max:-Inf choiceMatch = false
+PASS PF-1 min 유효+max 잘못 → 숨김
+PASS PF-1b min 유효+max 잘못 choiceMatch = false
+PASS PF-1 min 둘 중 하나 NaN → 숨김
+PASS PF-1b min 둘 중 하나 NaN choiceMatch = false
+PASS PF-1 proto 상속 min NaN → 숨김
+PASS PF-1b proto 상속 min NaN choiceMatch = false
+PASS PF-1 proto 상속 max NaN → 숨김
+PASS PF-1b proto 상속 max NaN choiceMatch = false
+PASS PF-1 proto 상속 min 유효 → 숨김
+PASS PF-1b proto 상속 min 유효 choiceMatch = false
+PASS PF-1 min 상속 NaN → 숨김
+PASS PF-1b min 상속 NaN choiceMatch = false
+PASS PF-1 max 상속 NaN → 숨김
+PASS PF-1b max 상속 NaN choiceMatch = false
+PASS PF-1 class 인스턴스 cond → 숨김
+PASS PF-1b class 인스턴스 cond choiceMatch = false
+PASS PF-1 class 인스턴스(빈) cond → 숨김
+PASS PF-1b class 인스턴스(빈) cond choiceMatch = false
+PASS PF-1 min 사용자 프로토타입 → 숨김
+PASS PF-1b min 사용자 프로토타입 choiceMatch = false
+PASS PF-1 max 사용자 프로토타입 → 숨김
+PASS PF-1b max 사용자 프로토타입 choiceMatch = false
+PASS PF-1 min class 인스턴스 → 숨김
+PASS PF-1b min class 인스턴스 choiceMatch = false
+PASS PF-1 Date+toStringTag Object → 숨김
+PASS PF-1b Date+toStringTag Object choiceMatch = false
+PASS PF-1 Array+toStringTag Object → 숨김
+PASS PF-1b Array+toStringTag Object choiceMatch = false
+PASS PF-1 min Date+toStringTag → 숨김
+PASS PF-1b min Date+toStringTag choiceMatch = false
+PASS PF-1 max Array+toStringTag → 숨김
+PASS PF-1b max Array+toStringTag choiceMatch = false
+PASS PF-1 위조 Object.prototype(constructor=Object) → 숨김
+PASS PF-1b 위조 Object.prototype(constructor=Object) choiceMatch = false
+PASS PF-1 위조 native 아님 생성자 Object → 숨김
+PASS PF-1b 위조 native 아님 생성자 Object choiceMatch = false
+PASS PF-1 getter min → 숨김
+PASS PF-1b getter min choiceMatch = false
+PASS PF-1 비열거 자체 min NaN → 숨김
+PASS PF-1b 비열거 자체 min NaN choiceMatch = false
+PASS PF-1 심볼 키 cond → 숨김
+PASS PF-1b 심볼 키 cond choiceMatch = false
+PASS PF-1 min getter hp → 숨김
+PASS PF-1b min getter hp choiceMatch = false
+PASS PF-1 null 프로토타입 cond(정상) → 보임
+PASS PF-1b null 프로토타입 cond(정상) choiceMatch = true
+PASS PF-1 null 프로토타입 min(정상) → 보임
+PASS PF-1b null 프로토타입 min(정상) choiceMatch = true
+PASS PF-2 hp=NaN
+PASS PF-2 hp=Infinity
+PASS PF-2 hp=-Infinity
+PASS PF-2 hp=undefined
+PASS PF-2 hp=50
+PASS PF-2 hp=null
+PASS PF-2b 대조: hp=50 이면 보임, 범위 밖이면 숨김
+PASS PF-3a 0 showEvent true·버튼 1
+PASS PF-3b 0 chooseBody 거부: 반환 undefined, S 깊은 비교 동일, 난수 0, 연표 0, UI 동일
+PASS PF-3c 0 진단 1건·이유 cond_malformed
+PASS PF-3d 0 choose(래퍼) 경유도 거부: 효과·난수 0, 진단 +1
+PASS PF-3a 1 showEvent true·버튼 1
+PASS PF-3b 1 chooseBody 거부: 반환 undefined, S 깊은 비교 동일, 난수 0, 연표 0, UI 동일
+PASS PF-3c 1 진단 1건·이유 cond_malformed
+PASS PF-3d 1 choose(래퍼) 경유도 거부: 효과·난수 0, 진단 +1
+PASS PF-3a null showEvent true·버튼 1
+PASS PF-3b null chooseBody 거부: 반환 undefined, S 깊은 비교 동일, 난수 0, 연표 0, UI 동일
+PASS PF-3c null 진단 1건·이유 cond_malformed
+PASS PF-3d null choose(래퍼) 경유도 거부: 효과·난수 0, 진단 +1
+PASS PF-3a false showEvent true·버튼 1
+PASS PF-3b false chooseBody 거부: 반환 undefined, S 깊은 비교 동일, 난수 0, 연표 0, UI 동일
+PASS PF-3c false 진단 1건·이유 cond_malformed
+PASS PF-3d false choose(래퍼) 경유도 거부: 효과·난수 0, 진단 +1
+PASS PF-3a '' showEvent true·버튼 1
+PASS PF-3b '' chooseBody 거부: 반환 undefined, S 깊은 비교 동일, 난수 0, 연표 0, UI 동일
+PASS PF-3c '' 진단 1건·이유 cond_malformed
+PASS PF-3d '' choose(래퍼) 경유도 거부: 효과·난수 0, 진단 +1
+PASS PF-3a [] showEvent true·버튼 1
+PASS PF-3b [] chooseBody 거부: 반환 undefined, S 깊은 비교 동일, 난수 0, 연표 0, UI 동일
+PASS PF-3c [] 진단 1건·이유 cond_malformed
+PASS PF-3d [] choose(래퍼) 경유도 거부: 효과·난수 0, 진단 +1
+PASS PF-3a undefined(속성 있음) showEvent true·버튼 1
+PASS PF-3b undefined(속성 있음) chooseBody 거부: 반환 undefined, S 깊은 비교 동일, 난수 0, 연표 0, UI 동일
+PASS PF-3c undefined(속성 있음) 진단 1건·이유 cond_malformed
+PASS PF-3d undefined(속성 있음) choose(래퍼) 경유도 거부: 효과·난수 0, 진단 +1
+PASS PF-3a [{}] showEvent true·버튼 1
+PASS PF-3b [{}] chooseBody 거부: 반환 undefined, S 깊은 비교 동일, 난수 0, 연표 0, UI 동일
+PASS PF-3c [{}] 진단 1건·이유 cond_malformed
+PASS PF-3d [{}] choose(래퍼) 경유도 거부: 효과·난수 0, 진단 +1
+PASS PF-3a Date showEvent true·버튼 1
+PASS PF-3b Date chooseBody 거부: 반환 undefined, S 깊은 비교 동일, 난수 0, 연표 0, UI 동일
+PASS PF-3c Date 진단 1건·이유 cond_malformed
+PASS PF-3d Date choose(래퍼) 경유도 거부: 효과·난수 0, 진단 +1
+PASS PF-3a "x" showEvent true·버튼 1
+PASS PF-3b "x" chooseBody 거부: 반환 undefined, S 깊은 비교 동일, 난수 0, 연표 0, UI 동일
+PASS PF-3c "x" 진단 1건·이유 cond_malformed
+PASS PF-3d "x" choose(래퍼) 경유도 거부: 효과·난수 0, 진단 +1
+PASS PF-3a true showEvent true·버튼 1
+PASS PF-3b true chooseBody 거부: 반환 undefined, S 깊은 비교 동일, 난수 0, 연표 0, UI 동일
+PASS PF-3c true 진단 1건·이유 cond_malformed
+PASS PF-3d true choose(래퍼) 경유도 거부: 효과·난수 0, 진단 +1
+PASS PF-3a min:null showEvent true·버튼 1
+PASS PF-3b min:null chooseBody 거부: 반환 undefined, S 깊은 비교 동일, 난수 0, 연표 0, UI 동일
+PASS PF-3c min:null 진단 1건·이유 cond_malformed
+PASS PF-3d min:null choose(래퍼) 경유도 거부: 효과·난수 0, 진단 +1
+PASS PF-3a min:false showEvent true·버튼 1
+PASS PF-3b min:false chooseBody 거부: 반환 undefined, S 깊은 비교 동일, 난수 0, 연표 0, UI 동일
+PASS PF-3c min:false 진단 1건·이유 cond_malformed
+PASS PF-3d min:false choose(래퍼) 경유도 거부: 효과·난수 0, 진단 +1
+PASS PF-3a min:0 showEvent true·버튼 1
+PASS PF-3b min:0 chooseBody 거부: 반환 undefined, S 깊은 비교 동일, 난수 0, 연표 0, UI 동일
+PASS PF-3c min:0 진단 1건·이유 cond_malformed
+PASS PF-3d min:0 choose(래퍼) 경유도 거부: 효과·난수 0, 진단 +1
+PASS PF-3a min:5 showEvent true·버튼 1
+PASS PF-3b min:5 chooseBody 거부: 반환 undefined, S 깊은 비교 동일, 난수 0, 연표 0, UI 동일
+PASS PF-3c min:5 진단 1건·이유 cond_malformed
+PASS PF-3d min:5 choose(래퍼) 경유도 거부: 효과·난수 0, 진단 +1
+PASS PF-3a min:[] showEvent true·버튼 1
+PASS PF-3b min:[] chooseBody 거부: 반환 undefined, S 깊은 비교 동일, 난수 0, 연표 0, UI 동일
+PASS PF-3c min:[] 진단 1건·이유 cond_malformed
+PASS PF-3d min:[] choose(래퍼) 경유도 거부: 효과·난수 0, 진단 +1
+PASS PF-3a min:{} showEvent true·버튼 1
+PASS PF-3b min:{} chooseBody 거부: 반환 undefined, S 깊은 비교 동일, 난수 0, 연표 0, UI 동일
+PASS PF-3c min:{} 진단 1건·이유 cond_malformed
+PASS PF-3d min:{} choose(래퍼) 경유도 거부: 효과·난수 0, 진단 +1
+PASS PF-3a min:[1] showEvent true·버튼 1
+PASS PF-3b min:[1] chooseBody 거부: 반환 undefined, S 깊은 비교 동일, 난수 0, 연표 0, UI 동일
+PASS PF-3c min:[1] 진단 1건·이유 cond_malformed
+PASS PF-3d min:[1] choose(래퍼) 경유도 거부: 효과·난수 0, 진단 +1
+PASS PF-3a min:NaN showEvent true·버튼 1
+PASS PF-3b min:NaN chooseBody 거부: 반환 undefined, S 깊은 비교 동일, 난수 0, 연표 0, UI 동일
+PASS PF-3c min:NaN 진단 1건·이유 cond_malformed
+PASS PF-3d min:NaN choose(래퍼) 경유도 거부: 효과·난수 0, 진단 +1
+PASS PF-3a min:+Inf showEvent true·버튼 1
+PASS PF-3b min:+Inf chooseBody 거부: 반환 undefined, S 깊은 비교 동일, 난수 0, 연표 0, UI 동일
+PASS PF-3c min:+Inf 진단 1건·이유 cond_malformed
+PASS PF-3d min:+Inf choose(래퍼) 경유도 거부: 효과·난수 0, 진단 +1
+PASS PF-3a min:-Inf showEvent true·버튼 1
+PASS PF-3b min:-Inf chooseBody 거부: 반환 undefined, S 깊은 비교 동일, 난수 0, 연표 0, UI 동일
+PASS PF-3c min:-Inf 진단 1건·이유 cond_malformed
+PASS PF-3d min:-Inf choose(래퍼) 경유도 거부: 효과·난수 0, 진단 +1
+PASS PF-3a min:'1' showEvent true·버튼 1
+PASS PF-3b min:'1' chooseBody 거부: 반환 undefined, S 깊은 비교 동일, 난수 0, 연표 0, UI 동일
+PASS PF-3c min:'1' 진단 1건·이유 cond_malformed
+PASS PF-3d min:'1' choose(래퍼) 경유도 거부: 효과·난수 0, 진단 +1
+PASS PF-3a min:undefined showEvent true·버튼 1
+PASS PF-3b min:undefined chooseBody 거부: 반환 undefined, S 깊은 비교 동일, 난수 0, 연표 0, UI 동일
+PASS PF-3c min:undefined 진단 1건·이유 cond_malformed
+PASS PF-3d min:undefined choose(래퍼) 경유도 거부: 효과·난수 0, 진단 +1
+PASS PF-3a min:null값 showEvent true·버튼 1
+PASS PF-3b min:null값 chooseBody 거부: 반환 undefined, S 깊은 비교 동일, 난수 0, 연표 0, UI 동일
+PASS PF-3c min:null값 진단 1건·이유 cond_malformed
+PASS PF-3d min:null값 choose(래퍼) 경유도 거부: 효과·난수 0, 진단 +1
+PASS PF-3a max:null showEvent true·버튼 1
+PASS PF-3b max:null chooseBody 거부: 반환 undefined, S 깊은 비교 동일, 난수 0, 연표 0, UI 동일
+PASS PF-3c max:null 진단 1건·이유 cond_malformed
+PASS PF-3d max:null choose(래퍼) 경유도 거부: 효과·난수 0, 진단 +1
+PASS PF-3a max:false showEvent true·버튼 1
+PASS PF-3b max:false chooseBody 거부: 반환 undefined, S 깊은 비교 동일, 난수 0, 연표 0, UI 동일
+PASS PF-3c max:false 진단 1건·이유 cond_malformed
+PASS PF-3d max:false choose(래퍼) 경유도 거부: 효과·난수 0, 진단 +1
+PASS PF-3a max:0 showEvent true·버튼 1
+PASS PF-3b max:0 chooseBody 거부: 반환 undefined, S 깊은 비교 동일, 난수 0, 연표 0, UI 동일
+PASS PF-3c max:0 진단 1건·이유 cond_malformed
+PASS PF-3d max:0 choose(래퍼) 경유도 거부: 효과·난수 0, 진단 +1
+PASS PF-3a max:5 showEvent true·버튼 1
+PASS PF-3b max:5 chooseBody 거부: 반환 undefined, S 깊은 비교 동일, 난수 0, 연표 0, UI 동일
+PASS PF-3c max:5 진단 1건·이유 cond_malformed
+PASS PF-3d max:5 choose(래퍼) 경유도 거부: 효과·난수 0, 진단 +1
+PASS PF-3a max:[] showEvent true·버튼 1
+PASS PF-3b max:[] chooseBody 거부: 반환 undefined, S 깊은 비교 동일, 난수 0, 연표 0, UI 동일
+PASS PF-3c max:[] 진단 1건·이유 cond_malformed
+PASS PF-3d max:[] choose(래퍼) 경유도 거부: 효과·난수 0, 진단 +1
+PASS PF-3a max:{} showEvent true·버튼 1
+PASS PF-3b max:{} chooseBody 거부: 반환 undefined, S 깊은 비교 동일, 난수 0, 연표 0, UI 동일
+PASS PF-3c max:{} 진단 1건·이유 cond_malformed
+PASS PF-3d max:{} choose(래퍼) 경유도 거부: 효과·난수 0, 진단 +1
+PASS PF-3a max:NaN showEvent true·버튼 1
+PASS PF-3b max:NaN chooseBody 거부: 반환 undefined, S 깊은 비교 동일, 난수 0, 연표 0, UI 동일
+PASS PF-3c max:NaN 진단 1건·이유 cond_malformed
+PASS PF-3d max:NaN choose(래퍼) 경유도 거부: 효과·난수 0, 진단 +1
+PASS PF-3a max:+Inf showEvent true·버튼 1
+PASS PF-3b max:+Inf chooseBody 거부: 반환 undefined, S 깊은 비교 동일, 난수 0, 연표 0, UI 동일
+PASS PF-3c max:+Inf 진단 1건·이유 cond_malformed
+PASS PF-3d max:+Inf choose(래퍼) 경유도 거부: 효과·난수 0, 진단 +1
+PASS PF-3a max:-Inf showEvent true·버튼 1
+PASS PF-3b max:-Inf chooseBody 거부: 반환 undefined, S 깊은 비교 동일, 난수 0, 연표 0, UI 동일
+PASS PF-3c max:-Inf 진단 1건·이유 cond_malformed
+PASS PF-3d max:-Inf choose(래퍼) 경유도 거부: 효과·난수 0, 진단 +1
+PASS PF-3a min 유효+max 잘못 showEvent true·버튼 1
+PASS PF-3b min 유효+max 잘못 chooseBody 거부: 반환 undefined, S 깊은 비교 동일, 난수 0, 연표 0, UI 동일
+PASS PF-3c min 유효+max 잘못 진단 1건·이유 cond_malformed
+PASS PF-3d min 유효+max 잘못 choose(래퍼) 경유도 거부: 효과·난수 0, 진단 +1
+PASS PF-3a min 둘 중 하나 NaN showEvent true·버튼 1
+PASS PF-3b min 둘 중 하나 NaN chooseBody 거부: 반환 undefined, S 깊은 비교 동일, 난수 0, 연표 0, UI 동일
+PASS PF-3c min 둘 중 하나 NaN 진단 1건·이유 cond_malformed
+PASS PF-3d min 둘 중 하나 NaN choose(래퍼) 경유도 거부: 효과·난수 0, 진단 +1
+PASS PF-3a proto 상속 min NaN showEvent true·버튼 1
+PASS PF-3b proto 상속 min NaN chooseBody 거부: 반환 undefined, S 깊은 비교 동일, 난수 0, 연표 0, UI 동일
+PASS PF-3c proto 상속 min NaN 진단 1건·이유 cond_malformed
+PASS PF-3d proto 상속 min NaN choose(래퍼) 경유도 거부: 효과·난수 0, 진단 +1
+PASS PF-3a proto 상속 max NaN showEvent true·버튼 1
+PASS PF-3b proto 상속 max NaN chooseBody 거부: 반환 undefined, S 깊은 비교 동일, 난수 0, 연표 0, UI 동일
+PASS PF-3c proto 상속 max NaN 진단 1건·이유 cond_malformed
+PASS PF-3d proto 상속 max NaN choose(래퍼) 경유도 거부: 효과·난수 0, 진단 +1
+PASS PF-3a proto 상속 min 유효 showEvent true·버튼 1
+PASS PF-3b proto 상속 min 유효 chooseBody 거부: 반환 undefined, S 깊은 비교 동일, 난수 0, 연표 0, UI 동일
+PASS PF-3c proto 상속 min 유효 진단 1건·이유 cond_malformed
+PASS PF-3d proto 상속 min 유효 choose(래퍼) 경유도 거부: 효과·난수 0, 진단 +1
+PASS PF-3a min 상속 NaN showEvent true·버튼 1
+PASS PF-3b min 상속 NaN chooseBody 거부: 반환 undefined, S 깊은 비교 동일, 난수 0, 연표 0, UI 동일
+PASS PF-3c min 상속 NaN 진단 1건·이유 cond_malformed
+PASS PF-3d min 상속 NaN choose(래퍼) 경유도 거부: 효과·난수 0, 진단 +1
+PASS PF-3a max 상속 NaN showEvent true·버튼 1
+PASS PF-3b max 상속 NaN chooseBody 거부: 반환 undefined, S 깊은 비교 동일, 난수 0, 연표 0, UI 동일
+PASS PF-3c max 상속 NaN 진단 1건·이유 cond_malformed
+PASS PF-3d max 상속 NaN choose(래퍼) 경유도 거부: 효과·난수 0, 진단 +1
+PASS PF-3a class 인스턴스 cond showEvent true·버튼 1
+PASS PF-3b class 인스턴스 cond chooseBody 거부: 반환 undefined, S 깊은 비교 동일, 난수 0, 연표 0, UI 동일
+PASS PF-3c class 인스턴스 cond 진단 1건·이유 cond_malformed
+PASS PF-3d class 인스턴스 cond choose(래퍼) 경유도 거부: 효과·난수 0, 진단 +1
+PASS PF-3a class 인스턴스(빈) cond showEvent true·버튼 1
+PASS PF-3b class 인스턴스(빈) cond chooseBody 거부: 반환 undefined, S 깊은 비교 동일, 난수 0, 연표 0, UI 동일
+PASS PF-3c class 인스턴스(빈) cond 진단 1건·이유 cond_malformed
+PASS PF-3d class 인스턴스(빈) cond choose(래퍼) 경유도 거부: 효과·난수 0, 진단 +1
+PASS PF-3a min 사용자 프로토타입 showEvent true·버튼 1
+PASS PF-3b min 사용자 프로토타입 chooseBody 거부: 반환 undefined, S 깊은 비교 동일, 난수 0, 연표 0, UI 동일
+PASS PF-3c min 사용자 프로토타입 진단 1건·이유 cond_malformed
+PASS PF-3d min 사용자 프로토타입 choose(래퍼) 경유도 거부: 효과·난수 0, 진단 +1
+PASS PF-3a max 사용자 프로토타입 showEvent true·버튼 1
+PASS PF-3b max 사용자 프로토타입 chooseBody 거부: 반환 undefined, S 깊은 비교 동일, 난수 0, 연표 0, UI 동일
+PASS PF-3c max 사용자 프로토타입 진단 1건·이유 cond_malformed
+PASS PF-3d max 사용자 프로토타입 choose(래퍼) 경유도 거부: 효과·난수 0, 진단 +1
+PASS PF-3a min class 인스턴스 showEvent true·버튼 1
+PASS PF-3b min class 인스턴스 chooseBody 거부: 반환 undefined, S 깊은 비교 동일, 난수 0, 연표 0, UI 동일
+PASS PF-3c min class 인스턴스 진단 1건·이유 cond_malformed
+PASS PF-3d min class 인스턴스 choose(래퍼) 경유도 거부: 효과·난수 0, 진단 +1
+PASS PF-3a Date+toStringTag Object showEvent true·버튼 1
+PASS PF-3b Date+toStringTag Object chooseBody 거부: 반환 undefined, S 깊은 비교 동일, 난수 0, 연표 0, UI 동일
+PASS PF-3c Date+toStringTag Object 진단 1건·이유 cond_malformed
+PASS PF-3d Date+toStringTag Object choose(래퍼) 경유도 거부: 효과·난수 0, 진단 +1
+PASS PF-3a Array+toStringTag Object showEvent true·버튼 1
+PASS PF-3b Array+toStringTag Object chooseBody 거부: 반환 undefined, S 깊은 비교 동일, 난수 0, 연표 0, UI 동일
+PASS PF-3c Array+toStringTag Object 진단 1건·이유 cond_malformed
+PASS PF-3d Array+toStringTag Object choose(래퍼) 경유도 거부: 효과·난수 0, 진단 +1
+PASS PF-3a min Date+toStringTag showEvent true·버튼 1
+PASS PF-3b min Date+toStringTag chooseBody 거부: 반환 undefined, S 깊은 비교 동일, 난수 0, 연표 0, UI 동일
+PASS PF-3c min Date+toStringTag 진단 1건·이유 cond_malformed
+PASS PF-3d min Date+toStringTag choose(래퍼) 경유도 거부: 효과·난수 0, 진단 +1
+PASS PF-3a max Array+toStringTag showEvent true·버튼 1
+PASS PF-3b max Array+toStringTag chooseBody 거부: 반환 undefined, S 깊은 비교 동일, 난수 0, 연표 0, UI 동일
+PASS PF-3c max Array+toStringTag 진단 1건·이유 cond_malformed
+PASS PF-3d max Array+toStringTag choose(래퍼) 경유도 거부: 효과·난수 0, 진단 +1
+PASS PF-3a 위조 Object.prototype(constructor=Object) showEvent true·버튼 1
+PASS PF-3b 위조 Object.prototype(constructor=Object) chooseBody 거부: 반환 undefined, S 깊은 비교 동일, 난수 0, 연표 0, UI 동일
+PASS PF-3c 위조 Object.prototype(constructor=Object) 진단 1건·이유 cond_malformed
+PASS PF-3d 위조 Object.prototype(constructor=Object) choose(래퍼) 경유도 거부: 효과·난수 0, 진단 +1
+PASS PF-3a 위조 native 아님 생성자 Object showEvent true·버튼 1
+PASS PF-3b 위조 native 아님 생성자 Object chooseBody 거부: 반환 undefined, S 깊은 비교 동일, 난수 0, 연표 0, UI 동일
+PASS PF-3c 위조 native 아님 생성자 Object 진단 1건·이유 cond_malformed
+PASS PF-3d 위조 native 아님 생성자 Object choose(래퍼) 경유도 거부: 효과·난수 0, 진단 +1
+PASS PF-3a getter min showEvent true·버튼 1
+PASS PF-3b getter min chooseBody 거부: 반환 undefined, S 깊은 비교 동일, 난수 0, 연표 0, UI 동일
+PASS PF-3c getter min 진단 1건·이유 cond_malformed
+PASS PF-3d getter min choose(래퍼) 경유도 거부: 효과·난수 0, 진단 +1
+PASS PF-3a 비열거 자체 min NaN showEvent true·버튼 1
+PASS PF-3b 비열거 자체 min NaN chooseBody 거부: 반환 undefined, S 깊은 비교 동일, 난수 0, 연표 0, UI 동일
+PASS PF-3c 비열거 자체 min NaN 진단 1건·이유 cond_malformed
+PASS PF-3d 비열거 자체 min NaN choose(래퍼) 경유도 거부: 효과·난수 0, 진단 +1
+PASS PF-3a 심볼 키 cond showEvent true·버튼 1
+PASS PF-3b 심볼 키 cond chooseBody 거부: 반환 undefined, S 깊은 비교 동일, 난수 0, 연표 0, UI 동일
+PASS PF-3c 심볼 키 cond 진단 1건·이유 cond_malformed
+PASS PF-3d 심볼 키 cond choose(래퍼) 경유도 거부: 효과·난수 0, 진단 +1
+PASS PF-3a min getter hp showEvent true·버튼 1
+PASS PF-3b min getter hp chooseBody 거부: 반환 undefined, S 깊은 비교 동일, 난수 0, 연표 0, UI 동일
+PASS PF-3c min getter hp 진단 1건·이유 cond_malformed
+PASS PF-3d min getter hp choose(래퍼) 경유도 거부: 효과·난수 0, 진단 +1
+PASS PF-3a 조건 불충족 showEvent true·버튼 1
+PASS PF-3b 조건 불충족 chooseBody 거부: 반환 undefined, S 깊은 비교 동일, 난수 0, 연표 0, UI 동일
+PASS PF-3c 조건 불충족 진단 1건·이유 cond_unmet
+PASS PF-3d 조건 불충족 choose(래퍼) 경유도 거부: 효과·난수 0, 진단 +1
+PASS PF-4 없음
+PASS PF-4 {}
+PASS PF-4 min 유효
+PASS PF-4 max 유효
+PASS PF-4 min·max 유효
+PASS PF-4 null 프로토타입 cond(정상)
+PASS PF-4 null 프로토타입 min(정상)
+PASS PF-5
+PASS PF-6
+PASS PF-7a 외부 realm {min} 실제로 다른 realm
+PASS PF-7b 외부 realm {min} → 보임 · choiceMatch true
+PASS PF-7c 외부 realm {min} 직접 호출 실행됨
+PASS PF-7a 외부 realm {} 실제로 다른 realm
+PASS PF-7b 외부 realm {} → 보임 · choiceMatch true
+PASS PF-7c 외부 realm {} 직접 호출 실행됨
+PASS PF-7a 외부 realm null 프로토타입 실제로 다른 realm
+PASS PF-7b 외부 realm null 프로토타입 → 보임 · choiceMatch true
+PASS PF-7c 외부 realm null 프로토타입 직접 호출 실행됨
+PASS PF-7a 외부 realm 형식 정상·조건 불충족(job) 실제로 다른 realm
+PASS PF-7b 외부 realm 형식 정상·조건 불충족(job) → 숨김 · choiceMatch false
+PASS PF-7c 외부 realm 형식 정상·조건 불충족(job) 직접 호출 거부(S·난수·UI 불변, cond_unmet)
+PASS PF-7a 외부 realm 상속 min NaN 실제로 다른 realm
+PASS PF-7b 외부 realm 상속 min NaN → 숨김 · choiceMatch false
+PASS PF-7c 외부 realm 상속 min NaN 직접 호출 거부(S·난수·UI 불변, cond_malformed)
+PASS PF-7a 외부 realm min 상속 NaN 실제로 다른 realm
+PASS PF-7b 외부 realm min 상속 NaN → 숨김 · choiceMatch false
+PASS PF-7c 외부 realm min 상속 NaN 직접 호출 거부(S·난수·UI 불변, cond_malformed)
+PASS PF-7a 외부 realm class 인스턴스 실제로 다른 realm
+PASS PF-7b 외부 realm class 인스턴스 → 숨김 · choiceMatch false
+PASS PF-7c 외부 realm class 인스턴스 직접 호출 거부(S·난수·UI 불변, cond_malformed)
+PASS PF-8a match 에 넘어간 것은 프로토타입 null 스냅숏(자체 키만)
+PASS PF-8b 프로토타입 우회 조건은 match 를 호출하지 않음
+PASS PF-8c 사건 match() 는 그대로(상속 min 을 읽는 기존 동작 — 사건 조건 경로는 변경 없음)
+PASS PF-9a null chooseBody: 예외 없음·반환 undefined·S·난수·연표·UI 불변
+PASS PF-9b null 진단 1건 reason=choice_not_object
+PASS PF-9c null choose(래퍼) 경유: 예외 없음·난수 0·UI 불변(래퍼의 currentEventId 초기화는 기존 동작)
+PASS PF-9a undefined chooseBody: 예외 없음·반환 undefined·S·난수·연표·UI 불변
+PASS PF-9b undefined 진단 1건 reason=choice_not_object
+PASS PF-9c undefined choose(래퍼) 경유: 예외 없음·난수 0·UI 불변(래퍼의 currentEventId 초기화는 기존 동작)
+PASS PF-9a 0 chooseBody: 예외 없음·반환 undefined·S·난수·연표·UI 불변
+PASS PF-9b 0 진단 1건 reason=choice_not_object
+PASS PF-9c 0 choose(래퍼) 경유: 예외 없음·난수 0·UI 불변(래퍼의 currentEventId 초기화는 기존 동작)
+PASS PF-9a '' chooseBody: 예외 없음·반환 undefined·S·난수·연표·UI 불변
+PASS PF-9b '' 진단 1건 reason=choice_not_object
+PASS PF-9c '' choose(래퍼) 경유: 예외 없음·난수 0·UI 불변(래퍼의 currentEventId 초기화는 기존 동작)
+PASS PF-9a "x" chooseBody: 예외 없음·반환 undefined·S·난수·연표·UI 불변
+PASS PF-9b "x" 진단 1건 reason=choice_not_object
+PASS PF-9c "x" choose(래퍼) 경유: 예외 없음·난수 0·UI 불변(래퍼의 currentEventId 초기화는 기존 동작)
+PASS PF-9a 1 chooseBody: 예외 없음·반환 undefined·S·난수·연표·UI 불변
+PASS PF-9b 1 진단 1건 reason=choice_not_object
+PASS PF-9c 1 choose(래퍼) 경유: 예외 없음·난수 0·UI 불변(래퍼의 currentEventId 초기화는 기존 동작)
+PASS PF-9a true chooseBody: 예외 없음·반환 undefined·S·난수·연표·UI 불변
+PASS PF-9b true 진단 1건 reason=choice_not_object
+PASS PF-9c true choose(래퍼) 경유: 예외 없음·난수 0·UI 불변(래퍼의 currentEventId 초기화는 기존 동작)
+PASS PF-10a 일반 선택지 cond 없음 visibleChoices 예외 없음 · 보임
+PASS PF-10b 일반 선택지 cond 없음 showEvent 예외 없음 · 버튼 2
+PASS PF-10c 일반 선택지 cond 없음 직접 호출 실행됨(거부 진단 0)
+PASS PF-10a null 프로토타입 선택지 cond 없음 visibleChoices 예외 없음 · 보임
+PASS PF-10b null 프로토타입 선택지 cond 없음 showEvent 예외 없음 · 버튼 2
+PASS PF-10c null 프로토타입 선택지 cond 없음 직접 호출 실행됨(거부 진단 0)
+PASS PF-10a 자체 cond 데이터 {}  visibleChoices 예외 없음 · 보임
+PASS PF-10b 자체 cond 데이터 {}  showEvent 예외 없음 · 버튼 2
+PASS PF-10c 자체 cond 데이터 {}  직접 호출 실행됨(거부 진단 0)
+PASS PF-10a 자체 cond 데이터 충족 visibleChoices 예외 없음 · 보임
+PASS PF-10b 자체 cond 데이터 충족 showEvent 예외 없음 · 버튼 2
+PASS PF-10c 자체 cond 데이터 충족 직접 호출 실행됨(거부 진단 0)
+PASS PF-10a 자체 cond 데이터 불충족 visibleChoices 예외 없음 · 숨김
+PASS PF-10b 자체 cond 데이터 불충족 showEvent 예외 없음 · 버튼 1
+PASS PF-10c 자체 cond 데이터 불충족 직접 호출 거부: 예외 없음 · S·난수·연표·UI 불변
+PASS PF-10d 자체 cond 데이터 불충족 진단 1건 reason=cond_unmet
+PASS PF-10a null 프로토타입 선택지 자체 cond 불충족 visibleChoices 예외 없음 · 숨김
+PASS PF-10b null 프로토타입 선택지 자체 cond 불충족 showEvent 예외 없음 · 버튼 1
+PASS PF-10c null 프로토타입 선택지 자체 cond 불충족 직접 호출 거부: 예외 없음 · S·난수·연표·UI 불변
+PASS PF-10d null 프로토타입 선택지 자체 cond 불충족 진단 1건 reason=cond_unmet
+PASS PF-10a 상속 cond(불충족 조건) visibleChoices 예외 없음 · 숨김
+PASS PF-10b 상속 cond(불충족 조건) showEvent 예외 없음 · 버튼 1
+PASS PF-10c 상속 cond(불충족 조건) 직접 호출 거부: 예외 없음 · S·난수·연표·UI 불변
+PASS PF-10d 상속 cond(불충족 조건) 진단 1건 reason=cond_malformed
+PASS PF-10a 상속 cond(빈 조건 {}) visibleChoices 예외 없음 · 숨김
+PASS PF-10b 상속 cond(빈 조건 {}) showEvent 예외 없음 · 버튼 1
+PASS PF-10c 상속 cond(빈 조건 {}) 직접 호출 거부: 예외 없음 · S·난수·연표·UI 불변
+PASS PF-10d 상속 cond(빈 조건 {}) 진단 1건 reason=cond_malformed
+PASS PF-10a 상속 cond(null 프로토타입 부모) visibleChoices 예외 없음 · 숨김
+PASS PF-10b 상속 cond(null 프로토타입 부모) showEvent 예외 없음 · 버튼 1
+PASS PF-10c 상속 cond(null 프로토타입 부모) 직접 호출 거부: 예외 없음 · S·난수·연표·UI 불변
+PASS PF-10d 상속 cond(null 프로토타입 부모) 진단 1건 reason=cond_malformed
+PASS PF-10a 자체 getter cond visibleChoices 예외 없음 · 숨김
+PASS PF-10b 자체 getter cond showEvent 예외 없음 · 버튼 1
+PASS PF-10c 자체 getter cond 직접 호출 거부: 예외 없음 · S·난수·연표·UI 불변
+PASS PF-10d 자체 getter cond 진단 1건 reason=cond_malformed
+PASS PF-10e 자체 getter cond getter/setter 미실행
+PASS PF-10a 자체 setter 전용 cond visibleChoices 예외 없음 · 숨김
+PASS PF-10b 자체 setter 전용 cond showEvent 예외 없음 · 버튼 1
+PASS PF-10c 자체 setter 전용 cond 직접 호출 거부: 예외 없음 · S·난수·연표·UI 불변
+PASS PF-10d 자체 setter 전용 cond 진단 1건 reason=cond_malformed
+PASS PF-10e 자체 setter 전용 cond getter/setter 미실행
+PASS PF-10a 자체 getter·setter cond visibleChoices 예외 없음 · 숨김
+PASS PF-10b 자체 getter·setter cond showEvent 예외 없음 · 버튼 1
+PASS PF-10c 자체 getter·setter cond 직접 호출 거부: 예외 없음 · S·난수·연표·UI 불변
+PASS PF-10d 자체 getter·setter cond 진단 1건 reason=cond_malformed
+PASS PF-10e 자체 getter·setter cond getter/setter 미실행
+PASS PF-10a 상속 getter cond visibleChoices 예외 없음 · 숨김
+PASS PF-10b 상속 getter cond showEvent 예외 없음 · 버튼 1
+PASS PF-10c 상속 getter cond 직접 호출 거부: 예외 없음 · S·난수·연표·UI 불변
+PASS PF-10d 상속 getter cond 진단 1건 reason=cond_malformed
+PASS PF-10e 상속 getter cond getter/setter 미실행
+PASS PF-10a 비열거 자체 cond visibleChoices 예외 없음 · 숨김
+PASS PF-10b 비열거 자체 cond showEvent 예외 없음 · 버튼 1
+PASS PF-10c 비열거 자체 cond 직접 호출 거부: 예외 없음 · S·난수·연표·UI 불변
+PASS PF-10d 비열거 자체 cond 진단 1건 reason=cond_malformed
+PASS PF-10a 배열 선택지 visibleChoices 예외 없음 · 숨김
+PASS PF-10b 배열 선택지 showEvent 예외 없음 · 버튼 1
+PASS PF-10c 배열 선택지 직접 호출 거부: 예외 없음 · S·난수·연표·UI 불변
+PASS PF-10d 배열 선택지 진단 1건 reason=choice_not_object
+PASS PF-10a Date 선택지 visibleChoices 예외 없음 · 숨김
+PASS PF-10b Date 선택지 showEvent 예외 없음 · 버튼 1
+PASS PF-10c Date 선택지 직접 호출 거부: 예외 없음 · S·난수·연표·UI 불변
+PASS PF-10d Date 선택지 진단 1건 reason=choice_not_object
+PASS PF-10a 클래스 인스턴스 선택지 visibleChoices 예외 없음 · 숨김
+PASS PF-10b 클래스 인스턴스 선택지 showEvent 예외 없음 · 버튼 1
+PASS PF-10c 클래스 인스턴스 선택지 직접 호출 거부: 예외 없음 · S·난수·연표·UI 불변
+PASS PF-10d 클래스 인스턴스 선택지 진단 1건 reason=choice_not_object
+PASS PF-10a 사용자 프로토타입 선택지(cond 없음) visibleChoices 예외 없음 · 숨김
+PASS PF-10b 사용자 프로토타입 선택지(cond 없음) showEvent 예외 없음 · 버튼 1
+PASS PF-10c 사용자 프로토타입 선택지(cond 없음) 직접 호출 거부: 예외 없음 · S·난수·연표·UI 불변
+PASS PF-10d 사용자 프로토타입 선택지(cond 없음) 진단 1건 reason=choice_not_object
+PASS PF-10a 함수 선택지 visibleChoices 예외 없음 · 숨김
+PASS PF-10b 함수 선택지 showEvent 예외 없음 · 버튼 1
+PASS PF-10c 함수 선택지 직접 호출 거부: 예외 없음 · S·난수·연표·UI 불변
+PASS PF-10d 함수 선택지 진단 1건 reason=choice_not_object
+PASS PF-10a 폐기된 Proxy 선택지 visibleChoices 예외 없음 · 숨김
+PASS PF-10b 폐기된 Proxy 선택지 showEvent 예외 없음 · 버튼 1
+PASS PF-10c 폐기된 Proxy 선택지 직접 호출 거부: 예외 없음 · S·난수·연표·UI 불변
+PASS PF-10d 폐기된 Proxy 선택지 진단 1건 reason=cond_malformed
+PASS PF-10a descriptor trap 예외 Proxy visibleChoices 예외 없음 · 숨김
+PASS PF-10b descriptor trap 예외 Proxy showEvent 예외 없음 · 버튼 1
+PASS PF-10c descriptor trap 예외 Proxy 직접 호출 거부: 예외 없음 · S·난수·연표·UI 불변
+PASS PF-10d descriptor trap 예외 Proxy 진단 1건 reason=cond_malformed
+PASS PF-10a has trap 예외 Proxy visibleChoices 예외 없음 · 숨김
+PASS PF-10b has trap 예외 Proxy showEvent 예외 없음 · 버튼 1
+PASS PF-10c has trap 예외 Proxy 직접 호출 거부: 예외 없음 · S·난수·연표·UI 불변
+PASS PF-10d has trap 예외 Proxy 진단 1건 reason=cond_malformed
+PASS PF-10a getPrototypeOf trap 예외 Proxy visibleChoices 예외 없음 · 숨김
+PASS PF-10b getPrototypeOf trap 예외 Proxy showEvent 예외 없음 · 버튼 1
+PASS PF-10c getPrototypeOf trap 예외 Proxy 직접 호출 거부: 예외 없음 · S·난수·연표·UI 불변
+PASS PF-10d getPrototypeOf trap 예외 Proxy 진단 1건 reason=cond_malformed
+PASS PF-10a cond 가 폐기된 Proxy visibleChoices 예외 없음 · 숨김
+PASS PF-10b cond 가 폐기된 Proxy showEvent 예외 없음 · 버튼 1
+PASS PF-10c cond 가 폐기된 Proxy 직접 호출 거부: 예외 없음 · S·난수·연표·UI 불변
+PASS PF-10d cond 가 폐기된 Proxy 진단 1건 reason=cond_malformed
+PASS PF-10a cond.min 의 ownKeys trap 예외 visibleChoices 예외 없음 · 숨김
+PASS PF-10b cond.min 의 ownKeys trap 예외 showEvent 예외 없음 · 버튼 1
+PASS PF-10c cond.min 의 ownKeys trap 예외 직접 호출 거부: 예외 없음 · S·난수·연표·UI 불변
+PASS PF-10d cond.min 의 ownKeys trap 예외 진단 1건 reason=cond_malformed
+PASS PF-11 폐기된 Proxy 선택지 nextYear 5회 예외 없음 · 정지 없음 · 예외 Proxy 선택지를 가진 사건이 실제로 후보·표시됨
+PASS PF-11 descriptor trap 예외 Proxy nextYear 5회 예외 없음 · 정지 없음 · 예외 Proxy 선택지를 가진 사건이 실제로 후보·표시됨
+PASS PF-11 has trap 예외 Proxy nextYear 5회 예외 없음 · 정지 없음 · 예외 Proxy 선택지를 가진 사건이 실제로 후보·표시됨
+PASS PF-11 getPrototypeOf trap 예외 Proxy nextYear 5회 예외 없음 · 정지 없음 · 예외 Proxy 선택지를 가진 사건이 실제로 후보·표시됨
+PASS PF-11 cond 가 폐기된 Proxy nextYear 5회 예외 없음 · 정지 없음 · 예외 Proxy 선택지를 가진 사건이 실제로 후보·표시됨
+PASS PF-12
+PASS PF-13a 합성 __en_clk A 클릭 = 직접 choose: S 깊은 비교 · 난수 호출 수 · 연표 동일, 거부 진단 0
+PASS PF-13a 합성 __en_clk C(chance) 클릭 = 직접 choose: S 깊은 비교 · 난수 호출 수 · 연표 동일, 거부 진단 0
+PASS PF-13a 실제 sick 0 클릭 = 직접 choose: S 깊은 비교 · 난수 호출 수 · 연표 동일, 거부 진단 0
+PASS PF-13a 실제 sick 1(chance) 클릭 = 직접 choose: S 깊은 비교 · 난수 호출 수 · 연표 동일, 거부 진단 0
+PASS PF-13a 실제 sick 얕은 복사본(nextYear 와 같은 { ...e, w }) 클릭 = 직접 choose: S 깊은 비교 · 난수 호출 수 · 연표 동일, 거부 진단 0
+PASS PF-13b 현재 사건에 없는 새 객체 → 거부(choice_not_in_event): 예외 없음 · choose 미호출(효과·확률 판정·난수 0) · S·연표·UI 불변
+PASS PF-13b 현재 사건에 없는 새 객체 진단 choice_click_rejected 1건 reason=choice_not_in_event
+PASS PF-13b 값이 같은 복제 선택지(참조 다름) → 거부(choice_not_in_event): 예외 없음 · choose 미호출(효과·확률 판정·난수 0) · S·연표·UI 불변
+PASS PF-13b 값이 같은 복제 선택지(참조 다름) 진단 choice_click_rejected 1건 reason=choice_not_in_event
+PASS PF-13b 다른 사건의 선택지 참조 → 거부(choice_not_in_event): 예외 없음 · choose 미호출(효과·확률 판정·난수 0) · S·연표·UI 불변
+PASS PF-13b 다른 사건의 선택지 참조 진단 choice_click_rejected 1건 reason=choice_not_in_event
+PASS PF-13b 다른 사건 객체(활성 아님) → 거부(event_not_active): 예외 없음 · choose 미호출(효과·확률 판정·난수 0) · S·연표·UI 불변
+PASS PF-13b 다른 사건 객체(활성 아님) 진단 choice_click_rejected 1건 reason=event_not_active
+PASS PF-13b 표시 기록 위조(같은 내용의 새 객체) → 거부(stale_button): 예외 없음 · choose 미호출(효과·확률 판정·난수 0) · S·연표·UI 불변
+PASS PF-13b 표시 기록 위조(같은 내용의 새 객체) 진단 choice_click_rejected 1건 reason=stale_button
+PASS PF-13b 거부 뒤에도 정상 버튼은 동작
+PASS PF-13c 같은 사건 재표시 뒤 이전 표시의 버튼 → 거부(stale_button): 예외 없음 · choose 미호출(효과·확률 판정·난수 0) · S·연표·UI 불변
+PASS PF-13c 같은 사건 재표시 뒤 이전 표시의 버튼 진단 choice_click_rejected 1건 reason=stale_button
+PASS PF-13c 같은 사건 재표시 뒤 이전 표시의 chance 버튼(난수 0) → 거부(stale_button): 예외 없음 · choose 미호출(효과·확률 판정·난수 0) · S·연표·UI 불변
+PASS PF-13c 같은 사건 재표시 뒤 이전 표시의 chance 버튼(난수 0) 진단 choice_click_rejected 1건 reason=stale_button
+PASS PF-13c 다른 사건 표시 뒤 이전 사건의 버튼 → 거부(stale_button): 예외 없음 · choose 미호출(효과·확률 판정·난수 0) · S·연표·UI 불변
+PASS PF-13c 다른 사건 표시 뒤 이전 사건의 버튼 진단 choice_click_rejected 1건 reason=stale_button
+PASS PF-13c 이미 해결된 사건의 다른 버튼 → 거부(event_not_active): 예외 없음 · choose 미호출(효과·확률 판정·난수 0) · S·연표·UI 불변
+PASS PF-13c 이미 해결된 사건의 다른 버튼 진단 choice_click_rejected 1건 reason=event_not_active
+PASS PF-13c 이미 해결된 사건의 같은 버튼 두 번째 클릭 → 거부(event_not_active): 예외 없음 · choose 미호출(효과·확률 판정·난수 0) · S·연표·UI 불변
+PASS PF-13c 이미 해결된 사건의 같은 버튼 두 번째 클릭 진단 choice_click_rejected 1건 reason=event_not_active
+PASS PF-13c 효과는 한 번만
+PASS PF-13d EVENTS 에 없는 사건 → 거부(event_not_in_events): 예외 없음 · choose 미호출(효과·확률 판정·난수 0) · S·연표·UI 불변
+PASS PF-13d EVENTS 에 없는 사건 진단 choice_click_rejected 1건 reason=event_not_in_events
+PASS PF-13d id 만 같은 사건(choices 배열 복제) → 거부(event_not_in_events): 예외 없음 · choose 미호출(효과·확률 판정·난수 0) · S·연표·UI 불변
+PASS PF-13d id 만 같은 사건(choices 배열 복제) 진단 choice_click_rejected 1건 reason=event_not_in_events
+PASS PF-13d choices 참조만 같고 id 다른 사건 → 거부(event_not_in_events): 예외 없음 · choose 미호출(효과·확률 판정·난수 0) · S·연표·UI 불변
+PASS PF-13d choices 참조만 같고 id 다른 사건 진단 choice_click_rejected 1건 reason=event_not_in_events
+PASS PF-13e 합성 선택지 직접 choose 는 실행됨(내부 API · 보호 범위 밖)
+PASS PF-13e 자동 진행: 버튼 클릭 경로로 진행(R2 1 + 선택 결과), 거부 0
+PASS PF-14a 실제 EVENTS 81개 · 선택지 173개 · 검사 노드 998개, 문제 0
+PASS PF-14b 사건 cond 에 Proxy → Proxy 검출 · 검사 실패 · trap 0
+PASS PF-14b 선택지 cond 에 Proxy → Proxy 검출 · 검사 실패 · trap 0
+PASS PF-14b 선택지 cond.min 에 Proxy → Proxy 검출 · 검사 실패 · trap 0
+PASS PF-14b 선택지 자체가 Proxy → Proxy 검출 · 검사 실패 · trap 0
+PASS PF-14b choices 배열이 Proxy → Proxy 검출 · 검사 실패 · trap 0
+PASS PF-14b 사건 자체가 Proxy → Proxy 검출 · 검사 실패 · trap 0
+PASS PF-14b fx 깊은 곳에 Proxy → Proxy 검출 · 검사 실패 · trap 0
+PASS PF-14c 사용자 프로토타입 선택지 → 검사 실패(nonPlainChoices)
+PASS PF-14c Date 선택지 → 검사 실패(nonPlainChoices)
+PASS PF-14c 클래스 인스턴스 선택지 → 검사 실패(nonPlainChoices)
+PASS PF-14c 배열 선택지 → 검사 실패(nonPlainChoices)
+PASS PF-14c 원시값 선택지 → 검사 실패(nonPlainChoices)
+PASS PF-14c choices 가 배열 아님 → 검사 실패(nonArrayChoices)
+PASS PF-14c getter 속성 → 검사 실패(accessors)
+PASS PF-14c getter 미실행
+PASS PF-14c 순환 참조 → 검사 종료(예외 없음) · 순환 자체는 문제 아님
+RESULT: PASS 639/639 (engine_p2_test)
+exit=0

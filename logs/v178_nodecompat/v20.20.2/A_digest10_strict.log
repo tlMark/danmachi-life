@@ -1,0 +1,12 @@
+SAME physical/777 lifeDigest=3640313501 rng=2619091017 exit=0 completed=3000 inv=true exc=0 | G1 605fdf4 기준 3640313501/2619091017
+SAME physical/314159 lifeDigest=2354554544 rng=2100819340 exit=0 completed=3000 inv=true exc=0 | G1 605fdf4 기준 2354554544/2100819340
+SAME physical/8675309 lifeDigest=210939761 rng=545107101 exit=0 completed=3000 inv=true exc=0 | G1 605fdf4 기준 210939761/545107101
+SAME physical/20261104 lifeDigest=780928835 rng=2187010721 exit=0 completed=3000 inv=true exc=0 | G1 605fdf4 기준 780928835/2187010721
+SAME calendar/20261104 lifeDigest=988406346 rng=1239289394 exit=0 completed=3000 inv=true exc=0 | G1 605fdf4 기준 988406346/1239289394
+SAME newborn_parent_familia/20261104 lifeDigest=1029559938 rng=3484114229 exit=0 completed=3000 inv=true exc=0 | G1 605fdf4 기준 1029559938/3484114229
+SAME off/777 lifeDigest=2767838513 rng=2766822083 exit=0 completed=3000 inv=true exc=0 | G1 605fdf4 기준 2767838513/2766822083
+SAME off/314159 lifeDigest=4181606804 rng=3551207515 exit=0 completed=3000 inv=true exc=0 | G1 605fdf4 기준 4181606804/3551207515
+SAME off/8675309 lifeDigest=2387677858 rng=2054853508 exit=0 completed=3000 inv=true exc=0 | G1 605fdf4 기준 2387677858/2054853508
+SAME off/20261104 lifeDigest=3460328982 rng=495146276 exit=0 completed=3000 inv=true exc=0 | G1 605fdf4 기준 3460328982/495146276
+STRICT: PASS — 동일 10/10, 문제 0건
+exit=0

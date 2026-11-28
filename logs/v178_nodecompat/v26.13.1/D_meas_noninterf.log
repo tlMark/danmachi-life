@@ -1,0 +1,20 @@
+seed 20261104 runs 3000 lifeDigest 1964566925
+  PASS 종료 코드 — 0/0
+  PASS 측정 상태 active — active
+  PASS 표준 출력 바이트 동일 — 18043778d64e8f029362b94983726be1ab93c7c3770137603602582e95cff9f4 / 18043778d64e8f029362b94983726be1ab93c7c3770137603602582e95cff9f4
+  PASS 생애별 기록 바이트 동일 — 919ead02535871db1ce99cda5cd5b3b16af92a611d30c8f7b783445370a66b1e / 919ead02535871db1ce99cda5cd5b3b16af92a611d30c8f7b783445370a66b1e
+  PASS RNG 지점 집계(tally) 동일 — 22ae6f67426ed3d2d30a9096e39d81399820bd85497786269d003e5c11e32157 / 22ae6f67426ed3d2d30a9096e39d81399820bd85497786269d003e5c11e32157
+  PASS 원본 러너 계측 보고 없음
+  PASS 측정 보고 valid — valid
+  계측 보고: {"counters":{"C":3007,"H":0,"P":0,"F":3007,"X":0,"A":0,"Xcode":{"screen_state_mismatch":0,"screen_state_check_exception":0},"Acode":{"origin":0,"nested_propagation":0,"unmarked_return":0},"E":{"F":0,"X":0}},"postSeal":0,"mutTotal":2,"maxDepth":1,"faultCount":0}
+seed 777 runs 3000 lifeDigest 430191659
+  PASS 종료 코드 — 0/0
+  PASS 측정 상태 active — active
+  PASS 표준 출력 바이트 동일 — 2e7e59d34663cdd26c95ce22e336a071370bcea87219966849ba5c14e6f8c46e / 2e7e59d34663cdd26c95ce22e336a071370bcea87219966849ba5c14e6f8c46e
+  PASS 생애별 기록 바이트 동일 — b047f50c86d4206f393b5e954adfa343fe6065802e3032ffae31e66342407998 / b047f50c86d4206f393b5e954adfa343fe6065802e3032ffae31e66342407998
+  PASS RNG 지점 집계(tally) 동일 — 914d9cae294a5821db97a53f0ce8c9abe89b33c214e481f5790b5adcdcc8241a / 914d9cae294a5821db97a53f0ce8c9abe89b33c214e481f5790b5adcdcc8241a
+  PASS 원본 러너 계측 보고 없음
+  PASS 측정 보고 valid — valid
+  계측 보고: {"counters":{"C":3007,"H":0,"P":0,"F":3007,"X":0,"A":0,"Xcode":{"screen_state_mismatch":0,"screen_state_check_exception":0},"Acode":{"origin":0,"nested_propagation":0,"unmarked_return":0},"E":{"F":0,"X":0}},"postSeal":0,"mutTotal":2,"maxDepth":1,"faultCount":0}
+RESULT: PASS (meas_noninterf, fails=0)
+exit=0
