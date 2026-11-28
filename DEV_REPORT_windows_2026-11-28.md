@@ -213,4 +213,72 @@ meas_fault 세 갈래
 
 ## 7. Windows 3회차(커밋 3ce68ce)
 
-(결과 대기 중 — 확인 뒤 채운다)
+- run: https://github.com/tlMark/danmachi-life/actions/runs/46157304267
+  - job `141016686521`: crlf=false, run checks 종료 코드 1
+  - job `141016686745`: crlf=true, run checks 종료 코드 1
+- 두 job 모두 실패 원인은 **E_crlf_zero 1건뿐**이다(§7.2). A~D 와 F 는 두 설정 모두 통과다.
+
+### 7.1 항목별 결과
+
+| 검사 | crlf=false | crlf=true(2회차 실패 항목) |
+|---|---|---|
+| A 두 시드 출력, G1 기준선과 바이트 비교 | 동일 · 동일 | **동일 · 동일**(2회차: 다름) |
+| A 10구성 digest 엄격 대조 | exit 0 | exit 0 |
+| B 단위 시험 18종 | 전부 exit 0 | **전부 exit 0**(2회차: p4·devabil·n2_rollback·f1_transition·sync_2i·feat_p5·rng_sites 실패) |
+| C Chromium file:// · inline | exit 0 · 0 | exit 0 · 0 |
+| D ⑫ · ⑫-neg | exit 0 · 0 | **exit 0 · 0**(2회차: 2 · 2) |
+| D 고장 주입 · 비간섭 3000 × 2 | exit 0 · 0 | **exit 0 · 0**(2회차: 1 · 1) |
+| E 작업 트리 줄바꿈(`ls-files --eol`) | w/lf 1,111 · w/none 52 | w/lf 1,111 · w/none 52 |
+| E CR 포함 추적 파일 수 | 1,155 → E_crlf_zero exit 1 | 1,155 → exit 1 |
+| E 추적 파일 SHA 묶음 · status 변경 수 | 4120034f38172b2e · 1 | 4120034f38172b2e · 1 |
+| F crlf_diag | grep 21 · 블록 Math.random 없음 · 소스 9개 CR 0 | 같음 |
+| F mf_diag(기록 전용) | meas_fault 51/51. R0 active, 25n11·K1′·T4·25n10a 는 LF 와 같은 상태·이유. 다섯 사례 모두 exit 0 · 게임 y · vm y | 같음 |
+
+- meas_fault R0·25n11·K1′·T4·25n10a: QA 지시대로 SHA 불일치 해소만으로 통과 처리하지 않았다.
+  - F 단계에서 다섯 사례 각각의 상태·이유·종료 코드·실행 여부를 따로 기록했다.
+  - Windows 두 설정 모두 Linux LF 기준(§5.2 첫 열)과 같다.
+
+### 7.2 E_crlf_zero 실패 — 검사 단계 결함(저장소 상태 아님)
+
+결론: E 의 CR 계수와 SHA 묶음은 Windows Git Bash 에서 의도와 다르게 계산됐다. 저장소 파일에는 CR 이 없다.
+
+| 값 | 기제 | 근거 |
+|---|---|---|
+| CR 포함 파일 1,155 | `grep -l $'\r'` 의 패턴이 Windows Git Bash 에서 빈 패턴처럼 동작했다. 빈 패턴은 비어 있지 않은 모든 파일과 맞는다 | 3ce68ce 의 비어 있지 않은 추적 파일 수 = 1,155, 빈 패턴 일치 파일 수 = 1,155(Linux 실행으로 확인). CR 이 빈 패턴으로 바뀐 경로(셸·인자 처리)는 **추론** |
+| SHA 묶음 4120034f… | Windows 의 `sha256sum` 은 바이너리 모드 표시(`해시 *경로`)로 출력한다 | Linux 에서 `sha256sum -b` 로 같은 묶음을 만들면 **4120034f38172b2e** 로 일치한다(확인). 파일별 내용 해시는 Linux 3ce68ce 와 같다 |
+| status 변경 수 1 | 워크플로가 설치한 `node_modules/`(추적 안 됨)로 보인다 | **추론**(목록 미출력) |
+
+저장소에 CR 이 없다는 독립 근거
+- `ls-files --eol` 작업 트리가 전부 w/lf · w/none 이다.
+- crlf_diag(Node 로 읽음): 고정 소스 9개 CR 0.
+- 바이트 고정 검사 통과: acorn SHA, 측정 사본 소스 SHA, 기준선 바이트 비교.
+
+대응 제안(미승인 — 사용자 결정 "E·F 그대로 둔다"와 관련)
+- E-fix: CR 계수를 Node 로 바꾸고, SHA 묶음은 `*` 표시를 정규화한 뒤 계산한다.
+- 고치지 않으면 E_crlf_zero 가 매 실행마다 거짓 실패를 내서 job 이 항상 실패한다.
+
+### 7.3 결론
+
+- W-1 적용 뒤 Windows 에서 autocrlf false · true 모두 다음이 같다: 게임 결과(바이트), 단위 시험, Chromium, 측정 사본 시험.
+- 2회차 crlf=true 실패 항목은 전부 해소됐다.
+- 남은 실패는 3회차에 추가한 E 검사 단계 자체의 Windows 셸 결함 1건이다.
+
+## 8. 사용자 결정(2026-11-28)과 정정
+
+- 진단 도구(`logs/v178_windows/tools/`)는 권고대로 시험 묶음에 넣지 않는다. 원인 분석 기록으로 둔다.
+  - 작은 `eol_policy_test` 는 별도 승인 전 만들지 않는다.
+- 워크플로 E·F 단계는 그대로 둔다.
+- 정정: r1 에서 E·F 를 "읽기 전용 확인"이라고 했다.
+  - 저장소를 바꾸지 않는다는 뜻으로는 맞다.
+  - 그러나 E_crlf_zero 는 job 을 실패시키는 **판정 단계**다.
+  - F 는 판정하지 않는다. F_mf_diag 의 exit=0 은 "실행됨"이지 "통과"가 아니다. 다섯 사례의 판정은 위 표처럼 출력 값을 읽어서 했다.
+
+## 9. 미실행·남은 제한
+
+| 항목 | 상태 |
+|---|---|
+| E-fix(검사 단계 수정) · 재실행 | 미실행(승인 대기) |
+| artifact 직접 확인 | 미실행(프록시 403). job 로그로 대신함 |
+| 실제 Windows PC 수동 플레이 | 미실행 |
+| Windows 의 RNG 3환경 대조 · 변이 시험 · 48k | 미실행 |
+| macOS · ARM | 미실행 |
